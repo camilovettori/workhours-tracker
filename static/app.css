@@ -1,0 +1,210 @@
+:root{
+  --bg:#f6f7fb;
+  --card:#fff;
+  --text:#0f172a;
+  --muted:#64748b;
+  --line:#e5e7eb;
+  --primary:#2563eb;
+  --dark:#111827;
+  --danger:#dc2626;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  background:var(--bg);
+  color:var(--text);
+}
+
+.topbar{
+  background:linear-gradient(90deg,#0b1220,#0f172a);
+  color:#fff;
+  padding:14px 16px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+
+.top-title{font-weight:900; font-size:16px}
+.top-sub{font-size:12px; color:#cbd5e1}
+
+.container{
+  max-width:980px;
+  margin:0 auto;
+  padding:18px;
+}
+
+/* default screen: not centered (good for app pages) */
+.screen{
+  min-height: calc(100vh - 90px);
+  display:block;
+}
+
+/* only auth screen is centered */
+#screenAuth.screen{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.hidden{display:none !important;}
+
+.card{
+  width:100%;
+  background:var(--card);
+  border-radius:18px;
+  padding:16px;
+  box-shadow:0 1px 14px rgba(0,0,0,.08);
+  border:1px solid rgba(255,255,255,.6);
+}
+
+.auth-card{
+  max-width:360px;
+  text-align:center;
+}
+
+.logo-wrap{display:flex; justify-content:center; margin-bottom:8px;}
+.logo{
+  width:74px;
+  height:74px;
+  border-radius:18px;
+  object-fit:cover;
+  box-shadow:0 6px 18px rgba(0,0,0,.12);
+  background:#fff;
+}
+
+.auth-title{font-weight:950;font-size:18px;margin-top:6px}
+.auth-sub{font-size:12px;color:var(--muted);margin:6px 0 14px}
+
+.field{text-align:left;margin:10px 0}
+label{display:block;font-size:12px;color:#334155;margin-bottom:6px}
+input, select{
+  width:100%;
+  padding:11px 12px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  font-size:14px;
+  outline:none;
+  background:#fff;
+}
+input:focus, select:focus{border-color:#94a3b8}
+
+.auth-actions{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.btn{
+  padding:11px 12px;
+  border-radius:12px;
+  border:0;
+  font-weight:800;
+  cursor:pointer;
+  font-size:14px;
+}
+.btn.primary{background:var(--primary);color:#fff}
+.btn.secondary{background:#eef2ff;color:#1e293b}
+.btn.dark{background:var(--dark);color:#fff}
+.btn.danger{background:var(--danger);color:#fff}
+.btn.link{
+  background:transparent;
+  color:var(--primary);
+  font-weight:700;
+  padding:6px 0;
+}
+
+.credit{margin-top:12px;font-size:11px;color:#94a3b8}
+
+.msg{margin-top:10px;font-size:13px;color:#b91c1c;min-height:18px}
+.muted{color:var(--muted);font-size:13px}
+
+.row{display:flex;align-items:center}
+.row.between{justify-content:space-between}
+.row.gap{gap:10px;flex-wrap:wrap}
+
+.h2{font-weight:950;font-size:16px;margin-bottom:6px}
+
+.list{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+.item{
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:12px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  background:#fff;
+}
+.item-title{font-weight:900}
+.item-sub{font-size:12px;color:var(--muted)}
+
+.pill{
+  display:inline-block;
+  background:#eef2ff;
+  padding:6px 10px;
+  border-radius:999px;
+  font-weight:800;
+  font-size:12px;
+  margin-top:10px;
+}
+
+.grid{
+  display:grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap:10px;
+}
+@media (max-width: 860px){
+  .grid{grid-template-columns: 1fr}
+  .screen{align-items:flex-start}
+}
+
+.table-wrap{overflow:auto;margin-top:10px}
+.table{width:100%;border-collapse:collapse}
+th, td{border-bottom:1px solid var(--line);padding:10px;font-size:13px;text-align:left;vertical-align:top}
+th{color:#334155;font-weight:900;background:#f8fafc;position:sticky;top:0}
+
+.week-head{margin:12px 0}
+/* ===== Week detail wide layout (desktop) ===== */
+#screenWeekDetail{
+  padding: 18px 0;
+}
+
+.week-layout{
+  display:grid;
+  grid-template-columns: 360px 1fr; /* left panel + main */
+  gap:16px;
+  align-items:start;
+}
+
+.week-left{
+  position: sticky;
+  top: 12px;
+}
+
+.week-main{
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+}
+
+/* Bank holidays drawer on the right inside main */
+.bh-drawer{
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:16px;
+  background:#fff;
+  box-shadow:0 1px 14px rgba(0,0,0,.08);
+}
+
+/* Make tables/cards breathe */
+.card{ padding:18px; }
+.table-wrap{ margin-top:14px; }
+
+/* Mobile: stack */
+@media (max-width: 980px){
+  .week-layout{
+    grid-template-columns: 1fr;
+  }
+  .week-left{
+    position: relative;
+    top:auto;
+  }
+}

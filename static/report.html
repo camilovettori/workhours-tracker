@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Report</title>
+  <style>
+    body{font-family:system-ui,Arial;margin:20px}
+    h1{margin:0 0 6px}
+    .muted{color:#64748b}
+    table{width:100%;border-collapse:collapse;margin-top:16px}
+    th,td{border-bottom:1px solid #e5e7eb;padding:10px;text-align:left;font-size:13px}
+    th{background:#f8fafc}
+    .pill{display:inline-block;background:#eef2ff;padding:6px 10px;border-radius:999px;font-weight:800;font-size:12px;margin-top:8px}
+    .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+    @media print{
+      button{display:none}
+      body{margin:0}
+    }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <h1 id="t">Work Hours Report</h1>
+      <div id="m" class="muted"></div>
+      <div id="p" class="pill"></div>
+    </div>
+    <button onclick="window.print()">Print</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Day</th><th>Date</th><th>In</th><th>Out</th><th>Break</th><th>Worked</th><th>1.5x</th><th>Note</th>
+      </tr>
+    </thead>
+    <tbody id="b"></tbody>
+  </table>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const week_id = params.get("week_id");
+    async function api(path){
+      const res = await fetch(path, { credentials:"include" });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.detail || "Error");
+      return data;
+    }
+
+    (async () => {
+      const w = await api(`/api/weeks/${week_id}`);
+      document.getElementById("t").textContent = `Week ${w.week_number} Report`;
+      document.getElementById("m").textContent = `Start: ${w.start_date} • Rate: €${w.hourly_rate.toFixed(2)}`;
+      document.getElementById("p").textContent = `Total ${w.totals.total_hhmm} • €${w.totals.total_pay.toFixed(2)}`;
+
+      const tb = document.getElementById("b");
+      tb.innerHTML = "";
+      for(const e of w.entries){
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><b>${e.weekday}</b></td>
+          <td>${e.date_ddmmyyyy}</td>
+          <td>${e.time_in || ""}</td>
+          <td>${e.time_out || ""}</td>
+          <td>${e.break_minutes}m</td>
+          <td><b>${e.worked_hhmm}</b></td>
+          <td>${e.multiplier === 1.5 ? "YES" : ""}</td>
+          <td>${e.note || ""}</td>
+        `;
+        tb.appendChild(tr);
+      }
+    })().catch(err => {
+      document.body.innerHTML = "<h2>Error</h2><pre>"+String(err)+"</pre>";
+    });
+  </script>
+</body>
+</html>
