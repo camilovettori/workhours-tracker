@@ -30,6 +30,24 @@ if not STATIC_DIR.exists():
     raise RuntimeError(f"Missing folder: {STATIC_DIR}")
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+from fastapi.responses import FileResponse
+
+@app.get("/app.js")
+def app_js():
+    return FileResponse(STATIC_DIR / "app.js")
+
+@app.get("/app.css")
+def app_css():
+    return FileResponse(STATIC_DIR / "app.css")
+
+@app.get("/sw.js")
+def sw_js():
+    return FileResponse(STATIC_DIR / "sw.js")
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    return FileResponse(STATIC_DIR / "manifest.webmanifest")
+
 
 
 # =========================
