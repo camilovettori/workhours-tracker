@@ -9,13 +9,12 @@ import smtplib
 from email.message import EmailMessage
 from pathlib import Path
 from datetime import datetime, date, timedelta
-from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, EmailStr
-
 
 # =========================
 # Paths / App (PERSISTENTE)
@@ -29,17 +28,14 @@ DB_PATH = DATA_DIR / "workhours.db"
 
 APP_SECRET = os.environ.get("WORKHOURS_SECRET", "dev-secret-change-me").encode("utf-8")
 COOKIE_AGE = 90 * 24 * 60 * 60  # 90 days
-
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"  # set 1 on Render (https)
 
-app = FastAPI(title="Work Hours Tracker", version="5.0")
+app = FastAPI(title="Work Hours Tracker", version="5.2")
 
 if not STATIC_DIR.exists():
     raise RuntimeError(f"Missing folder: {STATIC_DIR}")
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-print("DB PATH:", DB_PATH)
 
 
 # =========================
@@ -80,7 +76,6 @@ def add_col_if_missing(conn: sqlite3.Connection, table: str, col: str, ddl: str)
 
 def init_db() -> None:
     with db() as conn:
-        # users
         conn.execute("""
         CREATE TABLE IF NOT EXISTS users(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,7 +88,6 @@ def init_db() -> None:
         );
         """)
 
-        # weeks
         conn.execute("""
         CREATE TABLE IF NOT EXISTS weeks(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,7 +99,6 @@ def init_db() -> None:
         );
         """)
 
-        # entries
         conn.execute("""
         CREATE TABLE IF NOT EXISTS entries(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,7 +115,6 @@ def init_db() -> None:
         );
         """)
 
-        # bank holidays
         conn.execute("""
         CREATE TABLE IF NOT EXISTS bank_holidays(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -134,7 +126,6 @@ def init_db() -> None:
         );
         """)
 
-        # password resets
         conn.execute("""
         CREATE TABLE IF NOT EXISTS password_resets(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -146,7 +137,7 @@ def init_db() -> None:
         );
         """)
 
-        # ---- MIGRATIONS (safe) ----
+        # migrations (safe)
         add_col_if_missing(conn, "users", "email", "TEXT")
         add_col_if_missing(conn, "weeks", "user_id", "INTEGER NOT NULL DEFAULT 0")
         add_col_if_missing(conn, "entries", "user_id", "INTEGER NOT NULL DEFAULT 0")
@@ -170,7 +161,6 @@ def init_db() -> None:
 
 
 init_db()
-
 
 # =========================
 # Auth helpers
@@ -202,7 +192,7 @@ def verify_session_token(token: str) -> Optional[int]:
         payload = f"{user_id}.{ts}.{rnd}"
         if not hmac.compare_digest(sig, sign_token(payload)):
             return None
-        if datetime.utcnow().timestamp() - int(ts) > 90 * 24 * 3600:
+        if datetime.utcnow().timestamp() - int(ts) > COOKIE_AGE:
             return None
         return int(user_id)
     except Exception:
@@ -507,8 +497,13 @@ def compute_week(conn: sqlite3.Connection, user_id: int, week_id: int) -> Dict[s
 # Pages
 # =========================
 @app.get("/", response_class=HTMLResponse)
-def home():
+def page_index():
     return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+
+
+@app.get("/report", response_class=HTMLResponse)
+def page_report():
+    return (STATIC_DIR / "report.html").read_text(encoding="utf-8")
 
 
 @app.get("/favicon.ico")
@@ -567,6 +562,7 @@ def signup(payload: SignupIn):
             (email,),
         ).fetchone()["id"]
 
+        # migrate old data (single-user legacy)
         if before == 0:
             conn.execute("UPDATE weeks SET user_id=? WHERE user_id=0", (uid,))
             conn.execute("UPDATE entries SET user_id=? WHERE user_id=0", (uid,))
@@ -622,7 +618,7 @@ def forgot(payload: ForgotIn, request: Request):
             (email,),
         ).fetchone()
 
-        # Segurança: não revelar se email existe
+        # security: do not reveal if exists
         if not u:
             return {"ok": True}
 
@@ -636,19 +632,16 @@ def forgot(payload: ForgotIn, request: Request):
         )
         conn.commit()
 
-    base = os.environ.get("APP_BASE_URL")
-    if not base:
-        base = str(request.base_url).rstrip("/")
-
+    base = os.environ.get("APP_BASE_URL") or str(request.base_url).rstrip("/")
     reset_link = f"{base}/?reset={raw}"
 
+    # if SMTP not configured, do not break the app
     try:
         send_reset_email(email, reset_link)
-    except Exception as e:
-        # em produção configure SMTP_*; local pode falhar
-        raise HTTPException(500, f"Email not sent: {e}")
-
-    return {"ok": True}
+        return {"ok": True}
+    except Exception:
+        # dev fallback: return link (you can remove later if you want)
+        return {"ok": True, "dev_reset_link": reset_link}
 
 
 @app.post("/api/reset")

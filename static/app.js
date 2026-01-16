@@ -1,8 +1,6 @@
 /* =========================
    Work Hours Tracker - app.js
-   Compatible with your current index.html
 ========================= */
-
 const $ = (id) => document.getElementById(id);
 
 function show(el) { el && el.classList.remove("hidden"); }
@@ -14,9 +12,7 @@ function setMsg(el, text, ok = false) {
   el.textContent = text || "";
 }
 
-function money(x) {
-  return "€" + Number(x || 0).toFixed(2);
-}
+function money(x) { return "€" + Number(x || 0).toFixed(2); }
 
 function minutesToHHMM(totalMin) {
   totalMin = Math.max(0, Number(totalMin || 0));
@@ -67,13 +63,11 @@ function openScreen(name) {
   Object.values(screens).forEach(hide);
   show(screens[name]);
 
-  // bottom nav visibility
   if (name === "auth" || name === "signup" || name === "forgot" || name === "reset") {
     hideBottomNav();
   } else {
     showBottomNav();
   }
-
   setActiveNav(name);
 }
 
@@ -82,10 +76,10 @@ function openScreen(name) {
 ========================= */
 let currentUser = null;
 let currentWeek = null;
-let editingEntry = null; // entry object when editing day
+let editingEntry = null;
 
 /* =========================
-   Remember me (names/email only; no password)
+   Remember me (NO PASSWORD)
 ========================= */
 const LS_REM = {
   enabled: "wh_remember_enabled",
@@ -94,6 +88,13 @@ const LS_REM = {
   email: "wh_remember_email",
 };
 
+function updateCreditVisibility() {
+  const credit = $("credit");
+  if (!credit) return;
+  const enabled = localStorage.getItem(LS_REM.enabled) === "1";
+  credit.style.display = enabled ? "" : "none";
+}
+
 function loadRemember() {
   const cb = $("rememberMe");
   if (!cb) return;
@@ -101,7 +102,6 @@ function loadRemember() {
   const enabled = localStorage.getItem(LS_REM.enabled) === "1";
   cb.checked = enabled;
 
-  // always clear pw on open
   if ($("pw")) $("pw").value = "";
 
   if (enabled) {
@@ -113,6 +113,8 @@ function loadRemember() {
     if ($("ln")) $("ln").value = "";
     if ($("email")) $("email").value = "";
   }
+
+  updateCreditVisibility();
 }
 
 function saveRemember(enabled) {
@@ -130,6 +132,7 @@ function saveRemember(enabled) {
     localStorage.removeItem(LS_REM.ln);
     localStorage.removeItem(LS_REM.email);
   }
+  updateCreditVisibility();
 }
 
 $("rememberMe")?.addEventListener("change", (e) => {
@@ -164,7 +167,6 @@ $("rememberMe")?.addEventListener("change", (e) => {
    Bottom Nav
 ========================= */
 const bottomNav = $("bottomNav");
-
 function showBottomNav() { bottomNav && bottomNav.classList.remove("hidden"); }
 function hideBottomNav() { bottomNav && bottomNav.classList.add("hidden"); }
 
@@ -176,10 +178,9 @@ function setActiveNav(screenName) {
     bh: "bh",
     reports: "reports",
     profile: "profile",
-    weekDetail: "weeks", // treat as weeks tab
+    weekDetail: "weeks",
     dayForm: "weeks",
   };
-
   const activeKey = map[screenName] || null;
   bottomNav.querySelectorAll(".navItem").forEach((b) => {
     const key = b.getAttribute("data-screen");
@@ -232,18 +233,12 @@ $("btnSignUpOpen")?.addEventListener("click", () => {
 
 $("btnForgotOpen")?.addEventListener("click", () => {
   setMsg($("forgotMsg"), "");
-  // prefill forgot email from login if present
   if ($("f_email") && $("email")) $("f_email").value = ($("email").value || "").trim();
   openScreen("forgot");
 });
 
-$("btnSignupBack")?.addEventListener("click", () => {
-  openAuth();
-});
-
-$("btnForgotBack")?.addEventListener("click", () => {
-  openAuth();
-});
+$("btnSignupBack")?.addEventListener("click", () => openAuth());
+$("btnForgotBack")?.addEventListener("click", () => openAuth());
 
 /* =========================
    Auth actions
@@ -259,10 +254,8 @@ function openAuth() {
 $("btnSignIn")?.addEventListener("click", async () => {
   try {
     setMsg($("authMsg"), "");
-
     const remember = $("rememberMe") ? $("rememberMe").checked : false;
 
-    // login payload: prefer email, fallback to fn/ln
     const email = ($("email")?.value || "").trim();
     const first_name = ($("fn")?.value || "").trim();
     const last_name = ($("ln")?.value || "").trim();
@@ -290,7 +283,6 @@ $("btnSignIn")?.addEventListener("click", async () => {
 $("btnSignUp")?.addEventListener("click", async () => {
   try {
     setMsg($("signupMsg"), "");
-
     await api("/api/signup", {
       method: "POST",
       body: JSON.stringify({
@@ -311,25 +303,33 @@ $("btnSignUp")?.addEventListener("click", async () => {
 $("btnForgotSend")?.addEventListener("click", async () => {
   try {
     setMsg($("forgotMsg"), "");
-
     const email = ($("f_email")?.value || "").trim();
     if (!email) throw new Error("Please enter your email.");
 
-    await api("/api/forgot", {
+    const r = await api("/api/forgot", {
       method: "POST",
       body: JSON.stringify({ email }),
     });
 
-    setMsg($("forgotMsg"), "Check your email for the reset link.", true);
+    // if SMTP missing, backend returns dev_reset_link (safe for you now)
+    if (r && r.dev_reset_link) {
+      setMsg($("forgotMsg"), `DEV link: ${r.dev_reset_link}`, true);
+    } else {
+      setMsg($("forgotMsg"), "Check your email for the reset link.", true);
+    }
   } catch (e) {
     setMsg($("forgotMsg"), e.message);
   }
 });
 
+function getResetTokenFromURL() {
+  const params = new URLSearchParams(window.location.search || "");
+  return params.get("reset") || params.get("token") || "";
+}
+
 $("btnResetSave")?.addEventListener("click", async () => {
   try {
     setMsg($("resetMsg"), "");
-
     const token = getResetTokenFromURL();
     if (!token) throw new Error("Missing reset token.");
 
@@ -342,8 +342,6 @@ $("btnResetSave")?.addEventListener("click", async () => {
     });
 
     setMsg($("resetMsg"), "Password updated. Please sign in.", true);
-
-    // after a short moment, go to auth
     setTimeout(() => openAuth(), 800);
   } catch (e) {
     setMsg($("resetMsg"), e.message);
@@ -363,33 +361,21 @@ $("btnProfileLogout")?.addEventListener("click", async () => {
 });
 
 /* =========================
-   URL reset token handling
-   supports ?reset=TOKEN or ?token=TOKEN
-========================= */
-function getResetTokenFromURL() {
-  const params = new URLSearchParams(window.location.search || "");
-  return params.get("reset") || params.get("token") || "";
-}
-
-/* =========================
    HOME
 ========================= */
 async function openHome() {
   openScreen("home");
 
-  // subtitle greeting
+  if (!currentUser) currentUser = await api("/api/me").catch(() => null);
   if (currentUser && $("homeSubtitle")) {
     $("homeSubtitle").textContent = `${currentUser.first_name} ${currentUser.last_name}`;
   }
-
   await refreshHome();
 }
 
 async function refreshHome() {
   try {
-    // Weeks summary
     const weeks = await api("/api/weeks");
-
     let totalPayAll = 0;
     let totalMinAll = 0;
 
@@ -403,33 +389,24 @@ async function refreshHome() {
 
     if ($("homeWeekHours")) $("homeWeekHours").textContent = mostRecent ? (mostRecent.total_hhmm || "00:00") : "00:00";
     if ($("homeWeekPay")) $("homeWeekPay").textContent = mostRecent ? money(mostRecent.total_pay || 0) : money(0);
-
     if ($("homeAllHours")) $("homeAllHours").textContent = minutesToHHMM(totalMinAll);
     if ($("homeAllPay")) $("homeAllPay").textContent = money(totalPayAll);
 
-    // Bank holidays
     const year = new Date().getFullYear();
     const bhs = await api(`/api/bank-holidays/${year}`);
-
     const paid = (bhs || []).filter(x => x.paid).length;
     const toTake = (bhs || []).length - paid;
 
-    // your IDs:
     if ($("homeBHToTake")) $("homeBHToTake").textContent = `${toTake} to take`;
     if ($("homeBHPaid")) $("homeBHPaid").textContent = `${paid} paid`;
-
   } catch (e) {
-    // optional placeholder: you didn't add homeMsg, so do nothing
     console.error(e);
   }
 }
 
-/* Quick actions on Home */
+/* Quick actions */
 $("goWeeks")?.addEventListener("click", () => openWeeks());
-$("goNewWeek")?.addEventListener("click", async () => {
-  await openWeeks();
-  show($("newWeekBox"));
-});
+$("goNewWeek")?.addEventListener("click", async () => { await openWeeks(); show($("newWeekBox")); });
 $("goBH")?.addEventListener("click", () => openBH());
 $("goReports")?.addEventListener("click", () => openReports());
 
@@ -448,14 +425,11 @@ $("btnNewWeek")?.addEventListener("click", () => {
   setMsg($("weekMsg"), "");
 });
 
-$("btnCancelWeek")?.addEventListener("click", () => {
-  hide($("newWeekBox"));
-});
+$("btnCancelWeek")?.addEventListener("click", () => hide($("newWeekBox")));
 
 $("btnCreateWeek")?.addEventListener("click", async () => {
   try {
     setMsg($("weekMsg"), "");
-
     const week_number = Number($("newWeekNumber")?.value);
     const start_date = $("newStartDate")?.value;
     const hourly_rate = Number($("newRate")?.value);
@@ -568,7 +542,6 @@ function renderEntries(entries) {
   if (!tb) return;
 
   tb.innerHTML = "";
-
   if (!entries.length) {
     tb.innerHTML = `<tr><td colspan="8" class="muted">No days yet.</td></tr>`;
     return;
@@ -589,20 +562,15 @@ function renderEntries(entries) {
       <td>${e.note || ""}</td>
     `;
 
-    // tap to edit
     tr.addEventListener("click", () => openDayFormEdit(e));
     tb.appendChild(tr);
   }
 }
 
 /* =========================
-   DAY FORM (Add/Edit screen)
-   Uses your existing IDs:
-   workDate, timeIn, timeOut, breakMin, note, bhPaid, btnSaveDay, dayMsg
+   DAY FORM
 ========================= */
-$("btnDayBack")?.addEventListener("click", () => {
-  openScreen("weekDetail");
-});
+$("btnDayBack")?.addEventListener("click", () => openScreen("weekDetail"));
 
 $("btnSaveDay")?.addEventListener("click", async () => {
   try {
@@ -624,7 +592,6 @@ $("btnSaveDay")?.addEventListener("click", async () => {
     });
 
     setMsg($("dayMsg"), "Saved.", true);
-
     await loadWeek(currentWeek.id);
     openScreen("weekDetail");
   } catch (e) {
@@ -638,7 +605,6 @@ $("btnDeleteDay")?.addEventListener("click", async () => {
     if (!confirm("Delete this day?")) return;
 
     await api(`/api/entries/${editingEntry.id}`, { method: "DELETE" });
-
     await loadWeek(currentWeek.id);
     openScreen("weekDetail");
   } catch (e) {
@@ -671,7 +637,6 @@ function fillDayForm(entry) {
   if ($("breakMin")) $("breakMin").value = String(entry?.break_minutes ?? 0);
   if ($("note")) $("note").value = entry?.note || "";
 
-  // bhPaid select: Auto / Paid / Not paid
   if ($("bhPaid")) {
     $("bhPaid").value =
       entry?.bh_paid === true ? "true" :
@@ -680,7 +645,7 @@ function fillDayForm(entry) {
 }
 
 /* =========================
-   BANK HOLIDAYS screen (screenBH)
+   BANK HOLIDAYS
 ========================= */
 async function openBH() {
   openScreen("bh");
@@ -722,7 +687,6 @@ async function loadBH() {
         method: "PATCH",
         body: JSON.stringify({ paid }),
       });
-      // refresh home counters if user goes back later
     };
 
     list.appendChild(div);
@@ -742,8 +706,8 @@ async function fillReportSelect() {
   if (!sel) return;
 
   sel.innerHTML = "";
-
   const weeks = await api("/api/weeks");
+
   if (!weeks.length) {
     const opt = document.createElement("option");
     opt.value = "";
@@ -761,10 +725,8 @@ async function fillReportSelect() {
 }
 
 $("btnOpenReport")?.addEventListener("click", () => {
-  const sel = $("reportWeekSelect");
-  const weekId = sel?.value;
+  const weekId = $("reportWeekSelect")?.value;
   if (!weekId) return;
-
   window.open(`/report?week_id=${encodeURIComponent(weekId)}`, "_blank");
 });
 
@@ -773,10 +735,8 @@ $("btnOpenReport")?.addEventListener("click", () => {
 ========================= */
 async function openProfile() {
   openScreen("profile");
-
   try {
     if (!currentUser) currentUser = await api("/api/me");
-
     if ($("profileSub")) $("profileSub").textContent = "Account details";
     if ($("profileName")) $("profileName").textContent = `${currentUser.first_name} ${currentUser.last_name}`;
     if ($("profileEmail")) $("profileEmail").textContent = currentUser.email ? currentUser.email : "—";
@@ -796,7 +756,8 @@ if ("serviceWorker" in navigator) {
    Boot
 ========================= */
 async function boot() {
-  // If opened from reset link (?reset=TOKEN), show reset screen
+  updateCreditVisibility();
+
   const token = getResetTokenFromURL();
   if (token) {
     openScreen("reset");

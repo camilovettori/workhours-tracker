@@ -4,29 +4,37 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Report</title>
+
   <style>
-    body{font-family:system-ui,Arial;margin:20px}
-    h1{margin:0 0 6px}
-    .muted{color:#64748b}
-    table{width:100%;border-collapse:collapse;margin-top:16px}
-    th,td{border-bottom:1px solid #e5e7eb;padding:10px;text-align:left;font-size:13px}
-    th{background:#f8fafc}
-    .pill{display:inline-block;background:#eef2ff;padding:6px 10px;border-radius:999px;font-weight:800;font-size:12px;margin-top:8px}
-    .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
-    @media print{
-      button{display:none}
-      body{margin:0}
-    }
+    :root{--text:#0f172a;--muted:#64748b;--line:#e5e7eb;--chip:#eef2ff;}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:20px;color:var(--text);}
+    .top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:12px;}
+    .brand{display:flex;gap:12px;align-items:center;min-width:260px;}
+    .brand img{width:46px;height:46px;border-radius:12px;border:1px solid var(--line);background:#fff;object-fit:cover;}
+    h1{margin:0 0 4px;font-size:22px;line-height:1.2;}
+    .muted{color:var(--muted);font-size:13px}
+    .pill{display:inline-block;background:var(--chip);padding:6px 10px;border-radius:999px;font-weight:800;font-size:12px;margin-top:8px;}
+    button{border:0;cursor:pointer;border-radius:12px;padding:10px 12px;font-weight:800;background:#0b1220;color:#fff;}
+    table{width:100%;border-collapse:collapse;margin-top:12px;}
+    th,td{border-bottom:1px solid var(--line);padding:10px;text-align:left;font-size:13px;vertical-align:top;}
+    th{background:#f8fafc;color:#334155;font-weight:900;}
+    .errorBox{border:1px solid var(--line);border-radius:14px;padding:14px;background:#fff;}
+    @media print{button{display:none}body{margin:0}th{background:#fff}}
   </style>
 </head>
+
 <body>
   <div class="top">
-    <div>
-      <h1 id="t">Work Hours Report</h1>
-      <div id="m" class="muted"></div>
-      <div id="p" class="pill"></div>
+    <div class="brand">
+      <img src="/static/logo.png" alt="Logo" onerror="this.style.display='none'">
+      <div>
+        <h1 id="t">Work Hours Report</h1>
+        <div id="m" class="muted"></div>
+        <div id="p" class="pill"></div>
+      </div>
     </div>
-    <button onclick="window.print()">Print</button>
+
+    <button onclick="window.print()">Print / Save PDF</button>
   </div>
 
   <table>
@@ -41,38 +49,66 @@
   <script>
     const params = new URLSearchParams(location.search);
     const week_id = params.get("week_id");
+
     async function api(path){
       const res = await fetch(path, { credentials:"include" });
-      const data = await res.json();
-      if(!res.ok) throw new Error(data.detail || "Error");
+      const ct = res.headers.get("content-type") || "";
+      const data = ct.includes("application/json")
+        ? await res.json().catch(()=>null)
+        : await res.text().catch(()=>null);
+
+      if(!res.ok){
+        const msg = (data && data.detail) ? data.detail : (typeof data === "string" ? data : "Error");
+        throw new Error(msg);
+      }
       return data;
     }
 
+    function showError(msg){
+      document.body.innerHTML = `
+        <div class="errorBox">
+          <h2 style="margin:0 0 8px">Report error</h2>
+          <div class="muted">${msg}</div>
+          <div class="muted" style="margin-top:10px">Example: <b>/report?week_id=3</b></div>
+        </div>
+      `;
+    }
+
     (async () => {
-      const w = await api(`/api/weeks/${week_id}`);
+      if(!week_id){
+        showError("Missing week_id in the URL.");
+        return;
+      }
+
+      const w = await api(`/api/weeks/${encodeURIComponent(week_id)}`);
+
       document.getElementById("t").textContent = `Week ${w.week_number} Report`;
-      document.getElementById("m").textContent = `Start: ${w.start_date} • Rate: €${w.hourly_rate.toFixed(2)}`;
-      document.getElementById("p").textContent = `Total ${w.totals.total_hhmm} • €${w.totals.total_pay.toFixed(2)}`;
+      document.getElementById("m").textContent = `Start: ${w.start_date} • Rate: €${Number(w.hourly_rate).toFixed(2)}`;
+      document.getElementById("p").textContent = `Total ${w.totals.total_hhmm} • €${Number(w.totals.total_pay).toFixed(2)}`;
 
       const tb = document.getElementById("b");
       tb.innerHTML = "";
+
+      if(!w.entries || !w.entries.length){
+        tb.innerHTML = `<tr><td colspan="8" class="muted">No days in this week.</td></tr>`;
+        return;
+      }
+
       for(const e of w.entries){
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td><b>${e.weekday}</b></td>
-          <td>${e.date_ddmmyyyy}</td>
+          <td><b>${e.weekday || ""}</b></td>
+          <td>${e.date_ddmmyyyy || ""}</td>
           <td>${e.time_in || ""}</td>
           <td>${e.time_out || ""}</td>
-          <td>${e.break_minutes}m</td>
-          <td><b>${e.worked_hhmm}</b></td>
+          <td>${(e.break_minutes ?? 0)}m</td>
+          <td><b>${e.worked_hhmm || ""}</b></td>
           <td>${e.multiplier === 1.5 ? "YES" : ""}</td>
           <td>${e.note || ""}</td>
         `;
         tb.appendChild(tr);
       }
-    })().catch(err => {
-      document.body.innerHTML = "<h2>Error</h2><pre>"+String(err)+"</pre>";
-    });
+    })().catch(err => showError(String(err)));
   </script>
 </body>
 </html>

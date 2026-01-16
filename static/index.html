@@ -29,7 +29,6 @@
         <div class="auth-title">Work Hours Tracker</div>
         <div class="auth-sub">Sign in to continue</div>
 
-        <!-- Login can use email OR names -->
         <div class="field">
           <label>Email (recommended)</label>
           <input id="email" type="email" autocomplete="email" placeholder="you@email.com">
@@ -63,7 +62,7 @@
         </div>
 
         <div id="authMsg" class="msg"></div>
-        <div class="credit">Developed by Camilo Vettori</div>
+        <div id="credit" class="credit">Developed by Camilo Vettori</div>
       </div>
     </section>
 
@@ -223,7 +222,7 @@
       </div>
     </section>
 
-    <!-- SCREEN: WEEK DETAIL (LIST FIRST) -->
+    <!-- SCREEN: WEEK DETAIL -->
     <section id="screenWeekDetail" class="screen hidden">
       <div class="pageHead">
         <button id="btnBackWeeks" class="btn secondary">← Weeks</button>
@@ -263,14 +262,7 @@
           <table class="table">
             <thead>
               <tr>
-                <th>Day</th>
-                <th>Date</th>
-                <th>In</th>
-                <th>Out</th>
-                <th>Break</th>
-                <th>Worked</th>
-                <th>1.5x</th>
-                <th>Note</th>
+                <th>Day</th><th>Date</th><th>In</th><th>Out</th><th>Break</th><th>Worked</th><th>1.5x</th><th>Note</th>
               </tr>
             </thead>
             <tbody id="entriesBody"></tbody>
@@ -281,7 +273,7 @@
       </div>
     </section>
 
-    <!-- SCREEN: DAY FORM (ADD/EDIT) -->
+    <!-- SCREEN: DAY FORM -->
     <section id="screenDayForm" class="screen hidden">
       <div class="pageHead">
         <button id="btnDayBack" class="btn secondary">← Back</button>
@@ -292,29 +284,14 @@
 
       <div class="card">
         <div class="grid">
-          <div class="field">
-            <label>Date</label>
-            <input id="workDate" type="date">
-          </div>
-          <div class="field">
-            <label>Time in</label>
-            <input id="timeIn" type="time">
-          </div>
-          <div class="field">
-            <label>Time out</label>
-            <input id="timeOut" type="time">
-          </div>
-          <div class="field">
-            <label>Break (min)</label>
-            <input id="breakMin" type="number" min="0" step="5" value="0">
-          </div>
+          <div class="field"><label>Date</label><input id="workDate" type="date"></div>
+          <div class="field"><label>Time in</label><input id="timeIn" type="time"></div>
+          <div class="field"><label>Time out</label><input id="timeOut" type="time"></div>
+          <div class="field"><label>Break (min)</label><input id="breakMin" type="number" min="0" step="5" value="0"></div>
         </div>
 
         <div class="grid">
-          <div class="field">
-            <label>Note</label>
-            <input id="note" type="text" placeholder="Bank holiday / short shift / etc">
-          </div>
+          <div class="field"><label>Note</label><input id="note" type="text" placeholder="Bank holiday / short shift / etc"></div>
           <div class="field">
             <label>Bank holiday paid?</label>
             <select id="bhPaid">
@@ -361,9 +338,7 @@
           <select id="reportWeekSelect"></select>
         </div>
         <button id="btnOpenReport" class="btn primary" style="width:100%">Open report</button>
-        <div class="muted" style="margin-top:10px">
-          Tip: use your browser Print to PDF.
-        </div>
+        <div class="muted" style="margin-top:10px">Tip: use your browser Print to PDF.</div>
       </div>
     </section>
 
@@ -387,7 +362,6 @@
 
   </main>
 
-  <!-- Bottom Nav -->
   <nav id="bottomNav" class="bottomNav hidden">
     <button class="navItem" data-screen="home">Home</button>
     <button class="navItem" data-screen="weeks">Weeks</button>
