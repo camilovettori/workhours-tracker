@@ -4,10 +4,19 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Work Hours Tracker</title>
+
   <link rel="manifest" href="/static/manifest.webmanifest">
   <link rel="stylesheet" href="/static/app.css">
 </head>
+
 <body>
+  <!-- VIDEO DE ABERTURA -->
+  <div id="introContainer">
+    <video id="introVideo" autoplay muted playsinline preload="auto">
+      <source src="/static/intro.mp4" type="video/mp4">
+    </video>
+  </div>
+
   <header class="topbar">
     <div class="topbar-left">
       <div class="top-title">Work Hours Tracker</div>
@@ -216,7 +225,7 @@
             </div>
           </div>
 
-          <!-- ✅ Bank Holiday tracker (SÓ UM bhBox agora) -->
+          <!-- ✅ Bank Holiday tracker -->
           <div id="bhBox" class="bh-drawer hidden">
             <div class="row between">
               <div>
@@ -248,7 +257,6 @@
 
   <script src="/static/app.js"></script>
 
-  <!-- ✅ optional: tiny CSS for remember row (or add to app.css) -->
   <style>
     .remember-row{
       display:flex;

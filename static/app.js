@@ -51,7 +51,7 @@ function saveRemember(enabled){
 // ---------- LOGO (guaranteed, but safe if element missing) ----------
 (function loadLogo(){
   const img = $("appLogo");
-  if(!img) return; // <-- important: don't crash if missing
+  if(!img) return;
 
   const candidates = ["/static/logo.png", "/static/tesco.png"];
   let idx = 0;
@@ -81,7 +81,6 @@ async function api(path, options={}){
     : await res.text().catch(()=>null);
 
   if(!res.ok){
-    // custom message for wrong password (401)
     if(res.status === 401){
       throw new Error("Password incorreto seu Burro :)");
     }
@@ -119,7 +118,7 @@ function openAuth(){
   currentWeek = null;
   show(screenAuth); hide(screenWeeks); hide(screenWeekDetail);
   setMsg(authMsg, "");
-  loadRemember(); // <-- load remembered names when opening auth
+  loadRemember();
 }
 
 async function openWeeks(){
@@ -148,11 +147,10 @@ $("btnSignIn").onclick = async () => {
         first_name: $("fn").value.trim(),
         last_name: $("ln").value.trim(),
         password: $("pw").value,
-        remember // <-- send to backend (needs backend support)
+        remember
       })
     });
 
-    // remember only names (not password)
     saveRemember(remember);
 
     $("btnLogout").classList.remove("hidden");
@@ -424,6 +422,24 @@ async function loadBH(){
 if("serviceWorker" in navigator){
   navigator.serviceWorker.register("/static/sw.js").catch(()=>{});
 }
+
+// ---------- INTRO VIDEO (SÓ ESSE BLOCO) ----------
+(function introVideo(){
+  const introEl = document.getElementById("introContainer");
+  const videoEl = document.getElementById("introVideo");
+
+  function hideIntro(){
+    if(introEl) introEl.style.display = "none";
+  }
+
+  if(introEl && videoEl){
+    videoEl.addEventListener("ended", hideIntro);
+    videoEl.addEventListener("error", hideIntro);
+
+    // segurança: se autoplay falhar, some em 4s
+    setTimeout(hideIntro, 4000);
+  }
+})();
 
 // start
 boot();
