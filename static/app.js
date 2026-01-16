@@ -83,7 +83,7 @@ async function api(path, options={}){
   if(!res.ok){
     // custom message for wrong password (401)
     if(res.status === 401){
-      throw new Error("Password incorreto.");
+      throw new Error("Password incorreto seu Burro :)");
     }
     const msg = (data && data.detail) ? data.detail : (typeof data === "string" ? data : `Error ${res.status}`);
     throw new Error(msg);
