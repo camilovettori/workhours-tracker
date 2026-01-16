@@ -16,11 +16,18 @@ from pydantic import BaseModel, Field
 
 
 # =========================
-# Paths / App
+# Paths / App (PERSISTENTE)
 # =========================
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
-DB_PATH = BASE_DIR / "workhours.db"
+
+# Em produção (Render), configure DATA_DIR=/var/data (disk)
+DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR)))
+
+# garante que a pasta existe (principalmente /var/data no Render)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+DB_PATH = DATA_DIR / "workhours.db"
 
 APP_SECRET = os.environ.get("WORKHOURS_SECRET", "dev-secret-change-me").encode("utf-8")
 COOKIE_AGE = 90 * 24 * 60 * 60  # 90 days
@@ -32,6 +39,8 @@ if not STATIC_DIR.exists():
 
 # Serve /static/*
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+print("DB PATH:", DB_PATH)  # <- log útil (local e produção)
 
 
 # =========================
@@ -189,7 +198,6 @@ def verify_session_token(token: str) -> Optional[int]:
         payload = f"{user_id}.{ts}.{rnd}"
         if not hmac.compare_digest(sig, sign_token(payload)):
             return None
-        # 90 days validation
         if datetime.utcnow().timestamp() - int(ts) > 90 * 24 * 3600:
             return None
         return int(user_id)
@@ -342,7 +350,7 @@ class LoginIn(BaseModel):
     first_name: str = Field(min_length=1, max_length=40)
     last_name: str = Field(min_length=1, max_length=40)
     password: str = Field(min_length=4, max_length=120)
-    remember: bool = False  # ✅ IMPORTANT
+    remember: bool = False
 
 
 class ForgotIn(BaseModel):
@@ -367,7 +375,7 @@ class EntryUpsert(BaseModel):
     time_out: Optional[str] = None
     break_minutes: int = Field(ge=0, le=600)
     note: Optional[str] = None
-    bh_paid: Optional[bool] = None  # tracker
+    bh_paid: Optional[bool] = None
 
 
 class BhPaidPatch(BaseModel):
@@ -383,7 +391,6 @@ def entry_minutes(e: sqlite3.Row) -> int:
 
 
 def multiplier(d: date, was_bh: bool) -> float:
-    # Sunday OR Bank Holiday => 1.5x
     if d.weekday() == 6 or was_bh:
         return 1.5
     return 1.0
@@ -506,7 +513,6 @@ def signup(payload: SignupIn):
             (fn, ln),
         ).fetchone()["id"]
 
-        # bind legacy data to first user
         if before == 0:
             conn.execute("UPDATE weeks SET user_id=? WHERE user_id=0", (uid,))
             conn.execute("UPDATE entries SET user_id=? WHERE user_id=0", (uid,))
@@ -515,7 +521,6 @@ def signup(payload: SignupIn):
 
     token = make_session_token(int(uid))
     resp = JSONResponse({"ok": True})
-    # signup: keep session cookie (you can change to max_age if you want)
     resp.set_cookie("wh_session", token, httponly=True, samesite="lax")
     return resp
 
@@ -540,7 +545,6 @@ def login(payload: LoginIn):
     token = make_session_token(int(u["id"]))
     resp = JSONResponse({"ok": True})
 
-    # ✅ Remember me: persistent cookie
     if payload.remember:
         resp.set_cookie("wh_session", token, httponly=True, samesite="lax", max_age=COOKIE_AGE)
     else:

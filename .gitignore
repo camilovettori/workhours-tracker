@@ -1,0 +1,7 @@
+*.exe
+__pycache__/
+.env
+workhours.db
+workhours.db-*
+__pycache__/
+*.pyc
