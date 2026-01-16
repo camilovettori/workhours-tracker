@@ -45,6 +45,12 @@
           <input id="pw" type="password" autocomplete="current-password" placeholder="••••••••">
         </div>
 
+        <!-- ✅ Remember me -->
+        <label class="remember-row">
+          <input type="checkbox" id="rememberMe">
+          <span>Remember me</span>
+        </label>
+
         <div class="auth-actions">
           <button id="btnSignIn" class="btn primary">Sign in</button>
           <button id="btnSignUp" class="btn dark">Sign up</button>
@@ -99,175 +105,161 @@
 
     <!-- SCREEN: WEEK DETAIL -->
     <section id="screenWeekDetail" class="screen hidden">
+      <div class="week-layout">
 
-  <div class="week-layout">
+        <!-- LEFT PANEL -->
+        <div class="week-left">
+          <div class="card">
+            <div class="row between">
+              <div>
+                <button id="btnBack" class="btn secondary">← Back</button>
+              </div>
+              <div class="row gap">
+                <button id="btnReport" class="btn dark">Report / Print</button>
+                <button id="btnDeleteWeek" class="btn danger">Delete week</button>
+              </div>
+            </div>
 
-    <!-- LEFT PANEL -->
-    <div class="week-left">
-      <div class="card">
-        <div class="row between">
-          <div>
-            <button id="btnBack" class="btn secondary">← Back</button>
-          </div>
-          <div class="row gap">
-            <button id="btnReport" class="btn dark">Report / Print</button>
-            <button id="btnDeleteWeek" class="btn danger">Delete week</button>
+            <div class="week-head">
+              <div class="h2" id="weekTitle">Week</div>
+              <div class="muted" id="weekMeta">—</div>
+              <div class="pill" id="weekTotals">Total 00:00 • €0.00</div>
+            </div>
+
+            <div class="grid">
+              <div class="field">
+                <label>Hourly rate (€)</label>
+                <input id="rateEdit" type="number" step="0.01" min="0">
+              </div>
+              <div class="field">
+                <label>&nbsp;</label>
+                <button id="btnSaveRate" class="btn secondary">Save rate</button>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="week-head">
-          <div class="h2" id="weekTitle">Week</div>
-          <div class="muted" id="weekMeta">—</div>
-          <div class="pill" id="weekTotals">Total 00:00 • €0.00</div>
+        <!-- MAIN CONTENT -->
+        <div class="week-main">
+
+          <div class="card">
+            <div class="h2">Add / update day</div>
+            <div class="grid">
+              <div class="field">
+                <label>Date</label>
+                <input id="workDate" type="date">
+              </div>
+              <div class="field">
+                <label>Time in</label>
+                <input id="timeIn" type="time">
+              </div>
+              <div class="field">
+                <label>Time out</label>
+                <input id="timeOut" type="time">
+              </div>
+              <div class="field">
+                <label>Break (min)</label>
+                <input id="breakMin" type="number" min="0" step="5" value="0">
+              </div>
+            </div>
+
+            <div class="grid">
+              <div class="field">
+                <label>Note</label>
+                <input id="note" type="text" placeholder="Bank holiday / short shift / etc">
+              </div>
+              <div class="field">
+                <label>Bank holiday paid?</label>
+                <select id="bhPaid">
+                  <option value="">Auto</option>
+                  <option value="true">Paid</option>
+                  <option value="false">Not paid</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>&nbsp;</label>
+                <button id="btnSaveDay" class="btn primary">Save day</button>
+              </div>
+            </div>
+
+            <div id="entryMsg" class="msg"></div>
+          </div>
+
+          <div class="card">
+            <div class="row between">
+              <div>
+                <div class="h2">Days</div>
+                <div class="muted">Sunday/Bank Holiday are 1.5x automatically.</div>
+              </div>
+              <div class="row gap">
+                <button id="btnOpenBH" class="btn secondary">Bank holidays</button>
+              </div>
+            </div>
+
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Day</th>
+                    <th>Date</th>
+                    <th>In</th>
+                    <th>Out</th>
+                    <th>Break</th>
+                    <th>Worked</th>
+                    <th>1.5x</th>
+                    <th>Note</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="entriesBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ✅ Bank Holiday tracker (SÓ UM bhBox agora) -->
+          <div id="bhBox" class="bh-drawer hidden">
+            <div class="row between">
+              <div>
+                <div class="h2">Bank Holiday tracker</div>
+                <div class="muted">Mark if Tesco paid it when you requested.</div>
+              </div>
+              <button id="btnCloseBH" class="btn secondary">Close</button>
+            </div>
+
+            <div class="grid">
+              <div class="field">
+                <label>Year</label>
+                <input id="bhYear" type="number" min="2020" max="2100">
+              </div>
+              <div class="field">
+                <label>&nbsp;</label>
+                <button id="btnLoadBH" class="btn primary">Load</button>
+              </div>
+            </div>
+
+            <div id="bhList" class="list"></div>
+          </div>
+
         </div>
-
-        <div class="grid">
-          <div class="field">
-            <label>Hourly rate (€)</label>
-            <input id="rateEdit" type="number" step="0.01" min="0">
-          </div>
-          <div class="field">
-            <label>&nbsp;</label>
-            <button id="btnSaveRate" class="btn secondary">Save rate</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- MAIN CONTENT -->
-    <div class="week-main">
-
-      <div class="card">
-        <div class="h2">Add / update day</div>
-        <div class="grid">
-          <div class="field">
-            <label>Date</label>
-            <input id="workDate" type="date">
-          </div>
-          <div class="field">
-            <label>Time in</label>
-            <input id="timeIn" type="time">
-          </div>
-          <div class="field">
-            <label>Time out</label>
-            <input id="timeOut" type="time">
-          </div>
-          <div class="field">
-            <label>Break (min)</label>
-            <input id="breakMin" type="number" min="0" step="5" value="0">
-          </div>
-        </div>
-
-        <div class="grid">
-          <div class="field">
-            <label>Note</label>
-            <input id="note" type="text" placeholder="Bank holiday / short shift / etc">
-          </div>
-          <div class="field">
-            <label>Bank holiday paid?</label>
-            <select id="bhPaid">
-              <option value="">Auto</option>
-              <option value="true">Paid</option>
-              <option value="false">Not paid</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>&nbsp;</label>
-            <button id="btnSaveDay" class="btn primary">Save day</button>
-          </div>
-        </div>
-
-        <div id="entryMsg" class="msg"></div>
-      </div>
-
-      <div class="card">
-        <div class="row between">
-          <div>
-            <div class="h2">Days</div>
-            <div class="muted">Sunday/Bank Holiday are 1.5x automatically.</div>
-          </div>
-          <div class="row gap">
-            <button id="btnOpenBH" class="btn secondary">Bank holidays</button>
-          </div>
-        </div>
-
-        <div class="table-wrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Day</th>
-                <th>Date</th>
-                <th>In</th>
-                <th>Out</th>
-                <th>Break</th>
-                <th>Worked</th>
-                <th>1.5x</th>
-                <th>Note</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="entriesBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Bank Holiday tracker: becomes a drawer/panel inside main -->
-      <div id="bhBox" class="bh-drawer hidden">
-        <div class="row between">
-          <div>
-            <div class="h2">Bank Holiday tracker</div>
-            <div class="muted">Mark if Tesco paid it when you requested.</div>
-          </div>
-          <button id="btnCloseBH" class="btn secondary">Close</button>
-        </div>
-
-        <div class="grid">
-          <div class="field">
-            <label>Year</label>
-            <input id="bhYear" type="number" min="2020" max="2100">
-          </div>
-          <div class="field">
-            <label>&nbsp;</label>
-            <button id="btnLoadBH" class="btn primary">Load</button>
-          </div>
-        </div>
-
-        <div id="bhList" class="list"></div>
-      </div>
-
-    </div>
-  </div>
-</section>
-
-
-      <!-- Bank Holiday Tracker -->
-      <div id="bhBox" class="card hidden">
-        <div class="row between">
-          <div>
-            <div class="h2">Bank Holiday tracker</div>
-            <div class="muted">Mark if Tesco paid it when you requested.</div>
-          </div>
-          <button id="btnCloseBH" class="btn secondary">Close</button>
-        </div>
-
-        <div class="grid">
-          <div class="field">
-            <label>Year</label>
-            <input id="bhYear" type="number" min="2020" max="2100">
-          </div>
-          <div class="field">
-            <label>&nbsp;</label>
-            <button id="btnLoadBH" class="btn primary">Load</button>
-          </div>
-        </div>
-
-        <div id="bhList" class="list"></div>
       </div>
     </section>
 
   </main>
 
   <script src="/static/app.js"></script>
+
+  <!-- ✅ optional: tiny CSS for remember row (or add to app.css) -->
+  <style>
+    .remember-row{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      margin:10px 0 0 0;
+      color:#111827;
+      font-size:14px;
+      user-select:none;
+    }
+    .remember-row input{ width:16px; height:16px; }
+  </style>
 </body>
 </html>
-

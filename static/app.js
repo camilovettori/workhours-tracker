@@ -11,16 +11,53 @@ const entryMsg = $("entryMsg");
 let currentUser = null;
 let currentWeek = null;
 
-// ---------- LOGO (guaranteed) ----------
+// ---------- Remember Me (store only names, NEVER password) ----------
+const LS_REM = {
+  enabled: "wh_remember_enabled",
+  fn: "wh_remember_fn",
+  ln: "wh_remember_ln"
+};
+
+function loadRemember(){
+  const cb = $("rememberMe");
+  if(!cb) return;
+
+  const enabled = localStorage.getItem(LS_REM.enabled) === "1";
+  cb.checked = enabled;
+
+  if(enabled){
+    const fn = localStorage.getItem(LS_REM.fn) || "";
+    const ln = localStorage.getItem(LS_REM.ln) || "";
+    if($("fn")) $("fn").value = fn;
+    if($("ln")) $("ln").value = ln;
+  }
+}
+
+function saveRemember(enabled){
+  const cb = $("rememberMe");
+  if(!cb) return;
+
+  if(enabled){
+    localStorage.setItem(LS_REM.enabled, "1");
+    localStorage.setItem(LS_REM.fn, ($("fn")?.value || "").trim());
+    localStorage.setItem(LS_REM.ln, ($("ln")?.value || "").trim());
+  }else{
+    localStorage.setItem(LS_REM.enabled, "0");
+    localStorage.removeItem(LS_REM.fn);
+    localStorage.removeItem(LS_REM.ln);
+  }
+}
+
+// ---------- LOGO (guaranteed, but safe if element missing) ----------
 (function loadLogo(){
   const img = $("appLogo");
-  // tries logo.png first, then tesco.png
+  if(!img) return; // <-- important: don't crash if missing
+
   const candidates = ["/static/logo.png", "/static/tesco.png"];
   let idx = 0;
 
   function tryNext(){
     if(idx >= candidates.length){
-      // fallback: hide box if no image exists
       img.style.display = "none";
       return;
     }
@@ -37,9 +74,17 @@ async function api(path, options={}){
     credentials: "include",
     ...options
   });
+
   const ct = res.headers.get("content-type") || "";
-  const data = ct.includes("application/json") ? await res.json().catch(()=>null) : await res.text().catch(()=>null);
+  const data = ct.includes("application/json")
+    ? await res.json().catch(()=>null)
+    : await res.text().catch(()=>null);
+
   if(!res.ok){
+    // custom message for wrong password (401)
+    if(res.status === 401){
+      throw new Error("Password incorreto.");
+    }
     const msg = (data && data.detail) ? data.detail : (typeof data === "string" ? data : `Error ${res.status}`);
     throw new Error(msg);
   }
@@ -50,6 +95,7 @@ function show(el){ el.classList.remove("hidden"); }
 function hide(el){ el.classList.add("hidden"); }
 
 function setMsg(el, text, ok=false){
+  if(!el) return;
   el.style.color = ok ? "#15803d" : "#b91c1c";
   el.textContent = text || "";
 }
@@ -61,10 +107,10 @@ function money(x){
 async function boot(){
   try{
     currentUser = await api("/api/me");
-    $("btnLogout").classList.remove("hidden");
+    $("btnLogout")?.classList.remove("hidden");
     await openWeeks();
   }catch(_){
-    $("btnLogout").classList.add("hidden");
+    $("btnLogout")?.classList.add("hidden");
     openAuth();
   }
 }
@@ -73,6 +119,7 @@ function openAuth(){
   currentWeek = null;
   show(screenAuth); hide(screenWeeks); hide(screenWeekDetail);
   setMsg(authMsg, "");
+  loadRemember(); // <-- load remembered names when opening auth
 }
 
 async function openWeeks(){
@@ -92,14 +139,22 @@ async function openWeekDetail(weekId){
 $("btnSignIn").onclick = async () => {
   try{
     setMsg(authMsg, "");
+
+    const remember = $("rememberMe") ? $("rememberMe").checked : false;
+
     await api("/api/login", {
       method:"POST",
       body: JSON.stringify({
         first_name: $("fn").value.trim(),
         last_name: $("ln").value.trim(),
-        password: $("pw").value
+        password: $("pw").value,
+        remember // <-- send to backend (needs backend support)
       })
     });
+
+    // remember only names (not password)
+    saveRemember(remember);
+
     $("btnLogout").classList.remove("hidden");
     await openWeeks();
   }catch(e){
@@ -263,7 +318,6 @@ $("btnSaveDay").onclick = async () => {
     });
 
     setMsg(entryMsg, "Saved.", true);
-    // clear small fields
     $("timeIn").value = "";
     $("timeOut").value = "";
     $("breakMin").value = "0";

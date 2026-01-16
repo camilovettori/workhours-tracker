@@ -7,7 +7,7 @@ import secrets
 import sqlite3
 from pathlib import Path
 from datetime import datetime, date, timedelta
-from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -23,39 +23,32 @@ STATIC_DIR = BASE_DIR / "static"
 DB_PATH = BASE_DIR / "workhours.db"
 
 APP_SECRET = os.environ.get("WORKHOURS_SECRET", "dev-secret-change-me").encode("utf-8")
+COOKIE_AGE = 90 * 24 * 60 * 60  # 90 days
 
-app = FastAPI(title="Work Hours Tracker", version="4.0")
+app = FastAPI(title="Work Hours Tracker", version="4.1")
 
 if not STATIC_DIR.exists():
     raise RuntimeError(f"Missing folder: {STATIC_DIR}")
 
+# Serve /static/*
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-from fastapi.responses import FileResponse
-
-@app.get("/app.js")
-def app_js():
-    return FileResponse(STATIC_DIR / "app.js")
-
-@app.get("/app.css")
-def app_css():
-    return FileResponse(STATIC_DIR / "app.css")
-
-@app.get("/sw.js")
-def sw_js():
-    return FileResponse(STATIC_DIR / "sw.js")
-
-@app.get("/manifest.webmanifest")
-def manifest():
-    return FileResponse(STATIC_DIR / "manifest.webmanifest")
-
 
 
 # =========================
 # DB helpers + migrations
 # =========================
 def db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    """
+    More robust SQLite connection for PWA/mobile usage.
+    - timeout: avoid 'database is locked'
+    - WAL: better concurrency
+    - check_same_thread False: safer in async server contexts
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA foreign_keys=ON;")
     return conn
 
 
@@ -85,8 +78,8 @@ def add_col_if_missing(conn: sqlite3.Connection, table: str, col: str, ddl: str)
 
 def init_db() -> None:
     """
-    Creates tables if missing AND migrates older DBs that don't have user_id columns.
-    Legacy rows will be assigned user_id=0 until first signup, then we bind them to the first user.
+    Creates tables if missing + migrates older DBs.
+    Legacy rows user_id=0 until first signup binds them to first user.
     """
     with db() as conn:
         # users
@@ -142,18 +135,15 @@ def init_db() -> None:
         );
         """)
 
-        # ---- MIGRATIONS for older DBs ----
-        # if user_id columns didn't exist previously, add them (safe)
+        # ---- MIGRATIONS (safe) ----
         add_col_if_missing(conn, "weeks", "user_id", "INTEGER NOT NULL DEFAULT 0")
         add_col_if_missing(conn, "entries", "user_id", "INTEGER NOT NULL DEFAULT 0")
         add_col_if_missing(conn, "entries", "was_bank_holiday", "INTEGER NOT NULL DEFAULT 0")
         add_col_if_missing(conn, "entries", "bh_paid", "INTEGER NOT NULL DEFAULT 0")
 
-        # if created_at missing
         add_col_if_missing(conn, "weeks", "created_at", "TEXT NOT NULL DEFAULT ''")
         add_col_if_missing(conn, "entries", "created_at", "TEXT NOT NULL DEFAULT ''")
 
-        # if hourly_rate missing
         add_col_if_missing(conn, "weeks", "hourly_rate", "REAL NOT NULL DEFAULT 0")
 
         # indexes
@@ -199,7 +189,7 @@ def verify_session_token(token: str) -> Optional[int]:
         payload = f"{user_id}.{ts}.{rnd}"
         if not hmac.compare_digest(sig, sign_token(payload)):
             return None
-        # 90 days
+        # 90 days validation
         if datetime.utcnow().timestamp() - int(ts) > 90 * 24 * 3600:
             return None
         return int(user_id)
@@ -250,7 +240,7 @@ def ddmmyyyy(d: date) -> str:
 
 
 # =========================
-# Ireland bank holidays (usable list + tracker)
+# Ireland bank holidays
 # =========================
 DEFAULT_BH = [
     ("New Year's Day", "01-01"),
@@ -352,6 +342,7 @@ class LoginIn(BaseModel):
     first_name: str = Field(min_length=1, max_length=40)
     last_name: str = Field(min_length=1, max_length=40)
     password: str = Field(min_length=4, max_length=120)
+    remember: bool = False  # ✅ IMPORTANT
 
 
 class ForgotIn(BaseModel):
@@ -413,13 +404,14 @@ def compute_week(conn: sqlite3.Connection, user_id: int, week_id: int) -> Dict[s
 
     total_min = 0
     total_pay = 0.0
-
     out_entries = []
+
     for e in rows:
         d = parse_ymd(e["work_date"])
         mins = entry_minutes(e)
         was_bh = bool(e["was_bank_holiday"])
         mult = multiplier(d, was_bh)
+
         total_min += mins
         total_pay += (mins / 60.0) * float(w["hourly_rate"]) * mult
 
@@ -456,14 +448,12 @@ def compute_week(conn: sqlite3.Connection, user_id: int, week_id: int) -> Dict[s
 # =========================
 @app.get("/", response_class=HTMLResponse)
 def home():
-    p = STATIC_DIR / "index.html"
-    return p.read_text(encoding="utf-8")
+    return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
 
 @app.get("/report", response_class=HTMLResponse)
 def report_page():
-    p = STATIC_DIR / "report.html"
-    return p.read_text(encoding="utf-8")
+    return (STATIC_DIR / "report.html").read_text(encoding="utf-8")
 
 
 @app.get("/favicon.ico")
@@ -478,7 +468,10 @@ def favicon():
 def me(request: Request):
     uid = require_user(request)
     with db() as conn:
-        u = conn.execute("SELECT id, first_name, last_name FROM users WHERE id=?", (uid,)).fetchone()
+        u = conn.execute(
+            "SELECT id, first_name, last_name FROM users WHERE id=?",
+            (uid,),
+        ).fetchone()
         if not u:
             raise HTTPException(401, "Unauthorized")
         return {"id": u["id"], "first_name": u["first_name"], "last_name": u["last_name"]}
@@ -513,7 +506,7 @@ def signup(payload: SignupIn):
             (fn, ln),
         ).fetchone()["id"]
 
-        # If this is the FIRST user, bind legacy data (user_id=0) to them
+        # bind legacy data to first user
         if before == 0:
             conn.execute("UPDATE weeks SET user_id=? WHERE user_id=0", (uid,))
             conn.execute("UPDATE entries SET user_id=? WHERE user_id=0", (uid,))
@@ -522,6 +515,7 @@ def signup(payload: SignupIn):
 
     token = make_session_token(int(uid))
     resp = JSONResponse({"ok": True})
+    # signup: keep session cookie (you can change to max_age if you want)
     resp.set_cookie("wh_session", token, httponly=True, samesite="lax")
     return resp
 
@@ -545,7 +539,13 @@ def login(payload: LoginIn):
 
     token = make_session_token(int(u["id"]))
     resp = JSONResponse({"ok": True})
-    resp.set_cookie("wh_session", token, httponly=True, samesite="lax")
+
+    # ✅ Remember me: persistent cookie
+    if payload.remember:
+        resp.set_cookie("wh_session", token, httponly=True, samesite="lax", max_age=COOKIE_AGE)
+    else:
+        resp.set_cookie("wh_session", token, httponly=True, samesite="lax")
+
     return resp
 
 
@@ -614,7 +614,6 @@ def list_weeks(request: Request):
 @app.post("/api/weeks")
 def create_week(payload: WeekCreate, request: Request):
     uid = require_user(request)
-    # validate date
     try:
         parse_ymd(payload.start_date)
     except Exception:
@@ -673,14 +672,14 @@ def upsert_entry(week_id: int, payload: EntryUpsert, request: Request):
         raise HTTPException(400, "Invalid work_date (YYYY-MM-DD)")
 
     with db() as conn:
-        w = conn.execute("SELECT * FROM weeks WHERE id=? AND user_id=?", (week_id, uid)).fetchone()
+        w = conn.execute("SELECT id FROM weeks WHERE id=? AND user_id=?", (week_id, uid)).fetchone()
         if not w:
             raise HTTPException(404, "Week not found")
 
         was_bh = 1 if is_bank_holiday(conn, uid, d) else 0
 
         existing = conn.execute(
-            "SELECT * FROM entries WHERE user_id=? AND week_id=? AND work_date=?",
+            "SELECT id, bh_paid FROM entries WHERE user_id=? AND week_id=? AND work_date=?",
             (uid, week_id, payload.work_date),
         ).fetchone()
 
@@ -689,37 +688,43 @@ def upsert_entry(week_id: int, payload: EntryUpsert, request: Request):
             bh_paid_val = 1 if payload.bh_paid else 0
 
         if existing:
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE entries
                 SET time_in=?, time_out=?, break_minutes=?, note=?, was_bank_holiday=?,
                     bh_paid=COALESCE(?, bh_paid)
                 WHERE id=? AND user_id=?;
-            """, (
-                payload.time_in,
-                payload.time_out,
-                int(payload.break_minutes),
-                payload.note,
-                was_bh,
-                bh_paid_val,
-                existing["id"],
-                uid,
-            ))
+                """,
+                (
+                    payload.time_in,
+                    payload.time_out,
+                    int(payload.break_minutes),
+                    payload.note,
+                    was_bh,
+                    bh_paid_val,
+                    existing["id"],
+                    uid,
+                ),
+            )
         else:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO entries(user_id, week_id, work_date, time_in, time_out, break_minutes, note, was_bank_holiday, bh_paid, created_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?);
-            """, (
-                uid,
-                week_id,
-                payload.work_date,
-                payload.time_in,
-                payload.time_out,
-                int(payload.break_minutes),
-                payload.note,
-                was_bh,
-                bh_paid_val if bh_paid_val is not None else 0,
-                now_iso(),
-            ))
+                """,
+                (
+                    uid,
+                    week_id,
+                    payload.work_date,
+                    payload.time_in,
+                    payload.time_out,
+                    int(payload.break_minutes),
+                    payload.note,
+                    was_bh,
+                    bh_paid_val if bh_paid_val is not None else 0,
+                    now_iso(),
+                ),
+            )
 
         conn.commit()
 
@@ -772,6 +777,7 @@ def patch_bh(bh_id: int, payload: BhPaidPatch, request: Request):
         ).fetchone()
         if not r:
             raise HTTPException(404, "Not found")
+
         conn.execute(
             "UPDATE bank_holidays SET paid=? WHERE id=? AND user_id=?",
             (1 if payload.paid else 0, bh_id, uid),
