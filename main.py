@@ -5,14 +5,16 @@ import hmac
 import hashlib
 import secrets
 import sqlite3
+import smtplib
+from email.message import EmailMessage
 from pathlib import Path
 from datetime import datetime, date, timedelta
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 
 
 # =========================
@@ -21,38 +23,29 @@ from pydantic import BaseModel, Field
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
-# Em produção (Render), configure DATA_DIR=/var/data (disk)
 DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR)))
-
-# garante que a pasta existe (principalmente /var/data no Render)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-
 DB_PATH = DATA_DIR / "workhours.db"
 
 APP_SECRET = os.environ.get("WORKHOURS_SECRET", "dev-secret-change-me").encode("utf-8")
 COOKIE_AGE = 90 * 24 * 60 * 60  # 90 days
 
-app = FastAPI(title="Work Hours Tracker", version="4.1")
+COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"  # set 1 on Render (https)
+
+app = FastAPI(title="Work Hours Tracker", version="5.0")
 
 if not STATIC_DIR.exists():
     raise RuntimeError(f"Missing folder: {STATIC_DIR}")
 
-# Serve /static/*
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-print("DB PATH:", DB_PATH)  # <- log útil (local e produção)
+print("DB PATH:", DB_PATH)
 
 
 # =========================
 # DB helpers + migrations
 # =========================
 def db() -> sqlite3.Connection:
-    """
-    More robust SQLite connection for PWA/mobile usage.
-    - timeout: avoid 'database is locked'
-    - WAL: better concurrency
-    - check_same_thread False: safer in async server contexts
-    """
     conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
@@ -86,10 +79,6 @@ def add_col_if_missing(conn: sqlite3.Connection, table: str, col: str, ddl: str)
 
 
 def init_db() -> None:
-    """
-    Creates tables if missing + migrates older DBs.
-    Legacy rows user_id=0 until first signup binds them to first user.
-    """
     with db() as conn:
         # users
         conn.execute("""
@@ -97,6 +86,7 @@ def init_db() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             first_name TEXT NOT NULL,
             last_name TEXT NOT NULL,
+            email TEXT,
             salt_hex TEXT NOT NULL,
             pass_hash TEXT NOT NULL,
             created_at TEXT NOT NULL
@@ -132,7 +122,7 @@ def init_db() -> None:
         );
         """)
 
-        # bank holidays (tracker)
+        # bank holidays
         conn.execute("""
         CREATE TABLE IF NOT EXISTS bank_holidays(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,23 +134,37 @@ def init_db() -> None:
         );
         """)
 
+        # password resets
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS password_resets(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token_hash TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used_at TEXT,
+            created_at TEXT NOT NULL
+        );
+        """)
+
         # ---- MIGRATIONS (safe) ----
+        add_col_if_missing(conn, "users", "email", "TEXT")
         add_col_if_missing(conn, "weeks", "user_id", "INTEGER NOT NULL DEFAULT 0")
         add_col_if_missing(conn, "entries", "user_id", "INTEGER NOT NULL DEFAULT 0")
         add_col_if_missing(conn, "entries", "was_bank_holiday", "INTEGER NOT NULL DEFAULT 0")
         add_col_if_missing(conn, "entries", "bh_paid", "INTEGER NOT NULL DEFAULT 0")
-
         add_col_if_missing(conn, "weeks", "created_at", "TEXT NOT NULL DEFAULT ''")
         add_col_if_missing(conn, "entries", "created_at", "TEXT NOT NULL DEFAULT ''")
-
         add_col_if_missing(conn, "weeks", "hourly_rate", "REAL NOT NULL DEFAULT 0")
 
         # indexes
         conn.execute("CREATE INDEX IF NOT EXISTS idx_users_name ON users(first_name, last_name);")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email) WHERE email IS NOT NULL;")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_weeks_user ON weeks(user_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_user ON entries(user_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_week ON entries(week_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bh_user_year ON bank_holidays(user_id, year);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_resets_hash ON password_resets(token_hash);")
 
         conn.commit()
 
@@ -211,6 +215,50 @@ def require_user(request: Request) -> int:
     if not uid:
         raise HTTPException(status_code=401, detail="Unauthorized")
     return uid
+
+
+def set_session_cookie(resp: Response, token: str, remember: bool) -> None:
+    kwargs = dict(
+        httponly=True,
+        samesite="lax",
+        secure=COOKIE_SECURE,
+    )
+    if remember:
+        resp.set_cookie("wh_session", token, max_age=COOKIE_AGE, **kwargs)
+    else:
+        resp.set_cookie("wh_session", token, **kwargs)
+
+
+# =========================
+# Mail (SMTP)
+# =========================
+def send_reset_email(to_email: str, reset_link: str) -> None:
+    host = os.environ.get("SMTP_HOST")
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    user = os.environ.get("SMTP_USER")
+    pw = os.environ.get("SMTP_PASS")
+    use_tls = os.environ.get("SMTP_TLS", "1") == "1"
+    from_email = os.environ.get("FROM_EMAIL")
+
+    if not host or not from_email:
+        raise RuntimeError("SMTP not configured (SMTP_HOST/FROM_EMAIL missing)")
+
+    msg = EmailMessage()
+    msg["Subject"] = "Work Hours Tracker - Password reset"
+    msg["From"] = from_email
+    msg["To"] = to_email
+    msg.set_content(
+        "You requested a password reset.\n\n"
+        f"Open this link to set a new password:\n{reset_link}\n\n"
+        "If you did not request this, ignore this email."
+    )
+
+    with smtplib.SMTP(host, port, timeout=20) as s:
+        if use_tls:
+            s.starttls()
+        if user and pw:
+            s.login(user, pw)
+        s.send_message(msg)
 
 
 # =========================
@@ -343,25 +391,30 @@ def is_bank_holiday(conn: sqlite3.Connection, user_id: int, d: date) -> bool:
 class SignupIn(BaseModel):
     first_name: str = Field(min_length=1, max_length=40)
     last_name: str = Field(min_length=1, max_length=40)
+    email: EmailStr
     password: str = Field(min_length=4, max_length=120)
 
 
 class LoginIn(BaseModel):
-    first_name: str = Field(min_length=1, max_length=40)
-    last_name: str = Field(min_length=1, max_length=40)
+    email: Optional[EmailStr] = None
+    first_name: Optional[str] = Field(default=None, min_length=1, max_length=40)
+    last_name: Optional[str] = Field(default=None, min_length=1, max_length=40)
     password: str = Field(min_length=4, max_length=120)
     remember: bool = False
 
 
 class ForgotIn(BaseModel):
-    first_name: str = Field(min_length=1, max_length=40)
-    last_name: str = Field(min_length=1, max_length=40)
+    email: EmailStr
+
+
+class ResetIn(BaseModel):
+    token: str = Field(min_length=10, max_length=300)
     new_password: str = Field(min_length=4, max_length=120)
 
 
 class WeekCreate(BaseModel):
     week_number: int = Field(ge=1, le=60)
-    start_date: str  # YYYY-MM-DD
+    start_date: str
     hourly_rate: float = Field(ge=0, le=200)
 
 
@@ -458,11 +511,6 @@ def home():
     return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
 
-@app.get("/report", response_class=HTMLResponse)
-def report_page():
-    return (STATIC_DIR / "report.html").read_text(encoding="utf-8")
-
-
 @app.get("/favicon.ico")
 def favicon():
     return Response(status_code=204)
@@ -476,41 +524,47 @@ def me(request: Request):
     uid = require_user(request)
     with db() as conn:
         u = conn.execute(
-            "SELECT id, first_name, last_name FROM users WHERE id=?",
+            "SELECT id, first_name, last_name, email FROM users WHERE id=?",
             (uid,),
         ).fetchone()
         if not u:
             raise HTTPException(401, "Unauthorized")
-        return {"id": u["id"], "first_name": u["first_name"], "last_name": u["last_name"]}
+        return {
+            "id": u["id"],
+            "first_name": u["first_name"],
+            "last_name": u["last_name"],
+            "email": u["email"] or "",
+        }
 
 
 @app.post("/api/signup")
 def signup(payload: SignupIn):
     fn = payload.first_name.strip()
     ln = payload.last_name.strip()
+    email = payload.email.lower().strip()
 
     with db() as conn:
         before = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
 
-        exists = conn.execute(
-            "SELECT 1 FROM users WHERE lower(first_name)=lower(?) AND lower(last_name)=lower(?) LIMIT 1",
-            (fn, ln),
+        exists_email = conn.execute(
+            "SELECT 1 FROM users WHERE lower(email)=lower(?) LIMIT 1",
+            (email,),
         ).fetchone()
-        if exists:
-            raise HTTPException(409, "User already exists")
+        if exists_email:
+            raise HTTPException(409, "Email already in use")
 
         salt_hex = secrets.token_hex(16)
         pass_hash = pbkdf2_hash(payload.password, salt_hex)
 
         conn.execute(
-            "INSERT INTO users(first_name, last_name, salt_hex, pass_hash, created_at) VALUES (?,?,?,?,?)",
-            (fn, ln, salt_hex, pass_hash, now_iso()),
+            "INSERT INTO users(first_name, last_name, email, salt_hex, pass_hash, created_at) VALUES (?,?,?,?,?,?)",
+            (fn, ln, email, salt_hex, pass_hash, now_iso()),
         )
         conn.commit()
 
         uid = conn.execute(
-            "SELECT id FROM users WHERE lower(first_name)=lower(?) AND lower(last_name)=lower(?) ORDER BY id DESC LIMIT 1",
-            (fn, ln),
+            "SELECT id FROM users WHERE lower(email)=lower(?) ORDER BY id DESC LIMIT 1",
+            (email,),
         ).fetchone()["id"]
 
         if before == 0:
@@ -521,20 +575,30 @@ def signup(payload: SignupIn):
 
     token = make_session_token(int(uid))
     resp = JSONResponse({"ok": True})
-    resp.set_cookie("wh_session", token, httponly=True, samesite="lax")
+    set_session_cookie(resp, token, remember=True)
     return resp
 
 
 @app.post("/api/login")
 def login(payload: LoginIn):
-    fn = payload.first_name.strip()
-    ln = payload.last_name.strip()
-
     with db() as conn:
-        u = conn.execute(
-            "SELECT * FROM users WHERE lower(first_name)=lower(?) AND lower(last_name)=lower(?) LIMIT 1",
-            (fn, ln),
-        ).fetchone()
+        u = None
+
+        if payload.email:
+            email = payload.email.lower().strip()
+            u = conn.execute(
+                "SELECT * FROM users WHERE lower(email)=lower(?) LIMIT 1",
+                (email,),
+            ).fetchone()
+        else:
+            fn = (payload.first_name or "").strip()
+            ln = (payload.last_name or "").strip()
+            if fn and ln:
+                u = conn.execute(
+                    "SELECT * FROM users WHERE lower(first_name)=lower(?) AND lower(last_name)=lower(?) LIMIT 1",
+                    (fn, ln),
+                ).fetchone()
+
         if not u:
             raise HTTPException(401, "Invalid credentials")
 
@@ -544,33 +608,79 @@ def login(payload: LoginIn):
 
     token = make_session_token(int(u["id"]))
     resp = JSONResponse({"ok": True})
-
-    if payload.remember:
-        resp.set_cookie("wh_session", token, httponly=True, samesite="lax", max_age=COOKIE_AGE)
-    else:
-        resp.set_cookie("wh_session", token, httponly=True, samesite="lax")
-
+    set_session_cookie(resp, token, remember=payload.remember)
     return resp
 
 
 @app.post("/api/forgot")
-def forgot(payload: ForgotIn):
-    fn = payload.first_name.strip()
-    ln = payload.last_name.strip()
+def forgot(payload: ForgotIn, request: Request):
+    email = payload.email.lower().strip()
 
     with db() as conn:
         u = conn.execute(
-            "SELECT id FROM users WHERE lower(first_name)=lower(?) AND lower(last_name)=lower(?) LIMIT 1",
-            (fn, ln),
+            "SELECT id FROM users WHERE lower(email)=lower(?) LIMIT 1",
+            (email,),
         ).fetchone()
+
+        # Segurança: não revelar se email existe
         if not u:
-            raise HTTPException(404, "User not found")
+            return {"ok": True}
+
+        raw = secrets.token_urlsafe(32)
+        th = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        expires = (datetime.utcnow() + timedelta(minutes=30)).isoformat(timespec="seconds")
+
+        conn.execute(
+            "INSERT INTO password_resets(user_id, token_hash, expires_at, used_at, created_at) VALUES (?,?,?,?,?)",
+            (u["id"], th, expires, None, now_iso()),
+        )
+        conn.commit()
+
+    base = os.environ.get("APP_BASE_URL")
+    if not base:
+        base = str(request.base_url).rstrip("/")
+
+    reset_link = f"{base}/?reset={raw}"
+
+    try:
+        send_reset_email(email, reset_link)
+    except Exception as e:
+        # em produção configure SMTP_*; local pode falhar
+        raise HTTPException(500, f"Email not sent: {e}")
+
+    return {"ok": True}
+
+
+@app.post("/api/reset")
+def reset_password(payload: ResetIn):
+    raw = payload.token.strip()
+    th = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    with db() as conn:
+        r = conn.execute(
+            "SELECT * FROM password_resets WHERE token_hash=? ORDER BY id DESC LIMIT 1",
+            (th,),
+        ).fetchone()
+        if not r:
+            raise HTTPException(400, "Invalid or expired token")
+
+        if r["used_at"]:
+            raise HTTPException(400, "Token already used")
+
+        exp = datetime.fromisoformat(r["expires_at"])
+        if datetime.utcnow() > exp:
+            raise HTTPException(400, "Invalid or expired token")
 
         new_salt = secrets.token_hex(16)
         new_hash = pbkdf2_hash(payload.new_password, new_salt)
+
         conn.execute(
             "UPDATE users SET salt_hex=?, pass_hash=? WHERE id=?",
-            (new_salt, new_hash, u["id"]),
+            (new_salt, new_hash, r["user_id"]),
+        )
+        conn.execute(
+            "UPDATE password_resets SET used_at=? WHERE id=?",
+            (now_iso(), r["id"]),
         )
         conn.commit()
 
@@ -582,11 +692,6 @@ def logout():
     resp = JSONResponse({"ok": True})
     resp.delete_cookie("wh_session")
     return resp
-
-
-@app.get("/api/ping")
-def ping():
-    return {"ok": True}
 
 
 # =========================

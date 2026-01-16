@@ -1,63 +1,218 @@
+/* =========================
+   Work Hours Tracker - app.js
+   Compatible with your current index.html
+========================= */
+
 const $ = (id) => document.getElementById(id);
 
-const screenAuth = $("screenAuth");
-const screenWeeks = $("screenWeeks");
-const screenWeekDetail = $("screenWeekDetail");
+function show(el) { el && el.classList.remove("hidden"); }
+function hide(el) { el && el.classList.add("hidden"); }
 
-const authMsg = $("authMsg");
-const weekMsg = $("weekMsg");
-const entryMsg = $("entryMsg");
+function setMsg(el, text, ok = false) {
+  if (!el) return;
+  el.style.color = ok ? "#15803d" : "#b91c1c";
+  el.textContent = text || "";
+}
 
+function money(x) {
+  return "€" + Number(x || 0).toFixed(2);
+}
+
+function minutesToHHMM(totalMin) {
+  totalMin = Math.max(0, Number(totalMin || 0));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    ...options,
+  });
+
+  const ct = res.headers.get("content-type") || "";
+  const data = ct.includes("application/json")
+    ? await res.json().catch(() => null)
+    : await res.text().catch(() => null);
+
+  if (!res.ok) {
+    const msg =
+      (data && data.detail) ? data.detail :
+      (typeof data === "string" ? data : `Error ${res.status}`);
+    throw new Error(msg);
+  }
+  return data;
+}
+
+/* =========================
+   Screens
+========================= */
+const screens = {
+  auth: $("screenAuth"),
+  signup: $("screenSignup"),
+  forgot: $("screenForgot"),
+  reset: $("screenReset"),
+  home: $("screenHome"),
+  weeks: $("screenWeeks"),
+  weekDetail: $("screenWeekDetail"),
+  dayForm: $("screenDayForm"),
+  bh: $("screenBH"),
+  reports: $("screenReports"),
+  profile: $("screenProfile"),
+};
+
+function openScreen(name) {
+  Object.values(screens).forEach(hide);
+  show(screens[name]);
+
+  // bottom nav visibility
+  if (name === "auth" || name === "signup" || name === "forgot" || name === "reset") {
+    hideBottomNav();
+  } else {
+    showBottomNav();
+  }
+
+  setActiveNav(name);
+}
+
+/* =========================
+   State
+========================= */
 let currentUser = null;
 let currentWeek = null;
+let editingEntry = null; // entry object when editing day
 
-// ---------- Remember Me (store only names, NEVER password) ----------
+/* =========================
+   Remember me (names/email only; no password)
+========================= */
 const LS_REM = {
   enabled: "wh_remember_enabled",
   fn: "wh_remember_fn",
-  ln: "wh_remember_ln"
+  ln: "wh_remember_ln",
+  email: "wh_remember_email",
 };
 
-function loadRemember(){
+function loadRemember() {
   const cb = $("rememberMe");
-  if(!cb) return;
+  if (!cb) return;
 
   const enabled = localStorage.getItem(LS_REM.enabled) === "1";
   cb.checked = enabled;
 
-  if(enabled){
-    const fn = localStorage.getItem(LS_REM.fn) || "";
-    const ln = localStorage.getItem(LS_REM.ln) || "";
-    if($("fn")) $("fn").value = fn;
-    if($("ln")) $("ln").value = ln;
+  // always clear pw on open
+  if ($("pw")) $("pw").value = "";
+
+  if (enabled) {
+    if ($("fn")) $("fn").value = localStorage.getItem(LS_REM.fn) || "";
+    if ($("ln")) $("ln").value = localStorage.getItem(LS_REM.ln) || "";
+    if ($("email")) $("email").value = localStorage.getItem(LS_REM.email) || "";
+  } else {
+    if ($("fn")) $("fn").value = "";
+    if ($("ln")) $("ln").value = "";
+    if ($("email")) $("email").value = "";
   }
 }
 
-function saveRemember(enabled){
+function saveRemember(enabled) {
   const cb = $("rememberMe");
-  if(!cb) return;
+  if (!cb) return;
 
-  if(enabled){
+  if (enabled) {
     localStorage.setItem(LS_REM.enabled, "1");
     localStorage.setItem(LS_REM.fn, ($("fn")?.value || "").trim());
     localStorage.setItem(LS_REM.ln, ($("ln")?.value || "").trim());
-  }else{
+    localStorage.setItem(LS_REM.email, ($("email")?.value || "").trim());
+  } else {
     localStorage.setItem(LS_REM.enabled, "0");
     localStorage.removeItem(LS_REM.fn);
     localStorage.removeItem(LS_REM.ln);
+    localStorage.removeItem(LS_REM.email);
   }
 }
 
-// ---------- LOGO (guaranteed, but safe if element missing) ----------
-(function loadLogo(){
+$("rememberMe")?.addEventListener("change", (e) => {
+  const enabled = !!e.target.checked;
+  if (!enabled) {
+    if ($("fn")) $("fn").value = "";
+    if ($("ln")) $("ln").value = "";
+    if ($("email")) $("email").value = "";
+  }
+  saveRemember(enabled);
+});
+
+/* =========================
+   Intro video
+========================= */
+(function introVideo() {
+  const introEl = $("introContainer");
+  const videoEl = $("introVideo");
+
+  function hideIntro() {
+    if (introEl) introEl.style.display = "none";
+  }
+
+  if (introEl && videoEl) {
+    videoEl.addEventListener("ended", hideIntro);
+    videoEl.addEventListener("error", hideIntro);
+    setTimeout(hideIntro, 4000);
+  }
+})();
+
+/* =========================
+   Bottom Nav
+========================= */
+const bottomNav = $("bottomNav");
+
+function showBottomNav() { bottomNav && bottomNav.classList.remove("hidden"); }
+function hideBottomNav() { bottomNav && bottomNav.classList.add("hidden"); }
+
+function setActiveNav(screenName) {
+  if (!bottomNav) return;
+  const map = {
+    home: "home",
+    weeks: "weeks",
+    bh: "bh",
+    reports: "reports",
+    profile: "profile",
+    weekDetail: "weeks", // treat as weeks tab
+    dayForm: "weeks",
+  };
+
+  const activeKey = map[screenName] || null;
+  bottomNav.querySelectorAll(".navItem").forEach((b) => {
+    const key = b.getAttribute("data-screen");
+    b.classList.toggle("active", !!activeKey && key === activeKey);
+  });
+}
+
+bottomNav?.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".navItem");
+  if (!btn) return;
+
+  const target = btn.getAttribute("data-screen");
+  if (!target) return;
+
+  if (target === "home") return openHome();
+  if (target === "weeks") return openWeeks();
+  if (target === "bh") return openBH();
+  if (target === "reports") return openReports();
+  if (target === "profile") return openProfile();
+});
+
+/* =========================
+   Logo
+========================= */
+(function loadLogo() {
   const img = $("appLogo");
-  if(!img) return;
+  if (!img) return;
 
   const candidates = ["/static/logo.png", "/static/tesco.png"];
   let idx = 0;
 
-  function tryNext(){
-    if(idx >= candidates.length){
+  function tryNext() {
+    if (idx >= candidates.length) {
       img.style.display = "none";
       return;
     }
@@ -67,188 +222,277 @@ function saveRemember(enabled){
   tryNext();
 })();
 
-// ---------- API ----------
-async function api(path, options={}){
-  const res = await fetch(path, {
-    headers: { "Content-Type":"application/json" },
-    credentials: "include",
-    ...options
-  });
+/* =========================
+   Auth navigation buttons
+========================= */
+$("btnSignUpOpen")?.addEventListener("click", () => {
+  setMsg($("signupMsg"), "");
+  openScreen("signup");
+});
 
-  const ct = res.headers.get("content-type") || "";
-  const data = ct.includes("application/json")
-    ? await res.json().catch(()=>null)
-    : await res.text().catch(()=>null);
+$("btnForgotOpen")?.addEventListener("click", () => {
+  setMsg($("forgotMsg"), "");
+  // prefill forgot email from login if present
+  if ($("f_email") && $("email")) $("f_email").value = ($("email").value || "").trim();
+  openScreen("forgot");
+});
 
-  if(!res.ok){
-    if(res.status === 401){
-      throw new Error("Password incorreto seu Burro :)");
-    }
-    const msg = (data && data.detail) ? data.detail : (typeof data === "string" ? data : `Error ${res.status}`);
-    throw new Error(msg);
-  }
-  return data;
-}
+$("btnSignupBack")?.addEventListener("click", () => {
+  openAuth();
+});
 
-function show(el){ el.classList.remove("hidden"); }
-function hide(el){ el.classList.add("hidden"); }
+$("btnForgotBack")?.addEventListener("click", () => {
+  openAuth();
+});
 
-function setMsg(el, text, ok=false){
-  if(!el) return;
-  el.style.color = ok ? "#15803d" : "#b91c1c";
-  el.textContent = text || "";
-}
-
-function money(x){
-  return "€" + Number(x || 0).toFixed(2);
-}
-
-async function boot(){
-  try{
-    currentUser = await api("/api/me");
-    $("btnLogout")?.classList.remove("hidden");
-    await openWeeks();
-  }catch(_){
-    $("btnLogout")?.classList.add("hidden");
-    openAuth();
-  }
-}
-
-function openAuth(){
+/* =========================
+   Auth actions
+========================= */
+function openAuth() {
   currentWeek = null;
-  show(screenAuth); hide(screenWeeks); hide(screenWeekDetail);
-  setMsg(authMsg, "");
+  editingEntry = null;
+  setMsg($("authMsg"), "");
   loadRemember();
+  openScreen("auth");
 }
 
-async function openWeeks(){
-  hide(screenAuth); show(screenWeeks); hide(screenWeekDetail);
-  hide($("newWeekBox"));
-  setMsg(weekMsg, "");
-  await refreshWeeks();
-}
-
-async function openWeekDetail(weekId){
-  hide(screenAuth); hide(screenWeeks); show(screenWeekDetail);
-  hide($("bhBox"));
-  await loadWeek(weekId);
-}
-
-// ---------- AUTH actions ----------
-$("btnSignIn").onclick = async () => {
-  try{
-    setMsg(authMsg, "");
+$("btnSignIn")?.addEventListener("click", async () => {
+  try {
+    setMsg($("authMsg"), "");
 
     const remember = $("rememberMe") ? $("rememberMe").checked : false;
 
+    // login payload: prefer email, fallback to fn/ln
+    const email = ($("email")?.value || "").trim();
+    const first_name = ($("fn")?.value || "").trim();
+    const last_name = ($("ln")?.value || "").trim();
+
     await api("/api/login", {
-      method:"POST",
+      method: "POST",
       body: JSON.stringify({
-        first_name: $("fn").value.trim(),
-        last_name: $("ln").value.trim(),
-        password: $("pw").value,
-        remember
-      })
+        email: email || null,
+        first_name,
+        last_name,
+        password: $("pw")?.value || "",
+        remember,
+      }),
     });
 
     saveRemember(remember);
 
-    $("btnLogout").classList.remove("hidden");
-    await openWeeks();
-  }catch(e){
-    setMsg(authMsg, e.message);
+    currentUser = await api("/api/me");
+    await openHome();
+  } catch (e) {
+    setMsg($("authMsg"), e.message);
   }
-};
+});
 
-$("btnSignUp").onclick = async () => {
-  try{
-    setMsg(authMsg, "");
+$("btnSignUp")?.addEventListener("click", async () => {
+  try {
+    setMsg($("signupMsg"), "");
+
     await api("/api/signup", {
-      method:"POST",
+      method: "POST",
       body: JSON.stringify({
-        first_name: $("fn").value.trim(),
-        last_name: $("ln").value.trim(),
-        password: $("pw").value
-      })
+        first_name: ($("s_fn")?.value || "").trim(),
+        last_name: ($("s_ln")?.value || "").trim(),
+        email: ($("s_email")?.value || "").trim(),
+        password: $("s_pw")?.value || "",
+      }),
     });
-    $("btnLogout").classList.remove("hidden");
-    await openWeeks();
-  }catch(e){
-    setMsg(authMsg, e.message);
-  }
-};
 
-$("btnForgot").onclick = async () => {
-  try{
-    const np = prompt("New password:");
-    if(!np) return;
+    currentUser = await api("/api/me").catch(() => null);
+    await openHome();
+  } catch (e) {
+    setMsg($("signupMsg"), e.message);
+  }
+});
+
+$("btnForgotSend")?.addEventListener("click", async () => {
+  try {
+    setMsg($("forgotMsg"), "");
+
+    const email = ($("f_email")?.value || "").trim();
+    if (!email) throw new Error("Please enter your email.");
+
     await api("/api/forgot", {
-      method:"POST",
-      body: JSON.stringify({
-        first_name: $("fn").value.trim(),
-        last_name: $("ln").value.trim(),
-        new_password: np
-      })
+      method: "POST",
+      body: JSON.stringify({ email }),
     });
-    setMsg(authMsg, "Password updated. Now sign in.", true);
-  }catch(e){
-    setMsg(authMsg, e.message);
+
+    setMsg($("forgotMsg"), "Check your email for the reset link.", true);
+  } catch (e) {
+    setMsg($("forgotMsg"), e.message);
   }
-};
+});
 
-$("btnLogout").onclick = async () => {
-  await api("/api/logout", { method:"POST" }).catch(()=>{});
-  $("btnLogout").classList.add("hidden");
+$("btnResetSave")?.addEventListener("click", async () => {
+  try {
+    setMsg($("resetMsg"), "");
+
+    const token = getResetTokenFromURL();
+    if (!token) throw new Error("Missing reset token.");
+
+    const new_password = $("r_pw")?.value || "";
+    if (new_password.length < 4) throw new Error("Password too short.");
+
+    await api("/api/reset", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password }),
+    });
+
+    setMsg($("resetMsg"), "Password updated. Please sign in.", true);
+
+    // after a short moment, go to auth
+    setTimeout(() => openAuth(), 800);
+  } catch (e) {
+    setMsg($("resetMsg"), e.message);
+  }
+});
+
+$("btnLogout")?.addEventListener("click", async () => {
+  await api("/api/logout", { method: "POST" }).catch(() => {});
+  currentUser = null;
   openAuth();
-};
+});
 
-// ---------- WEEKS ----------
-$("btnNewWeek").onclick = () => {
+$("btnProfileLogout")?.addEventListener("click", async () => {
+  await api("/api/logout", { method: "POST" }).catch(() => {});
+  currentUser = null;
+  openAuth();
+});
+
+/* =========================
+   URL reset token handling
+   supports ?reset=TOKEN or ?token=TOKEN
+========================= */
+function getResetTokenFromURL() {
+  const params = new URLSearchParams(window.location.search || "");
+  return params.get("reset") || params.get("token") || "";
+}
+
+/* =========================
+   HOME
+========================= */
+async function openHome() {
+  openScreen("home");
+
+  // subtitle greeting
+  if (currentUser && $("homeSubtitle")) {
+    $("homeSubtitle").textContent = `${currentUser.first_name} ${currentUser.last_name}`;
+  }
+
+  await refreshHome();
+}
+
+async function refreshHome() {
+  try {
+    // Weeks summary
+    const weeks = await api("/api/weeks");
+
+    let totalPayAll = 0;
+    let totalMinAll = 0;
+
+    const mostRecent = weeks?.[0] || null;
+
+    for (const w of weeks || []) {
+      totalPayAll += Number(w.total_pay || 0);
+      const hhmm = (w.total_hhmm || "00:00").split(":");
+      totalMinAll += (Number(hhmm[0] || 0) * 60) + Number(hhmm[1] || 0);
+    }
+
+    if ($("homeWeekHours")) $("homeWeekHours").textContent = mostRecent ? (mostRecent.total_hhmm || "00:00") : "00:00";
+    if ($("homeWeekPay")) $("homeWeekPay").textContent = mostRecent ? money(mostRecent.total_pay || 0) : money(0);
+
+    if ($("homeAllHours")) $("homeAllHours").textContent = minutesToHHMM(totalMinAll);
+    if ($("homeAllPay")) $("homeAllPay").textContent = money(totalPayAll);
+
+    // Bank holidays
+    const year = new Date().getFullYear();
+    const bhs = await api(`/api/bank-holidays/${year}`);
+
+    const paid = (bhs || []).filter(x => x.paid).length;
+    const toTake = (bhs || []).length - paid;
+
+    // your IDs:
+    if ($("homeBHToTake")) $("homeBHToTake").textContent = `${toTake} to take`;
+    if ($("homeBHPaid")) $("homeBHPaid").textContent = `${paid} paid`;
+
+  } catch (e) {
+    // optional placeholder: you didn't add homeMsg, so do nothing
+    console.error(e);
+  }
+}
+
+/* Quick actions on Home */
+$("goWeeks")?.addEventListener("click", () => openWeeks());
+$("goNewWeek")?.addEventListener("click", async () => {
+  await openWeeks();
   show($("newWeekBox"));
-  setMsg(weekMsg, "");
-};
+});
+$("goBH")?.addEventListener("click", () => openBH());
+$("goReports")?.addEventListener("click", () => openReports());
 
-$("btnCancelWeek").onclick = () => {
+/* =========================
+   WEEKS
+========================= */
+async function openWeeks() {
+  openScreen("weeks");
   hide($("newWeekBox"));
-};
+  setMsg($("weekMsg"), "");
+  await refreshWeeks();
+}
 
-$("btnCreateWeek").onclick = async () => {
-  try{
-    setMsg(weekMsg, "");
-    const week_number = Number($("newWeekNumber").value);
-    const start_date = $("newStartDate").value;
-    const hourly_rate = Number($("newRate").value);
+$("btnNewWeek")?.addEventListener("click", () => {
+  show($("newWeekBox"));
+  setMsg($("weekMsg"), "");
+});
 
-    if(!week_number || !start_date || isNaN(hourly_rate)){
+$("btnCancelWeek")?.addEventListener("click", () => {
+  hide($("newWeekBox"));
+});
+
+$("btnCreateWeek")?.addEventListener("click", async () => {
+  try {
+    setMsg($("weekMsg"), "");
+
+    const week_number = Number($("newWeekNumber")?.value);
+    const start_date = $("newStartDate")?.value;
+    const hourly_rate = Number($("newRate")?.value);
+
+    if (!week_number || !start_date || isNaN(hourly_rate)) {
       throw new Error("Fill week number, start date and hourly rate.");
     }
 
     await api("/api/weeks", {
-      method:"POST",
-      body: JSON.stringify({ week_number, start_date, hourly_rate })
+      method: "POST",
+      body: JSON.stringify({ week_number, start_date, hourly_rate }),
     });
 
-    $("newWeekNumber").value = "";
-    $("newRate").value = "";
+    if ($("newWeekNumber")) $("newWeekNumber").value = "";
+    if ($("newRate")) $("newRate").value = "";
     hide($("newWeekBox"));
-    await refreshWeeks();
-    setMsg(weekMsg, "Week created.", true);
-  }catch(e){
-    setMsg(weekMsg, e.message);
-  }
-};
 
-async function refreshWeeks(){
+    await refreshWeeks();
+    setMsg($("weekMsg"), "Week created.", true);
+  } catch (e) {
+    setMsg($("weekMsg"), e.message);
+  }
+});
+
+async function refreshWeeks() {
   const list = $("weeksList");
+  if (!list) return;
+
   list.innerHTML = "";
   const weeks = await api("/api/weeks");
 
-  if(!weeks.length){
+  if (!weeks.length) {
     list.innerHTML = `<div class="muted">No weeks yet. Create one.</div>`;
     return;
   }
 
-  for(const w of weeks){
+  for (const w of weeks) {
     const div = document.createElement("div");
     div.className = "item";
     div.innerHTML = `
@@ -266,93 +510,74 @@ async function refreshWeeks(){
   }
 }
 
-// ---------- WEEK DETAIL ----------
-$("btnBack").onclick = () => openWeeks();
+/* =========================
+   WEEK DETAIL
+========================= */
+$("btnBackWeeks")?.addEventListener("click", () => openWeeks());
 
-$("btnReport").onclick = () => {
-  if(!currentWeek) return;
+$("btnReport")?.addEventListener("click", () => {
+  if (!currentWeek) return;
   window.open(`/report?week_id=${encodeURIComponent(currentWeek.id)}`, "_blank");
-};
+});
 
-$("btnDeleteWeek").onclick = async () => {
-  if(!currentWeek) return;
-  if(!confirm("Delete this week (all days)?")) return;
-  await api(`/api/weeks/${currentWeek.id}`, { method:"DELETE" });
+$("btnDeleteWeek")?.addEventListener("click", async () => {
+  if (!currentWeek) return;
+  if (!confirm("Delete this week (all days)?")) return;
+
+  await api(`/api/weeks/${currentWeek.id}`, { method: "DELETE" });
   currentWeek = null;
   await openWeeks();
-};
+});
 
-$("btnSaveRate").onclick = async () => {
-  try{
-    if(!currentWeek) return;
-    const hourly_rate = Number($("rateEdit").value);
+$("btnSaveRate")?.addEventListener("click", async () => {
+  try {
+    if (!currentWeek) return;
+    const hourly_rate = Number($("rateEdit")?.value);
     await api(`/api/weeks/${currentWeek.id}`, {
-      method:"PATCH",
-      body: JSON.stringify({ hourly_rate })
+      method: "PATCH",
+      body: JSON.stringify({ hourly_rate }),
     });
     await loadWeek(currentWeek.id);
-  }catch(e){
+  } catch (e) {
     alert(e.message);
   }
-};
+});
 
-$("btnSaveDay").onclick = async () => {
-  try{
-    if(!currentWeek) return;
+$("btnAddDay")?.addEventListener("click", () => openDayFormAdd());
 
-    const bhPaidVal = $("bhPaid").value;
-    const bh_paid = bhPaidVal === "" ? null : (bhPaidVal === "true");
+async function openWeekDetail(weekId) {
+  openScreen("weekDetail");
+  await loadWeek(weekId);
+}
 
-    await api(`/api/weeks/${currentWeek.id}/entry`, {
-      method:"PUT",
-      body: JSON.stringify({
-        work_date: $("workDate").value,
-        time_in: $("timeIn").value || null,
-        time_out: $("timeOut").value || null,
-        break_minutes: Number($("breakMin").value || 0),
-        note: $("note").value || null,
-        bh_paid
-      })
-    });
-
-    setMsg(entryMsg, "Saved.", true);
-    $("timeIn").value = "";
-    $("timeOut").value = "";
-    $("breakMin").value = "0";
-    $("note").value = "";
-    $("bhPaid").value = "";
-
-    await loadWeek(currentWeek.id);
-  }catch(e){
-    setMsg(entryMsg, e.message);
-  }
-};
-
-async function loadWeek(weekId){
+async function loadWeek(weekId) {
   const w = await api(`/api/weeks/${weekId}`);
   currentWeek = w;
 
-  $("weekTitle").textContent = `Week ${w.week_number}`;
-  $("weekMeta").textContent = `Start: ${w.start_date} • Sunday/Bank Holiday = 1.5x`;
-  $("weekTotals").textContent = `Total ${w.totals.total_hhmm} • ${money(w.totals.total_pay)}`;
-  $("rateEdit").value = w.hourly_rate;
+  if ($("weekTitle")) $("weekTitle").textContent = `Week ${w.week_number}`;
+  if ($("weekMeta")) $("weekMeta").textContent = `Start: ${w.start_date} • Sunday/Bank Holiday = 1.5x`;
+  if ($("weekTotals")) $("weekTotals").textContent = `Total ${w.totals.total_hhmm} • ${money(w.totals.total_pay)}`;
+  if ($("rateEdit")) $("rateEdit").value = w.hourly_rate;
 
   renderEntries(w.entries);
-  setMsg(entryMsg, "");
+  setMsg($("entryMsg"), "");
 }
 
-function renderEntries(entries){
+function renderEntries(entries) {
   const tb = $("entriesBody");
+  if (!tb) return;
+
   tb.innerHTML = "";
 
-  if(!entries.length){
-    tb.innerHTML = `<tr><td colspan="9" class="muted">No days yet.</td></tr>`;
+  if (!entries.length) {
+    tb.innerHTML = `<tr><td colspan="8" class="muted">No days yet.</td></tr>`;
     return;
   }
 
-  for(const e of entries){
+  for (const e of entries) {
     const tr = document.createElement("tr");
     const is15 = (e.multiplier === 1.5);
+
     tr.innerHTML = `
       <td><b>${e.weekday}</b></td>
       <td>${e.date_ddmmyyyy}</td>
@@ -362,35 +587,118 @@ function renderEntries(entries){
       <td><b>${e.worked_hhmm}</b></td>
       <td>${is15 ? "YES" : ""}</td>
       <td>${e.note || ""}</td>
-      <td><button class="btn danger" style="padding:8px 10px;border-radius:10px" data-id="${e.id}">X</button></td>
     `;
-    tr.querySelector("button").onclick = async () => {
-      if(!confirm("Delete this day?")) return;
-      await api(`/api/entries/${e.id}`, { method:"DELETE" });
-      await loadWeek(currentWeek.id);
-    };
+
+    // tap to edit
+    tr.addEventListener("click", () => openDayFormEdit(e));
     tb.appendChild(tr);
   }
 }
 
-// ---------- Bank Holidays ----------
-$("btnOpenBH").onclick = async () => {
-  $("bhYear").value = String(new Date().getFullYear());
-  show($("bhBox"));
+/* =========================
+   DAY FORM (Add/Edit screen)
+   Uses your existing IDs:
+   workDate, timeIn, timeOut, breakMin, note, bhPaid, btnSaveDay, dayMsg
+========================= */
+$("btnDayBack")?.addEventListener("click", () => {
+  openScreen("weekDetail");
+});
+
+$("btnSaveDay")?.addEventListener("click", async () => {
+  try {
+    if (!currentWeek) throw new Error("No week selected.");
+
+    const bhPaidVal = $("bhPaid")?.value ?? "";
+    const bh_paid = bhPaidVal === "" ? null : (bhPaidVal === "true");
+
+    await api(`/api/weeks/${currentWeek.id}/entry`, {
+      method: "PUT",
+      body: JSON.stringify({
+        work_date: $("workDate")?.value,
+        time_in: $("timeIn")?.value || null,
+        time_out: $("timeOut")?.value || null,
+        break_minutes: Number($("breakMin")?.value || 0),
+        note: ($("note")?.value || "").trim() || null,
+        bh_paid,
+      }),
+    });
+
+    setMsg($("dayMsg"), "Saved.", true);
+
+    await loadWeek(currentWeek.id);
+    openScreen("weekDetail");
+  } catch (e) {
+    setMsg($("dayMsg"), e.message);
+  }
+});
+
+$("btnDeleteDay")?.addEventListener("click", async () => {
+  try {
+    if (!editingEntry?.id) return;
+    if (!confirm("Delete this day?")) return;
+
+    await api(`/api/entries/${editingEntry.id}`, { method: "DELETE" });
+
+    await loadWeek(currentWeek.id);
+    openScreen("weekDetail");
+  } catch (e) {
+    alert(e.message);
+  }
+});
+
+function openDayFormAdd() {
+  editingEntry = null;
+  if ($("dayFormTitle")) $("dayFormTitle").textContent = "Add day";
+  if ($("btnDeleteDay")) hide($("btnDeleteDay"));
+  fillDayForm(null);
+  openScreen("dayForm");
+}
+
+function openDayFormEdit(entry) {
+  editingEntry = entry;
+  if ($("dayFormTitle")) $("dayFormTitle").textContent = "Edit day";
+  if ($("btnDeleteDay")) show($("btnDeleteDay"));
+  fillDayForm(entry);
+  openScreen("dayForm");
+}
+
+function fillDayForm(entry) {
+  setMsg($("dayMsg"), "");
+
+  if ($("workDate")) $("workDate").value = entry?.work_date || "";
+  if ($("timeIn")) $("timeIn").value = entry?.time_in || "";
+  if ($("timeOut")) $("timeOut").value = entry?.time_out || "";
+  if ($("breakMin")) $("breakMin").value = String(entry?.break_minutes ?? 0);
+  if ($("note")) $("note").value = entry?.note || "";
+
+  // bhPaid select: Auto / Paid / Not paid
+  if ($("bhPaid")) {
+    $("bhPaid").value =
+      entry?.bh_paid === true ? "true" :
+      entry?.bh_paid === false ? "false" : "";
+  }
+}
+
+/* =========================
+   BANK HOLIDAYS screen (screenBH)
+========================= */
+async function openBH() {
+  openScreen("bh");
+  if ($("bhYear")) $("bhYear").value = String(new Date().getFullYear());
   await loadBH();
-};
+}
 
-$("btnCloseBH").onclick = () => hide($("bhBox"));
+$("btnLoadBH")?.addEventListener("click", async () => loadBH());
 
-$("btnLoadBH").onclick = async () => loadBH();
-
-async function loadBH(){
-  const year = Number($("bhYear").value);
+async function loadBH() {
+  const year = Number($("bhYear")?.value || new Date().getFullYear());
   const list = $("bhList");
+  if (!list) return;
+
   list.innerHTML = "";
 
   const items = await api(`/api/bank-holidays/${year}`);
-  for(const bh of items){
+  for (const bh of items) {
     const div = document.createElement("div");
     div.className = "item";
     div.innerHTML = `
@@ -401,45 +709,106 @@ async function loadBH(){
       <div style="text-align:right">
         <div class="item-sub">Paid:</div>
         <select data-id="${bh.id}">
-          <option value="true" ${bh.paid ? "selected":""}>Yes</option>
-          <option value="false" ${!bh.paid ? "selected":""}>No</option>
+          <option value="true" ${bh.paid ? "selected" : ""}>Yes</option>
+          <option value="false" ${!bh.paid ? "selected" : ""}>No</option>
         </select>
       </div>
     `;
+
     const sel = div.querySelector("select");
     sel.onchange = async () => {
       const paid = sel.value === "true";
       await api(`/api/bank-holidays/${bh.id}`, {
-        method:"PATCH",
-        body: JSON.stringify({ paid })
+        method: "PATCH",
+        body: JSON.stringify({ paid }),
       });
+      // refresh home counters if user goes back later
     };
+
     list.appendChild(div);
   }
 }
 
-// ---------- PWA ----------
-if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("/static/sw.js").catch(()=>{});
+/* =========================
+   REPORTS
+========================= */
+async function openReports() {
+  openScreen("reports");
+  await fillReportSelect();
 }
 
-// ---------- INTRO VIDEO (SÓ ESSE BLOCO) ----------
-(function introVideo(){
-  const introEl = document.getElementById("introContainer");
-  const videoEl = document.getElementById("introVideo");
+async function fillReportSelect() {
+  const sel = $("reportWeekSelect");
+  if (!sel) return;
 
-  function hideIntro(){
-    if(introEl) introEl.style.display = "none";
+  sel.innerHTML = "";
+
+  const weeks = await api("/api/weeks");
+  if (!weeks.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "No weeks available";
+    sel.appendChild(opt);
+    return;
   }
 
-  if(introEl && videoEl){
-    videoEl.addEventListener("ended", hideIntro);
-    videoEl.addEventListener("error", hideIntro);
-
-    // segurança: se autoplay falhar, some em 4s
-    setTimeout(hideIntro, 4000);
+  for (const w of weeks) {
+    const opt = document.createElement("option");
+    opt.value = w.id;
+    opt.textContent = `Week ${w.week_number} • ${w.start_date} • ${w.total_hhmm} • ${money(w.total_pay)}`;
+    sel.appendChild(opt);
   }
-})();
+}
 
-// start
+$("btnOpenReport")?.addEventListener("click", () => {
+  const sel = $("reportWeekSelect");
+  const weekId = sel?.value;
+  if (!weekId) return;
+
+  window.open(`/report?week_id=${encodeURIComponent(weekId)}`, "_blank");
+});
+
+/* =========================
+   PROFILE
+========================= */
+async function openProfile() {
+  openScreen("profile");
+
+  try {
+    if (!currentUser) currentUser = await api("/api/me");
+
+    if ($("profileSub")) $("profileSub").textContent = "Account details";
+    if ($("profileName")) $("profileName").textContent = `${currentUser.first_name} ${currentUser.last_name}`;
+    if ($("profileEmail")) $("profileEmail").textContent = currentUser.email ? currentUser.email : "—";
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+/* =========================
+   PWA
+========================= */
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/static/sw.js").catch(() => {});
+}
+
+/* =========================
+   Boot
+========================= */
+async function boot() {
+  // If opened from reset link (?reset=TOKEN), show reset screen
+  const token = getResetTokenFromURL();
+  if (token) {
+    openScreen("reset");
+    return;
+  }
+
+  try {
+    currentUser = await api("/api/me");
+    await openHome();
+  } catch (_) {
+    openAuth();
+  }
+}
+
 boot();

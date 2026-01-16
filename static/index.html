@@ -2,51 +2,48 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
   <title>Work Hours Tracker</title>
-
   <link rel="manifest" href="/static/manifest.webmanifest">
   <link rel="stylesheet" href="/static/app.css">
 </head>
 
 <body>
-  <!-- VIDEO DE ABERTURA -->
-  <div id="introContainer">
+
+  <!-- INTRO VIDEO (FULLSCREEN) -->
+  <div id="introContainer" class="intro">
     <video id="introVideo" autoplay muted playsinline preload="auto">
       <source src="/static/intro.mp4" type="video/mp4">
     </video>
   </div>
 
-  <header class="topbar">
-    <div class="topbar-left">
-      <div class="top-title">Work Hours Tracker</div>
-      <div class="top-sub">Weeks • Hours • Pay (Sunday/Bank Holiday 1.5x)</div>
-    </div>
-    <div class="topbar-right">
-      <button id="btnLogout" class="btn secondary hidden">Logout</button>
-    </div>
-  </header>
-
-  <main class="container">
+  <main class="app">
 
     <!-- SCREEN: AUTH -->
     <section id="screenAuth" class="screen">
       <div class="card auth-card">
         <div class="logo-wrap">
-          <img id="appLogo" class="logo" alt="App logo">
+          <img id="appLogo" class="logo" alt="App logo" src="/static/logo.png">
         </div>
 
         <div class="auth-title">Work Hours Tracker</div>
         <div class="auth-sub">Sign in to continue</div>
 
+        <!-- Login can use email OR names -->
         <div class="field">
-          <label>First name</label>
-          <input id="fn" type="text" autocomplete="given-name" placeholder="Camilo">
+          <label>Email (recommended)</label>
+          <input id="email" type="email" autocomplete="email" placeholder="you@email.com">
         </div>
 
-        <div class="field">
-          <label>Last name</label>
-          <input id="ln" type="text" autocomplete="family-name" placeholder="Vettori">
+        <div class="grid2">
+          <div class="field">
+            <label>First name</label>
+            <input id="fn" type="text" autocomplete="off" placeholder="Camilo">
+          </div>
+          <div class="field">
+            <label>Last name</label>
+            <input id="ln" type="text" autocomplete="off" placeholder="Vettori">
+          </div>
         </div>
 
         <div class="field">
@@ -54,7 +51,6 @@
           <input id="pw" type="password" autocomplete="current-password" placeholder="••••••••">
         </div>
 
-        <!-- ✅ Remember me -->
         <label class="remember-row">
           <input type="checkbox" id="rememberMe">
           <span>Remember me</span>
@@ -62,8 +58,8 @@
 
         <div class="auth-actions">
           <button id="btnSignIn" class="btn primary">Sign in</button>
-          <button id="btnSignUp" class="btn dark">Sign up</button>
-          <button id="btnForgot" class="btn link">Forgot password?</button>
+          <button id="btnSignUpOpen" class="btn dark">Sign up</button>
+          <button id="btnForgotOpen" class="btn link">Forgot password?</button>
         </div>
 
         <div id="authMsg" class="msg"></div>
@@ -71,21 +67,136 @@
       </div>
     </section>
 
-    <!-- SCREEN: WEEKS LIST -->
-    <section id="screenWeeks" class="screen hidden">
+    <!-- SCREEN: SIGNUP -->
+    <section id="screenSignup" class="screen hidden">
+      <div class="card auth-card">
+        <div class="row between">
+          <button id="btnSignupBack" class="btn secondary">← Back</button>
+          <div class="h2">Create account</div>
+        </div>
+
+        <div class="grid2">
+          <div class="field">
+            <label>First name</label>
+            <input id="s_fn" type="text" autocomplete="given-name">
+          </div>
+          <div class="field">
+            <label>Last name</label>
+            <input id="s_ln" type="text" autocomplete="family-name">
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Email</label>
+          <input id="s_email" type="email" autocomplete="email" placeholder="you@email.com">
+        </div>
+
+        <div class="field">
+          <label>Password</label>
+          <input id="s_pw" type="password" autocomplete="new-password" placeholder="••••••••">
+        </div>
+
+        <button id="btnSignUp" class="btn primary">Create account</button>
+        <div id="signupMsg" class="msg"></div>
+      </div>
+    </section>
+
+    <!-- SCREEN: FORGOT -->
+    <section id="screenForgot" class="screen hidden">
+      <div class="card auth-card">
+        <div class="row between">
+          <button id="btnForgotBack" class="btn secondary">← Back</button>
+          <div class="h2">Reset password</div>
+        </div>
+
+        <div class="muted" style="margin-top:8px">
+          Enter your email and we’ll send you a reset link.
+        </div>
+
+        <div class="field" style="margin-top:12px">
+          <label>Email</label>
+          <input id="f_email" type="email" autocomplete="email" placeholder="you@email.com">
+        </div>
+
+        <button id="btnForgotSend" class="btn primary">Send reset link</button>
+        <div id="forgotMsg" class="msg"></div>
+      </div>
+    </section>
+
+    <!-- SCREEN: RESET (opens from ?reset=TOKEN) -->
+    <section id="screenReset" class="screen hidden">
+      <div class="card auth-card">
+        <div class="h2">Set new password</div>
+
+        <div class="field" style="margin-top:12px">
+          <label>New password</label>
+          <input id="r_pw" type="password" autocomplete="new-password" placeholder="••••••••">
+        </div>
+
+        <button id="btnResetSave" class="btn primary">Save new password</button>
+        <div id="resetMsg" class="msg"></div>
+      </div>
+    </section>
+
+    <!-- SCREEN: HOME -->
+    <section id="screenHome" class="screen hidden">
+      <div class="pageHead">
+        <div>
+          <div class="title">Home</div>
+          <div class="subtitle" id="homeSubtitle">—</div>
+        </div>
+        <button id="btnLogout" class="btn pill">Logout</button>
+      </div>
+
+      <div class="cards">
+        <div class="card mini">
+          <div class="miniTitle">This week</div>
+          <div class="miniValue" id="homeWeekHours">—</div>
+          <div class="miniSub" id="homeWeekPay">—</div>
+        </div>
+
+        <div class="card mini">
+          <div class="miniTitle">Total (all weeks)</div>
+          <div class="miniValue" id="homeAllHours">—</div>
+          <div class="miniSub" id="homeAllPay">—</div>
+        </div>
+
+        <div class="card mini">
+          <div class="miniTitle">Bank Holidays (year)</div>
+          <div class="miniValue" id="homeBHToTake">—</div>
+          <div class="miniSub" id="homeBHPaid">—</div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="row between">
           <div>
-            <div class="h2">Your weeks</div>
-            <div class="muted">Tap a week to open. Create a new one with the button.</div>
+            <div class="h2">Quick actions</div>
+            <div class="muted">Fast access to main features</div>
           </div>
-          <button id="btnNewWeek" class="btn primary">+ New week</button>
         </div>
 
-        <div id="weeksList" class="list"></div>
+        <div class="gridActions">
+          <button id="goWeeks" class="btn secondary">Weeks</button>
+          <button id="goNewWeek" class="btn primary">+ New week</button>
+          <button id="goBH" class="btn secondary">Bank holidays</button>
+          <button id="goReports" class="btn secondary">Reports</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SCREEN: WEEKS -->
+    <section id="screenWeeks" class="screen hidden">
+      <div class="pageHead">
+        <div>
+          <div class="title">Weeks</div>
+          <div class="subtitle">Tap a week to open</div>
+        </div>
+        <button id="btnNewWeek" class="btn primary">+ New</button>
       </div>
 
-      <!-- New week modal (simple inline) -->
+      <div id="weeksList" class="list"></div>
+
       <div id="newWeekBox" class="card hidden">
         <div class="h2">Create new week</div>
         <div class="grid">
@@ -112,162 +223,179 @@
       </div>
     </section>
 
-    <!-- SCREEN: WEEK DETAIL -->
+    <!-- SCREEN: WEEK DETAIL (LIST FIRST) -->
     <section id="screenWeekDetail" class="screen hidden">
-      <div class="week-layout">
+      <div class="pageHead">
+        <button id="btnBackWeeks" class="btn secondary">← Weeks</button>
+        <div style="flex:1"></div>
+        <button id="btnReport" class="btn secondary">Report</button>
+        <button id="btnDeleteWeek" class="btn danger">Delete</button>
+      </div>
 
-        <!-- LEFT PANEL -->
-        <div class="week-left">
-          <div class="card">
-            <div class="row between">
-              <div>
-                <button id="btnBack" class="btn secondary">← Back</button>
-              </div>
-              <div class="row gap">
-                <button id="btnReport" class="btn dark">Report / Print</button>
-                <button id="btnDeleteWeek" class="btn danger">Delete week</button>
-              </div>
-            </div>
+      <div class="card">
+        <div class="h2" id="weekTitle">Week</div>
+        <div class="muted" id="weekMeta">—</div>
+        <div class="pillRow">
+          <div class="pill" id="weekTotals">Total —</div>
+        </div>
 
-            <div class="week-head">
-              <div class="h2" id="weekTitle">Week</div>
-              <div class="muted" id="weekMeta">—</div>
-              <div class="pill" id="weekTotals">Total 00:00 • €0.00</div>
-            </div>
+        <div class="grid2" style="margin-top:12px">
+          <div class="field">
+            <label>Hourly rate (€)</label>
+            <input id="rateEdit" type="number" step="0.01" min="0">
+          </div>
+          <div class="field" style="display:flex; align-items:end">
+            <button id="btnSaveRate" class="btn secondary" style="width:100%">Save rate</button>
+          </div>
+        </div>
+      </div>
 
-            <div class="grid">
-              <div class="field">
-                <label>Hourly rate (€)</label>
-                <input id="rateEdit" type="number" step="0.01" min="0">
-              </div>
-              <div class="field">
-                <label>&nbsp;</label>
-                <button id="btnSaveRate" class="btn secondary">Save rate</button>
-              </div>
-            </div>
+      <div class="card">
+        <div class="row between">
+          <div>
+            <div class="h2">Days</div>
+            <div class="muted">Tap a day to edit. Sunday/Bank Holiday = 1.5x</div>
+          </div>
+          <button id="btnAddDay" class="btn primary">+ Add day</button>
+        </div>
+
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Day</th>
+                <th>Date</th>
+                <th>In</th>
+                <th>Out</th>
+                <th>Break</th>
+                <th>Worked</th>
+                <th>1.5x</th>
+                <th>Note</th>
+              </tr>
+            </thead>
+            <tbody id="entriesBody"></tbody>
+          </table>
+        </div>
+
+        <div id="entryMsg" class="msg"></div>
+      </div>
+    </section>
+
+    <!-- SCREEN: DAY FORM (ADD/EDIT) -->
+    <section id="screenDayForm" class="screen hidden">
+      <div class="pageHead">
+        <button id="btnDayBack" class="btn secondary">← Back</button>
+        <div class="title" id="dayFormTitle">Add day</div>
+        <div style="flex:1"></div>
+        <button id="btnDeleteDay" class="btn danger hidden">Delete</button>
+      </div>
+
+      <div class="card">
+        <div class="grid">
+          <div class="field">
+            <label>Date</label>
+            <input id="workDate" type="date">
+          </div>
+          <div class="field">
+            <label>Time in</label>
+            <input id="timeIn" type="time">
+          </div>
+          <div class="field">
+            <label>Time out</label>
+            <input id="timeOut" type="time">
+          </div>
+          <div class="field">
+            <label>Break (min)</label>
+            <input id="breakMin" type="number" min="0" step="5" value="0">
           </div>
         </div>
 
-        <!-- MAIN CONTENT -->
-        <div class="week-main">
-
-          <div class="card">
-            <div class="h2">Add / update day</div>
-            <div class="grid">
-              <div class="field">
-                <label>Date</label>
-                <input id="workDate" type="date">
-              </div>
-              <div class="field">
-                <label>Time in</label>
-                <input id="timeIn" type="time">
-              </div>
-              <div class="field">
-                <label>Time out</label>
-                <input id="timeOut" type="time">
-              </div>
-              <div class="field">
-                <label>Break (min)</label>
-                <input id="breakMin" type="number" min="0" step="5" value="0">
-              </div>
-            </div>
-
-            <div class="grid">
-              <div class="field">
-                <label>Note</label>
-                <input id="note" type="text" placeholder="Bank holiday / short shift / etc">
-              </div>
-              <div class="field">
-                <label>Bank holiday paid?</label>
-                <select id="bhPaid">
-                  <option value="">Auto</option>
-                  <option value="true">Paid</option>
-                  <option value="false">Not paid</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>&nbsp;</label>
-                <button id="btnSaveDay" class="btn primary">Save day</button>
-              </div>
-            </div>
-
-            <div id="entryMsg" class="msg"></div>
+        <div class="grid">
+          <div class="field">
+            <label>Note</label>
+            <input id="note" type="text" placeholder="Bank holiday / short shift / etc">
           </div>
-
-          <div class="card">
-            <div class="row between">
-              <div>
-                <div class="h2">Days</div>
-                <div class="muted">Sunday/Bank Holiday are 1.5x automatically.</div>
-              </div>
-              <div class="row gap">
-                <button id="btnOpenBH" class="btn secondary">Bank holidays</button>
-              </div>
-            </div>
-
-            <div class="table-wrap">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Day</th>
-                    <th>Date</th>
-                    <th>In</th>
-                    <th>Out</th>
-                    <th>Break</th>
-                    <th>Worked</th>
-                    <th>1.5x</th>
-                    <th>Note</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody id="entriesBody"></tbody>
-              </table>
-            </div>
+          <div class="field">
+            <label>Bank holiday paid?</label>
+            <select id="bhPaid">
+              <option value="">Auto</option>
+              <option value="true">Paid</option>
+              <option value="false">Not paid</option>
+            </select>
           </div>
-
-          <!-- ✅ Bank Holiday tracker -->
-          <div id="bhBox" class="bh-drawer hidden">
-            <div class="row between">
-              <div>
-                <div class="h2">Bank Holiday tracker</div>
-                <div class="muted">Mark if Tesco paid it when you requested.</div>
-              </div>
-              <button id="btnCloseBH" class="btn secondary">Close</button>
-            </div>
-
-            <div class="grid">
-              <div class="field">
-                <label>Year</label>
-                <input id="bhYear" type="number" min="2020" max="2100">
-              </div>
-              <div class="field">
-                <label>&nbsp;</label>
-                <button id="btnLoadBH" class="btn primary">Load</button>
-              </div>
-            </div>
-
-            <div id="bhList" class="list"></div>
-          </div>
-
         </div>
+
+        <button id="btnSaveDay" class="btn primary" style="width:100%">Save</button>
+        <div id="dayMsg" class="msg"></div>
+      </div>
+    </section>
+
+    <!-- SCREEN: BANK HOLIDAYS -->
+    <section id="screenBH" class="screen hidden">
+      <div class="pageHead">
+        <div>
+          <div class="title">Bank Holidays</div>
+          <div class="subtitle">Mark if Tesco paid it</div>
+        </div>
+        <div class="row gap">
+          <input id="bhYear" type="number" min="2020" max="2100" class="yearInput">
+          <button id="btnLoadBH" class="btn primary">Load</button>
+        </div>
+      </div>
+
+      <div id="bhList" class="list"></div>
+    </section>
+
+    <!-- SCREEN: REPORTS -->
+    <section id="screenReports" class="screen hidden">
+      <div class="pageHead">
+        <div>
+          <div class="title">Reports</div>
+          <div class="subtitle">Open/Print a week report</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="field">
+          <label>Select week</label>
+          <select id="reportWeekSelect"></select>
+        </div>
+        <button id="btnOpenReport" class="btn primary" style="width:100%">Open report</button>
+        <div class="muted" style="margin-top:10px">
+          Tip: use your browser Print to PDF.
+        </div>
+      </div>
+    </section>
+
+    <!-- SCREEN: PROFILE -->
+    <section id="screenProfile" class="screen hidden">
+      <div class="pageHead">
+        <div>
+          <div class="title">Profile</div>
+          <div class="subtitle" id="profileSub">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="h2" id="profileName">—</div>
+        <div class="muted" id="profileEmail">—</div>
+
+        <div style="height:12px"></div>
+        <button id="btnProfileLogout" class="btn danger" style="width:100%">Logout</button>
       </div>
     </section>
 
   </main>
 
-  <script src="/static/app.js"></script>
+  <!-- Bottom Nav -->
+  <nav id="bottomNav" class="bottomNav hidden">
+    <button class="navItem" data-screen="home">Home</button>
+    <button class="navItem" data-screen="weeks">Weeks</button>
+    <button class="navItem" data-screen="bh">Holidays</button>
+    <button class="navItem" data-screen="reports">Reports</button>
+    <button class="navItem" data-screen="profile">Profile</button>
+  </nav>
 
-  <style>
-    .remember-row{
-      display:flex;
-      gap:10px;
-      align-items:center;
-      margin:10px 0 0 0;
-      color:#111827;
-      font-size:14px;
-      user-select:none;
-    }
-    .remember-row input{ width:16px; height:16px; }
-  </style>
+  <script src="/static/app.js"></script>
 </body>
 </html>
