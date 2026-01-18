@@ -650,8 +650,9 @@ def forgot(payload: ForgotIn, request: Request):
         logger.info("Password reset email sent to %s", email)
         return {"ok": True}
     except Exception as e:
-        logger.exception("Failed to send reset email to %s. Error: %s", email, e)
-        return {"ok": True, "dev_reset_link": reset_link}
+      logger.exception("Failed to send reset email to %s", email)
+      raise HTTPException(500, "Failed to send reset email")
+
 
 
 
