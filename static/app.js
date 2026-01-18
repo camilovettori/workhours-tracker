@@ -93,9 +93,9 @@ const LS_REM = {
 function updateCreditVisibility() {
   const credit = $("credit");
   if (!credit) return;
-  const enabled = localStorage.getItem(LS_REM.enabled) === "1";
-  credit.style.display = enabled ? "" : "none";
+  credit.style.display = "";
 }
+
 
 function loadRemember() {
   const cb = $("rememberMe");
