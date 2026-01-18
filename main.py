@@ -613,7 +613,10 @@ def login(payload: LoginIn):
 
 @app.post("/api/forgot")
 def forgot(payload: ForgotIn, request: Request):
+    # 1) define email corretamente (era isso que estava faltando)
     email = payload.email.lower().strip()
+
+    logger.info("FORGOT called for email=%s", email)
 
     with db() as conn:
         u = conn.execute(
@@ -638,7 +641,6 @@ def forgot(payload: ForgotIn, request: Request):
     base = os.environ.get("APP_BASE_URL") or str(request.base_url).rstrip("/")
     reset_link = f"{base}/?reset={raw}"
 
-    # if SMTP not configured, do not break the app
     try:
         send_reset_email(email, reset_link)
         logger.info("Password reset email sent to %s", email)
@@ -646,6 +648,7 @@ def forgot(payload: ForgotIn, request: Request):
     except Exception as e:
         logger.exception("Failed to send reset email to %s. Error: %s", email, e)
         return {"ok": True, "dev_reset_link": reset_link}
+
 
 
 @app.post("/api/reset")
