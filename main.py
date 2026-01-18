@@ -33,7 +33,7 @@ COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"  # set 1 on Render (
 
 app = FastAPI(title="Work Hours Tracker", version="5.2")
 logging.basicConfig(level=logging.INFO)
-logger = logging.getlogger("workhours")
+logger = logging.getLogger("workhours")
 
 if not STATIC_DIR.exists():
     raise RuntimeError(f"Missing folder: {STATIC_DIR}")
