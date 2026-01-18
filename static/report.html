@@ -1,114 +1,92 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Report</title>
-
-  <style>
-    :root{--text:#0f172a;--muted:#64748b;--line:#e5e7eb;--chip:#eef2ff;}
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:20px;color:var(--text);}
-    .top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:12px;}
-    .brand{display:flex;gap:12px;align-items:center;min-width:260px;}
-    .brand img{width:46px;height:46px;border-radius:12px;border:1px solid var(--line);background:#fff;object-fit:cover;}
-    h1{margin:0 0 4px;font-size:22px;line-height:1.2;}
-    .muted{color:var(--muted);font-size:13px}
-    .pill{display:inline-block;background:var(--chip);padding:6px 10px;border-radius:999px;font-weight:800;font-size:12px;margin-top:8px;}
-    button{border:0;cursor:pointer;border-radius:12px;padding:10px 12px;font-weight:800;background:#0b1220;color:#fff;}
-    table{width:100%;border-collapse:collapse;margin-top:12px;}
-    th,td{border-bottom:1px solid var(--line);padding:10px;text-align:left;font-size:13px;vertical-align:top;}
-    th{background:#f8fafc;color:#334155;font-weight:900;}
-    .errorBox{border:1px solid var(--line);border-radius:14px;padding:14px;background:#fff;}
-    @media print{button{display:none}body{margin:0}th{background:#fff}}
-  </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Week Report</title>
+  <link rel="stylesheet" href="/static/app.css" />
 </head>
-
 <body>
-  <div class="top">
-    <div class="brand">
-      <img src="/static/logo.png" alt="Logo" onerror="this.style.display='none'">
+  <div class="app">
+    <div class="pageHead between">
       <div>
-        <h1 id="t">Work Hours Report</h1>
-        <div id="m" class="muted"></div>
-        <div id="p" class="pill"></div>
+        <div id="t" class="title">Week Report</div>
+        <div id="m" class="subtitle"></div>
       </div>
+      <button class="btn secondary" onclick="window.print()">Print</button>
     </div>
 
-    <button onclick="window.print()">Print / Save PDF</button>
+    <div class="card">
+      <div id="p" class="pill">Total —</div>
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Day</th><th>Date</th><th>In</th><th>Out</th><th>Break</th><th>Worked</th><th>1.5x</th><th>Note</th>
+            </tr>
+          </thead>
+          <tbody id="b"></tbody>
+        </table>
+      </div>
+
+      <div id="err" class="msg"></div>
+    </div>
   </div>
 
-  <table>
-    <thead>
-      <tr>
-        <th>Day</th><th>Date</th><th>In</th><th>Out</th><th>Break</th><th>Worked</th><th>1.5x</th><th>Note</th>
-      </tr>
-    </thead>
-    <tbody id="b"></tbody>
-  </table>
-
   <script>
-    const params = new URLSearchParams(location.search);
-    const week_id = params.get("week_id");
-
-    async function api(path){
-      const res = await fetch(path, { credentials:"include" });
-      const ct = res.headers.get("content-type") || "";
-      const data = ct.includes("application/json")
-        ? await res.json().catch(()=>null)
-        : await res.text().catch(()=>null);
-
-      if(!res.ok){
-        const msg = (data && data.detail) ? data.detail : (typeof data === "string" ? data : "Error");
-        throw new Error(msg);
-      }
+    async function api(path) {
+      const res = await fetch(path, { credentials: "include" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || ("HTTP " + res.status));
       return data;
     }
 
-    function showError(msg){
-      document.body.innerHTML = `
-        <div class="errorBox">
-          <h2 style="margin:0 0 8px">Report error</h2>
-          <div class="muted">${msg}</div>
-          <div class="muted" style="margin-top:10px">Example: <b>/report?week_id=3</b></div>
-        </div>
-      `;
+    function showError(msg) {
+      document.getElementById("err").textContent = String(msg || "");
     }
 
     (async () => {
-      if(!week_id){
-        showError("Missing week_id in the URL.");
-        return;
+      try {
+        const params = new URLSearchParams(location.search);
+        const week_id = params.get("week_id");
+        if (!week_id) {
+          showError("Missing week_id in URL.");
+          return;
+        }
+
+        const w = await api(`/api/weeks/${encodeURIComponent(week_id)}`);
+
+        document.getElementById("t").textContent = `Week ${w.week_number} Report`;
+        document.getElementById("m").textContent = `Start: ${w.start_date} • Rate: €${Number(w.hourly_rate || 0).toFixed(2)}`;
+        document.getElementById("p").textContent = `Total ${w.totals.total_hhmm} • €${Number(w.totals.total_pay || 0).toFixed(2)}`;
+
+        const tb = document.getElementById("b");
+        tb.innerHTML = "";
+
+        if (!w.entries || !w.entries.length) {
+          tb.innerHTML = `<tr><td colspan="8" class="muted">No days in this week.</td></tr>`;
+          return;
+        }
+
+        for (const e of w.entries) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td><b>${e.weekday || ""}</b></td>
+            <td>${e.date_ddmmyyyy || ""}</td>
+            <td>${e.time_in || ""}</td>
+            <td>${e.time_out || ""}</td>
+            <td>${Number(e.break_minutes || 0)}m</td>
+            <td><b>${e.worked_hhmm || ""}</b></td>
+            <td>${Number(e.multiplier || 1) === 1.5 ? "YES" : ""}</td>
+            <td>${e.note || ""}</td>
+          `;
+          tb.appendChild(tr);
+        }
+      } catch (err) {
+        showError(err);
       }
-
-      const w = await api(`/api/weeks/${encodeURIComponent(week_id)}`);
-
-      document.getElementById("t").textContent = `Week ${w.week_number} Report`;
-      document.getElementById("m").textContent = `Start: ${w.start_date} • Rate: €${Number(w.hourly_rate).toFixed(2)}`;
-      document.getElementById("p").textContent = `Total ${w.totals.total_hhmm} • €${Number(w.totals.total_pay).toFixed(2)}`;
-
-      const tb = document.getElementById("b");
-      tb.innerHTML = "";
-
-      if(!w.entries || !w.entries.length){
-        tb.innerHTML = `<tr><td colspan="8" class="muted">No days in this week.</td></tr>`;
-        return;
-      }
-
-      for(const e of w.entries){
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td><b>${e.weekday || ""}</b></td>
-          <td>${e.date_ddmmyyyy || ""}</td>
-          <td>${e.time_in || ""}</td>
-          <td>${e.time_out || ""}</td>
-          <td>${(e.break_minutes ?? 0)}m</td>
-          <td><b>${e.worked_hhmm || ""}</b></td>
-          <td>${e.multiplier === 1.5 ? "YES" : ""}</td>
-          <td>${e.note || ""}</td>
-        `;
-        tb.appendChild(tr);
-      }
-    })().catch(err => showError(String(err)));
+    })();
   </script>
 </body>
 </html>

@@ -28,27 +28,40 @@ body{
   padding: 18px 16px 86px;
 }
 
-/* Intro fullscreen (video menor e centralizado) */
-.intro {
+/* =========================
+   INTRO OVERLAY (fullscreen)
+   ========================= */
+.introOverlay{
   position: fixed;
   inset: 0;
   z-index: 9999;
   background: #000;
-
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.intro video {
-  width: 80vw;        /* controla o tamanho horizontal */
-  max-width: 420px;  /* limite em telas grandes */
-  height: auto;      /* mantém proporção */
-  max-height: 80vh;  /* evita estourar em celular */
-  object-fit: contain;
-  display: block;
+.introOverlay video{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
+.introSkip{
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  border: 0;
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-weight: 800;
+  cursor: pointer;
+  background: rgba(255,255,255,.85);
+}
+
+.introOverlay.hidden{
+  display:none !important;
+}
 
 /* common */
 .card{
@@ -152,7 +165,7 @@ input, select{
   padding: 13px 12px;
   border:1px solid var(--line);
   border-radius: 14px;
-  font-size: 16px; /* evita zoom iOS */
+  font-size: 16px;
   outline:none;
   background:#fff;
 }
@@ -200,7 +213,7 @@ input, select{
 }
 .table th{color:var(--muted); font-weight:800}
 
-/* Home cards */
+/* Home cards (legacy) */
 .cards{
   display:grid;
   grid-template-columns: 1fr;
@@ -262,4 +275,443 @@ input, select{
   .grid2{grid-template-columns: 1fr;}
   .gridActions{grid-template-columns: 1fr;}
   .title{font-size:20px}
+}
+
+/* =========================
+   NEW HOME UX (post-login)
+   ========================= */
+:root{
+  --wht-bg1:#f3f6ff;
+  --wht-bg2:#eef2ff;
+  --wht-card:#ffffff;
+  --wht-text:#0f172a;
+  --wht-muted:#64748b;
+  --wht-line:#e5e7eb;
+  --wht-blue:#2f6df6;
+  --wht-blue2:#4aa3ff;
+  --wht-shadow: 0 10px 30px rgba(15, 23, 42, .08);
+  --wht-radius: 22px;
+}
+
+.wht-page{
+  min-height: 100vh;
+  background: radial-gradient(1200px 500px at 50% -50px, #ffffff 0%, var(--wht-bg1) 35%, var(--wht-bg2) 100%);
+}
+
+.wht-container{
+  max-width: 430px;
+  margin: 0 auto;
+  padding: 18px 16px 92px;
+}
+
+.wht-topbar{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  margin-top: 6px;
+}
+
+.wht-h1{
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing:-.02em;
+  margin:0;
+  line-height:1.05;
+}
+
+.wht-sub{
+  margin-top: 6px;
+  color:var(--wht-muted);
+  font-size:18px;
+}
+.wht-sub b{ color:var(--wht-text); }
+
+.wht-btn{
+  border:0;
+  cursor:pointer;
+  border-radius: 999px;
+  padding: 12px 16px;
+  font-weight: 700;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, .08);
+  border:1px solid rgba(229,231,235,.8);
+}
+.wht-btn:active{ transform: translateY(1px); }
+
+.wht-card{
+  background: var(--wht-card);
+  border-radius: var(--wht-radius);
+  box-shadow: var(--wht-shadow);
+  border: 1px solid rgba(229,231,235,.65);
+}
+
+.wht-hero{
+  margin-top: 16px;
+  padding: 18px;
+  display:flex;
+  align-items:stretch;
+  justify-content:space-between;
+  gap:14px;
+  overflow:hidden;
+  position:relative;
+}
+
+.wht-hero-kicker{
+  color:var(--wht-muted);
+  font-weight: 700;
+  font-size: 18px;
+  margin-bottom: 6px;
+}
+
+.wht-hero-time{
+  font-size: 54px;
+  font-weight: 900;
+  letter-spacing:-.02em;
+  margin: 0;
+  line-height:1.0;
+}
+
+.wht-hero-pay{
+  color:#334155;
+  font-size: 26px;
+  font-weight: 500;
+  margin-top: 6px;
+}
+
+.wht-btn-primary{
+  margin-top: 14px;
+  background: linear-gradient(135deg, var(--wht-blue) 0%, var(--wht-blue2) 100%);
+  color:#fff;
+  border:0;
+  padding: 14px 18px;
+  box-shadow: 0 12px 24px rgba(47,109,246,.28);
+}
+
+.wht-ringWrap{
+  width: 150px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.wht-ring{
+  width: 138px;
+  height: 138px;
+  border-radius: 999px;
+  background:
+    conic-gradient(from 220deg, var(--wht-blue2) 0%, var(--wht-blue) var(--pct), rgba(226,232,240,.85) var(--pct), rgba(226,232,240,.85) 100%);
+  position:relative;
+  padding: 12px;
+}
+
+.wht-ring::before{
+  content:"";
+  position:absolute;
+  inset: 12px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 20%, rgba(255,255,255,.9) 0%, rgba(248,250,252,1) 60%, rgba(248,250,252,1) 100%);
+  border: 1px solid rgba(229,231,235,.65);
+}
+
+.wht-avatar{
+  position:absolute;
+  inset: 22px;
+  border-radius: 999px;
+  overflow:hidden;
+  border: 6px solid rgba(255,255,255,.9);
+  box-shadow: 0 10px 24px rgba(15,23,42,.14);
+  background: #fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+}
+
+.wht-avatar img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+
+.wht-avatar .wht-fallback{
+  font-weight: 900;
+  color: #0f172a;
+  font-size: 28px;
+}
+
+.wht-grid2{
+  margin-top: 14px;
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.wht-smallCard{
+  padding: 14px 14px;
+  display:flex;
+  gap:12px;
+  align-items:flex-start;
+  min-height: 98px;
+}
+
+.wht-icon{
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: rgba(74,163,255,.15);
+  border: 1px solid rgba(74,163,255,.25);
+}
+
+.wht-smallTitle{
+  font-weight: 800;
+  font-size: 18px;
+  margin: 0;
+}
+
+.wht-smallValue{
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing:-.02em;
+  margin-top: 2px;
+}
+
+.wht-smallPay{
+  color:#334155;
+  margin-top: 2px;
+  font-size: 18px;
+}
+
+.wht-smallNote{
+  margin-top: 2px;
+  color: var(--wht-muted);
+  font-weight: 600;
+}
+
+.wht-rowLink{
+  margin-top: 12px;
+  padding: 16px 14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  cursor:pointer;
+}
+
+.wht-rowLeft{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-width:0;
+}
+.wht-rowLeft .wht-txt{ min-width:0; }
+
+.wht-rowTitle{
+  font-weight: 900;
+  font-size: 22px;
+  margin:0;
+}
+.wht-rowSub{
+  margin-top: 2px;
+  color: var(--wht-muted);
+  font-weight: 600;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.wht-chev{
+  color:#94a3b8;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.wht-section{ margin-top: 16px; }
+.wht-section h3{
+  margin: 10px 2px;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.wht-quick{
+  display:grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+.wht-quickBtn{
+  padding: 14px 10px;
+  text-align:center;
+  border-radius: var(--wht-radius);
+  background: rgba(255,255,255,.7);
+  border: 1px solid rgba(229,231,235,.7);
+  box-shadow: 0 10px 22px rgba(15,23,42,.06);
+  cursor:pointer;
+  font-weight: 800;
+}
+
+.wht-quickBtn .wht-qicon{
+  margin: 0 auto 8px;
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: rgba(47,109,246,.12);
+  border: 1px solid rgba(47,109,246,.18);
+  font-size: 20px;
+}
+
+/* Make charts canvas fit */
+canvas{
+  width:100%;
+  max-width:100%;
+  display:block;
+}
+
+/* Responsive tweaks for new UX */
+@media (max-width: 430px){
+  .wht-container{ padding-left: 12px; padding-right: 12px; }
+  .wht-hero{ flex-direction:column; }
+  .wht-ringWrap{ width:100%; justify-content:flex-end; }
+  .wht-grid2{ grid-template-columns: 1fr; }
+  .wht-quick{ grid-template-columns: 1fr; }
+}
+/* =========================
+   HOME layout fixes (alignment)
+========================= */
+
+/* Container geral do home */
+.wht-page { width: 100%; }
+.wht-container{
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 24px 18px 90px;
+}
+
+/* Topbar */
+.wht-topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:14px;
+}
+.wht-h1{ margin:0; line-height:1.1; }
+.wht-sub{ margin-top:6px; }
+
+/* HERO (card grande) */
+.wht-hero{
+  display:flex;
+  align-items:stretch;
+  justify-content:space-between;
+  gap:16px;
+}
+.wht-hero > div:first-child{ flex:1; min-width:0; }
+.wht-ringWrap{
+  width:150px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+/* Botões IN/OUT/BREAK iguais */
+.wht-clockBtns{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+.wht-clockBtns .wht-btn{
+  min-width:72px;
+  height:40px;
+  padding:0 14px;
+  border-radius:999px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  line-height:1;
+}
+
+/* Status IN/OUT/BREAK em 1 linha */
+.wht-clockStatus{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  align-items:center;
+  margin-top:10px;
+  line-height:1.2;
+}
+
+/* GRID dos cards pequenos (Total / Bank Holidays) */
+.wht-grid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:12px;
+  margin-top:12px;
+}
+.wht-cardSmall{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+  min-height:108px;
+}
+.wht-cardSmall .left{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  min-width:0;
+}
+.wht-cardSmall .title{
+  margin:0;
+  line-height:1.2;
+}
+.wht-cardSmall .value{
+  font-weight:800;
+  font-size:22px;
+  line-height:1.1;
+}
+.wht-cardSmall .sub{
+  opacity:.75;
+  line-height:1.2;
+}
+
+/* Reports card */
+.wht-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+
+/* Quick actions alinhado e bonito */
+.wht-qaTitle{
+  margin:14px 0 10px;
+  font-weight:700;
+}
+.wht-qa{
+  display:grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap:10px;
+}
+.wht-qa button{
+  width:100%;
+  height:46px;
+  border-radius:14px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  font-weight:700;
+  line-height:1;
+}
+
+/* Responsivo: se ficar apertado */
+@media (max-width: 420px){
+  .wht-ringWrap{ width:120px; }
+  .wht-qa{ grid-template-columns: 1fr; }
 }

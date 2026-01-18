@@ -1,1 +1,3 @@
-{}
+app:
+  name: Work Hours Tracker
+  cookie_secure: false

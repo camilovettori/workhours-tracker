@@ -1,5 +1,8 @@
 /* =========================
-   Work Hours Tracker - app.js
+   Work Hours Tracker - app.js (FIXED)
+   - Fixes: dash not defined, boot stuck, home render flow
+   - Adds: IN/OUT/BREAK wiring + refresh
+   - Keeps: remember me (no password), intro overlay safe, bottom nav
 ========================= */
 console.log("app.js loaded ✅");
 
@@ -23,25 +26,27 @@ function minutesToHHMM(totalMin) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-async function api(path, options = {}) {
-  const res = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
     credentials: "include",
-    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(opts.headers || {}),
+    },
+    ...opts,
   });
 
-  const ct = res.headers.get("content-type") || "";
-  const data = ct.includes("application/json")
-    ? await res.json().catch(() => null)
-    : await res.text().catch(() => null);
-
-  if (!res.ok) {
-    const msg =
-      (data && data.detail) ? data.detail :
-      (typeof data === "string" ? data : `Error ${res.status}`);
+  if (!r.ok) {
+    let msg = "Request failed";
+    try {
+      const j = await r.json();
+      msg = j.detail || JSON.stringify(j);
+    } catch (_) {
+      msg = await r.text();
+    }
     throw new Error(msg);
   }
-  return data;
+  return r.json();
 }
 
 /* =========================
@@ -85,17 +90,8 @@ let editingEntry = null;
 ========================= */
 const LS_REM = {
   enabled: "wh_remember_enabled",
-  fn: "wh_remember_fn",
-  ln: "wh_remember_ln",
   email: "wh_remember_email",
 };
-
-function updateCreditVisibility() {
-  const credit = $("credit");
-  if (!credit) return;
-  credit.style.display = "";
-}
-
 
 function loadRemember() {
   const cb = $("rememberMe");
@@ -107,16 +103,10 @@ function loadRemember() {
   if ($("pw")) $("pw").value = "";
 
   if (enabled) {
-    if ($("fn")) $("fn").value = localStorage.getItem(LS_REM.fn) || "";
-    if ($("ln")) $("ln").value = localStorage.getItem(LS_REM.ln) || "";
     if ($("email")) $("email").value = localStorage.getItem(LS_REM.email) || "";
   } else {
-    if ($("fn")) $("fn").value = "";
-    if ($("ln")) $("ln").value = "";
     if ($("email")) $("email").value = "";
   }
-
-  updateCreditVisibility();
 }
 
 function saveRemember(enabled) {
@@ -125,44 +115,66 @@ function saveRemember(enabled) {
 
   if (enabled) {
     localStorage.setItem(LS_REM.enabled, "1");
-    localStorage.setItem(LS_REM.fn, ($("fn")?.value || "").trim());
-    localStorage.setItem(LS_REM.ln, ($("ln")?.value || "").trim());
     localStorage.setItem(LS_REM.email, ($("email")?.value || "").trim());
   } else {
     localStorage.setItem(LS_REM.enabled, "0");
-    localStorage.removeItem(LS_REM.fn);
-    localStorage.removeItem(LS_REM.ln);
     localStorage.removeItem(LS_REM.email);
   }
-  updateCreditVisibility();
 }
 
 $("rememberMe")?.addEventListener("change", (e) => {
-  const enabled = !!e.target.checked;
-  if (!enabled) {
-    if ($("fn")) $("fn").value = "";
-    if ($("ln")) $("ln").value = "";
-    if ($("email")) $("email").value = "";
-  }
-  saveRemember(enabled);
+  saveRemember(!!e.target.checked);
 });
 
 /* =========================
-   Intro video
+   Intro video overlay (safe)
 ========================= */
 (function introVideo() {
   const introEl = $("introContainer");
   const videoEl = $("introVideo");
+  const skipBtn = $("introSkip");
+  if (!introEl) return;
+  introEl.classList.remove("hidden");
+
+  let done = false;
 
   function hideIntro() {
-    if (introEl) introEl.style.display = "none";
+    if (done) return;
+    done = true;
+    try {
+      if (videoEl) {
+        videoEl.pause();
+        videoEl.currentTime = 0;
+      }
+    } catch (_) {}
+    
+
+    introEl.classList.add("hidden");
+    
+
   }
 
-  if (introEl && videoEl) {
-    videoEl.addEventListener("ended", hideIntro);
-    videoEl.addEventListener("error", hideIntro);
-    setTimeout(hideIntro, 4000);
-  }
+  skipBtn?.addEventListener("click", hideIntro);
+  introEl.addEventListener("click", (e) => {
+    if (e.target && e.target.id === "introSkip") return;
+    hideIntro();
+  }, { passive: true });
+
+  videoEl?.addEventListener("ended", hideIntro);
+  videoEl?.addEventListener("error", hideIntro);
+
+  (async () => {
+    try {
+      if (videoEl) {
+        videoEl.muted = true;
+        await videoEl.play();
+      }
+    } catch (_) {
+      hideIntro();
+    }
+  })();
+
+  setTimeout(hideIntro, 2500);
 })();
 
 /* =========================
@@ -193,11 +205,10 @@ function setActiveNav(screenName) {
 bottomNav?.addEventListener("click", async (e) => {
   const btn = e.target.closest(".navItem");
   if (!btn) return;
-
   const target = btn.getAttribute("data-screen");
   if (!target) return;
 
-  if (target === "home") return openHome();
+  if (target === "home") return openHomeNewUX();
   if (target === "weeks") return openWeeks();
   if (target === "bh") return openBH();
   if (target === "reports") return openReports();
@@ -205,7 +216,7 @@ bottomNav?.addEventListener("click", async (e) => {
 });
 
 /* =========================
-   Logo
+   Logo fallback
 ========================= */
 (function loadLogo() {
   const img = $("appLogo");
@@ -258,36 +269,28 @@ $("btnSignIn")?.addEventListener("click", async () => {
     setMsg($("authMsg"), "");
 
     const email = ($("email")?.value || "").trim().toLowerCase();
-
     const password = $("pw")?.value || "";
     const remember = $("rememberMe")?.checked || false;
 
-    if (!email || !password) {
-      throw new Error("Email and password are required.");
-    }
+    if (!email || !password) throw new Error("Email and password are required.");
 
     await api("/api/login", {
       method: "POST",
-      body: JSON.stringify({
-        email: email,
-        password: password,
-        remember: remember,
-      }),
+      body: JSON.stringify({ email, password, remember }),
     });
 
     saveRemember(remember);
     currentUser = await api("/api/me");
-    await openHome();
+    await openHomeNewUX();
   } catch (e) {
     setMsg($("authMsg"), e.message);
   }
 });
 
-
-
 $("btnSignUp")?.addEventListener("click", async () => {
   try {
     setMsg($("signupMsg"), "");
+
     await api("/api/signup", {
       method: "POST",
       body: JSON.stringify({
@@ -299,7 +302,7 @@ $("btnSignUp")?.addEventListener("click", async () => {
     });
 
     currentUser = await api("/api/me").catch(() => null);
-    await openHome();
+    await openHomeNewUX();
   } catch (e) {
     setMsg($("signupMsg"), e.message);
   }
@@ -316,7 +319,6 @@ $("btnForgotSend")?.addEventListener("click", async () => {
       body: JSON.stringify({ email }),
     });
 
-    // if SMTP missing, backend returns dev_reset_link (safe for you now)
     if (r && r.dev_reset_link) {
       setMsg($("forgotMsg"), `DEV link: ${r.dev_reset_link}`, true);
     } else {
@@ -353,12 +355,6 @@ $("btnResetSave")?.addEventListener("click", async () => {
   }
 });
 
-$("btnLogout")?.addEventListener("click", async () => {
-  await api("/api/logout", { method: "POST" }).catch(() => {});
-  currentUser = null;
-  openAuth();
-});
-
 $("btnProfileLogout")?.addEventListener("click", async () => {
   await api("/api/logout", { method: "POST" }).catch(() => {});
   currentUser = null;
@@ -366,54 +362,281 @@ $("btnProfileLogout")?.addEventListener("click", async () => {
 });
 
 /* =========================
-   HOME
+   NEW HOME UX (post-login)
 ========================= */
-async function openHome() {
-  openScreen("home");
-
-  if (!currentUser) currentUser = await api("/api/me").catch(() => null);
-  if (currentUser && $("homeSubtitle")) {
-    $("homeSubtitle").textContent = `${currentUser.first_name} ${currentUser.last_name}`;
+async function openHomeNewUX() {
+  // hard check: if no session -> go auth
+  try {
+    currentUser = await api("/api/me");
+  } catch (_) {
+    return openAuth();
   }
-  await refreshHome();
+
+  openScreen("home");
+  await renderHomeNewUX();
 }
 
-async function refreshHome() {
+function whtEuro(v) {
   try {
+    return new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(Number(v || 0));
+  } catch {
+    return `€${Number(v || 0).toFixed(2)}`;
+  }
+}
+
+function whtEsc(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function whtGetAppRoot() {
+  return document.querySelector("#screenHome");
+}
+
+function whtHomeTemplate({ me, dash, clock }) {
+  const fullName = `${me.first_name || ""} ${me.last_name || ""}`.trim() || (me.email || "User");
+  const initials =
+    fullName.split(/\s+/).slice(0, 2).map((s) => (s[0] || "").toUpperCase()).join("") || "U";
+
+  const pct = Number(dash?.this_week?.progress_pct || 0);
+
+  const inTxt = clock?.in_time ? clock.in_time : "—";
+  const outTxt = clock?.out_time ? clock.out_time : "—";
+  const brTxt = clock ? `${clock.break_minutes || 0}m` : "—";
+  const breakLabel = clock?.break_running ? "BREAK (stop)" : "BREAK";
+
+  return `
+  <div class="wht-page">
+    <div class="wht-container">
+      <div class="wht-topbar">
+        <div>
+          <h1 class="wht-h1">Home</h1>
+          <div class="wht-sub">Welcome, <b>${whtEsc(fullName)}</b></div>
+        </div>
+        <button class="wht-btn" id="whtLogoutBtn" type="button">Logout</button>
+      </div>
+
+      <div class="wht-card wht-hero">
+        <div>
+          <div class="wht-hero-kicker">Current week</div>
+          <div class="wht-hero-time">${whtEsc(dash.this_week.hhmm || "00:00")}</div>
+          <div class="wht-hero-pay">${whtEuro(dash.this_week.pay_eur || 0)}</div>
+
+          <div class="wht-clockBtns" style="display:flex; gap:10px; margin-top:10px;">
+            <button class="wht-btn wht-btn-primary" id="whtInBtn" type="button">IN</button>
+            <button class="wht-btn wht-btn-primary" id="whtOutBtn" type="button">OUT</button>
+            <button class="wht-btn wht-btn-primary" id="whtBreakBtn" type="button">${breakLabel}</button>
+          </div>
+
+          <div class="wht-clockStatus" style="margin-top:10px; font-size:13px; opacity:.85;">
+            IN: <b>${whtEsc(inTxt)}</b> &nbsp;•&nbsp; OUT: <b>${whtEsc(outTxt)}</b> &nbsp;•&nbsp; BREAK: <b>${whtEsc(brTxt)}</b>
+          </div>
+
+          <button class="wht-btn wht-btn-primary" id="whtAddWeekBtn" type="button" style="margin-top:12px;">
+            <span><span class="wht-plus">+</span> Add week</span>
+          </button>
+        </div>
+
+        <div class="wht-ringWrap">
+          <div class="wht-ring" style="--pct:${pct}%">
+            <div class="wht-avatar" id="whtAvatarBtn" title="Click to change photo">
+              ${
+                me.avatar_url
+                  ? `<img src="${whtEsc(me.avatar_url)}?t=${Date.now()}" alt="avatar" />`
+                  : `<div class="wht-fallback">${whtEsc(initials)}</div>`
+              }
+            </div>
+            <input id="whtAvatarFile" type="file" accept="image/*" style="display:none" />
+          </div>
+        </div>
+      </div>
+
+      <div class="wht-grid2">
+        <div class="wht-card" id="whtTotalsCard">
+          <div class="wht-row">
+            <div class="wht-miniIcon">⏱️</div>
+            <div>
+              <div class="wht-title">Total</div>
+              <div class="wht-big">${whtEsc(dash.totals.hhmm || "00:00")}</div>
+              <div class="wht-sub">${whtEuro(dash.totals.pay_eur || 0)} • All weeks</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="wht-card wht-click" id="whtBHCard">
+          <div class="wht-row" style="justify-content:space-between;">
+            <div class="wht-row">
+              <div class="wht-miniIcon">🏁</div>
+              <div>
+                <div class="wht-title">Bank Holidays</div>
+                <div class="wht-sub"><b>${Number(dash.bank_holidays.available || 0)}</b> available</div>
+                <div class="wht-sub"><b>${Number(dash.bank_holidays.paid || 0)}</b> paid</div>
+              </div>
+            </div>
+            <div class="wht-arrow">›</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="wht-card wht-click" id="whtReportsRow">
+        <div class="wht-row" style="justify-content:space-between;">
+          <div class="wht-row">
+            <div class="wht-miniIcon">📊</div>
+            <div>
+              <div class="wht-title">Reports</div>
+              <div class="wht-sub">View your work summaries</div>
+            </div>
+          </div>
+          <div class="wht-arrow">›</div>
+        </div>
+      </div>
+
+      <div class="wht-sectionTitle">Quick actions</div>
+      <div class="wht-qa">
+        <button class="wht-qaBtn" id="whtQAAddWeek" type="button"><span class="wht-qaIcon">＋</span><span>Add week</span></button>
+        <button class="wht-qaBtn" id="whtQABH" type="button"><span class="wht-qaIcon">🏁</span><span>Bank holidays</span></button>
+        <button class="wht-qaBtn" id="whtQAReports" type="button"><span class="wht-qaIcon">📊</span><span>View reports</span></button>
+      </div>
+    </div>
+  </div>
+  `;
+}
+
+async function renderHomeNewUX() {
+  const root = whtGetAppRoot();
+  if (!root) throw new Error("Missing #screenHome in index.html");
+
+  root.innerHTML = `<div class="muted" style="padding:16px">Loading...</div>`;
+
+  // must be authorized
+  const me = await api("/api/me");
+
+  // IMPORTANT: declare them BEFORE using (fixes "dash is not defined")
+  let dash = null;
+  let clock = null;
+
+  // clock is independent (and optional)
+  try {
+    clock = await api("/api/clock/today");
+  } catch (_) {
+    clock = null;
+  }
+
+  // Prefer /api/dashboard (fast + clean)
+  try {
+    dash = await api("/api/dashboard");
+  } catch (_) {
+    // fallback: build from old endpoints
     const weeks = await api("/api/weeks");
+    const mostRecent = weeks?.[0] || null;
+
     let totalPayAll = 0;
     let totalMinAll = 0;
-
-    const mostRecent = weeks?.[0] || null;
 
     for (const w of weeks || []) {
       totalPayAll += Number(w.total_pay || 0);
       const hhmm = (w.total_hhmm || "00:00").split(":");
-      totalMinAll += (Number(hhmm[0] || 0) * 60) + Number(hhmm[1] || 0);
+      totalMinAll += Number(hhmm[0] || 0) * 60 + Number(hhmm[1] || 0);
     }
-
-    if ($("homeWeekHours")) $("homeWeekHours").textContent = mostRecent ? (mostRecent.total_hhmm || "00:00") : "00:00";
-    if ($("homeWeekPay")) $("homeWeekPay").textContent = mostRecent ? money(mostRecent.total_pay || 0) : money(0);
-    if ($("homeAllHours")) $("homeAllHours").textContent = minutesToHHMM(totalMinAll);
-    if ($("homeAllPay")) $("homeAllPay").textContent = money(totalPayAll);
 
     const year = new Date().getFullYear();
     const bhs = await api(`/api/bank-holidays/${year}`);
-    const paid = (bhs || []).filter(x => x.paid).length;
-    const toTake = (bhs || []).length - paid;
+    const paid = (bhs || []).filter((x) => x.paid).length;
+    const available = (bhs || []).length - paid;
 
-    if ($("homeBHToTake")) $("homeBHToTake").textContent = `${toTake} to take`;
-    if ($("homeBHPaid")) $("homeBHPaid").textContent = `${paid} paid`;
-  } catch (e) {
-    console.error(e);
+    dash = {
+      this_week: {
+        hhmm: mostRecent ? (mostRecent.total_hhmm || "00:00") : "00:00",
+        pay_eur: mostRecent ? Number(mostRecent.total_pay || 0) : 0,
+      },
+      totals: { hhmm: minutesToHHMM(totalMinAll), pay_eur: totalPayAll },
+      bank_holidays: { available, paid },
+    };
   }
-}
 
-/* Quick actions */
-$("goWeeks")?.addEventListener("click", () => openWeeks());
-$("goNewWeek")?.addEventListener("click", async () => { await openWeeks(); show($("newWeekBox")); });
-$("goBH")?.addEventListener("click", () => openBH());
-$("goReports")?.addEventListener("click", () => openReports());
+  // Progress ring: goal 40h
+  const hh = String(dash?.this_week?.hhmm || "00:00").split(":");
+  const thisWeekMin = (Number(hh[0] || 0) * 60) + Number(hh[1] || 0);
+  const goalMin = 40 * 60;
+  dash.this_week.progress_pct = goalMin ? Math.min(100, Math.round((thisWeekMin / goalMin) * 100)) : 0;
+
+  root.innerHTML = whtHomeTemplate({ me, dash, clock });
+
+  // Wire actions (after innerHTML)
+  async function refreshClockAndDash() {
+    await renderHomeNewUX();
+  }
+
+  document.querySelector("#whtInBtn")?.addEventListener("click", async () => {
+    try {
+      await api("/api/clock/in", { method: "POST" });
+      await refreshClockAndDash();
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+  document.querySelector("#whtOutBtn")?.addEventListener("click", async () => {
+    try {
+      await api("/api/clock/out", { method: "POST" });
+      await refreshClockAndDash();
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+  document.querySelector("#whtBreakBtn")?.addEventListener("click", async () => {
+    try {
+      await api("/api/clock/break", { method: "POST" });
+      await refreshClockAndDash();
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+  document.querySelector("#whtLogoutBtn")?.addEventListener("click", async () => {
+    await api("/api/logout", { method: "POST" }).catch(() => {});
+    currentUser = null;
+    openAuth();
+  });
+
+  // Avatar upload
+  const fileInput = document.querySelector("#whtAvatarFile");
+  document.querySelector("#whtAvatarBtn")?.addEventListener("click", () => fileInput?.click());
+
+  fileInput?.addEventListener("change", async () => {
+    const f = fileInput.files?.[0];
+    if (!f) return;
+
+    const fd = new FormData();
+    fd.append("file", f);
+
+    const res = await fetch("/api/me/avatar", { method: "POST", body: fd, credentials: "include" });
+    if (!res.ok) {
+      alert("Avatar upload failed");
+      return;
+    }
+    await renderHomeNewUX();
+  });
+
+  const goAddWeek = async () => {
+    await openWeeks();
+    show($("newWeekBox"));
+  };
+
+  document.querySelector("#whtAddWeekBtn")?.addEventListener("click", goAddWeek);
+  document.querySelector("#whtQAAddWeek")?.addEventListener("click", goAddWeek);
+
+  document.querySelector("#whtBHCard")?.addEventListener("click", () => openBH());
+  document.querySelector("#whtQABH")?.addEventListener("click", () => openBH());
+
+  document.querySelector("#whtReportsRow")?.addEventListener("click", () => openReports());
+  document.querySelector("#whtQAReports")?.addEventListener("click", () => openReports());
+}
 
 /* =========================
    WEEKS
@@ -534,7 +757,7 @@ async function loadWeek(weekId) {
   currentWeek = w;
 
   if ($("weekTitle")) $("weekTitle").textContent = `Week ${w.week_number}`;
-  if ($("weekMeta")) $("weekMeta").textContent = `Start: ${w.start_date} • Sunday/Bank Holiday = 1.5x`;
+  if ($("weekMeta")) $("weekMeta").textContent = `Start: ${w.start_date} • Sunday = 1.5x`;
   if ($("weekTotals")) $("weekTotals").textContent = `Total ${w.totals.total_hhmm} • ${money(w.totals.total_pay)}`;
   if ($("rateEdit")) $("rateEdit").value = w.hourly_rate;
 
@@ -554,7 +777,7 @@ function renderEntries(entries) {
 
   for (const e of entries) {
     const tr = document.createElement("tr");
-    const is15 = (e.multiplier === 1.5);
+    const is15 = (Number(e.multiplier || 1) === 1.5);
 
     tr.innerHTML = `
       <td><b>${e.weekday}</b></td>
@@ -666,8 +889,8 @@ async function loadBH() {
   if (!list) return;
 
   list.innerHTML = "";
-
   const items = await api(`/api/bank-holidays/${year}`);
+
   for (const bh of items) {
     const div = document.createElement("div");
     div.className = "item";
@@ -741,12 +964,12 @@ $("btnOpenReport")?.addEventListener("click", () => {
 async function openProfile() {
   openScreen("profile");
   try {
-    if (!currentUser) currentUser = await api("/api/me");
-    if ($("profileSub")) $("profileSub").textContent = "Account details";
-    if ($("profileName")) $("profileName").textContent = `${currentUser.first_name} ${currentUser.last_name}`;
-    if ($("profileEmail")) $("profileEmail").textContent = currentUser.email ? currentUser.email : "—";
+    currentUser = await api("/api/me");
+    if ($("profileName")) $("profileName").textContent = `${currentUser.first_name} ${currentUser.last_name}`.trim();
+    if ($("profileEmail")) $("profileEmail").textContent = currentUser.email || "—";
   } catch (e) {
     console.error(e);
+    openAuth();
   }
 }
 
@@ -758,23 +981,26 @@ if ("serviceWorker" in navigator) {
 }
 
 /* =========================
-   Boot
+   Boot (FIXED)
+   - Always opens a proper screen
+   - If logged: go Home
+   - If not logged: go Auth
 ========================= */
-async function boot() {
-  updateCreditVisibility();
-
-  const token = getResetTokenFromURL();
-  if (token) {
-    openScreen("reset");
-    return;
-  }
-
+async function bootApp() {
   try {
-    currentUser = await api("/api/me");
-    await openHome();
+    const me = await api("/api/me", { method: "GET" });
+    currentUser = me;
+    await openHomeNewUX();
   } catch (_) {
     openAuth();
+  } finally {
+    const loading = document.querySelector("#loading");
+    if (loading) loading.classList.add("hidden");
+
+   
   }
 }
 
-boot();
+document.addEventListener("DOMContentLoaded", () => {
+  bootApp();
+});
