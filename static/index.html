@@ -34,7 +34,7 @@
           <input id="email" type="email" autocomplete="email" placeholder="you@email.com">
         </div>
 
-            <div class="field">
+        <div class="field">
           <label>Password</label>
           <input id="pw" type="password" autocomplete="current-password" placeholder="••••••••">
         </div>
@@ -45,12 +45,14 @@
         </label>
 
         <div class="auth-actions">
-          <button id="btnSignIn" class="btn primary">Sign in</button>
-          <button id="btnSignUpOpen" class="btn dark">Sign up</button>
-          <button id="btnForgotOpen" class="btn link">Forgot password?</button>
+          <button id="btnSignIn" class="btn primary" type="button">Sign in</button>
+          <button id="btnSignUpOpen" class="btn dark" type="button">Sign up</button>
+          <button id="btnForgotOpen" class="btn link" type="button">Forgot password?</button>
         </div>
 
-        
+        <!-- IMPORTANT: this was missing, so errors never showed -->
+        <div id="authMsg" class="msg"></div>
+
         <div id="credit" class="credit">Developed by Camilo Vettori</div>
       </div>
     </section>
@@ -59,7 +61,7 @@
     <section id="screenSignup" class="screen hidden">
       <div class="card auth-card">
         <div class="row between">
-          <button id="btnSignupBack" class="btn secondary">← Back</button>
+          <button id="btnSignupBack" class="btn secondary" type="button">← Back</button>
           <div class="h2">Create account</div>
         </div>
 
@@ -84,7 +86,7 @@
           <input id="s_pw" type="password" autocomplete="new-password" placeholder="••••••••">
         </div>
 
-        <button id="btnSignUp" class="btn primary">Create account</button>
+        <button id="btnSignUp" class="btn primary" type="button">Create account</button>
         <div id="signupMsg" class="msg"></div>
       </div>
     </section>
@@ -93,7 +95,7 @@
     <section id="screenForgot" class="screen hidden">
       <div class="card auth-card">
         <div class="row between">
-          <button id="btnForgotBack" class="btn secondary">← Back</button>
+          <button id="btnForgotBack" class="btn secondary" type="button">← Back</button>
           <div class="h2">Reset password</div>
         </div>
 
@@ -106,7 +108,7 @@
           <input id="f_email" type="email" autocomplete="email" placeholder="you@email.com">
         </div>
 
-        <button id="btnForgotSend" class="btn primary">Send reset link</button>
+        <button id="btnForgotSend" class="btn primary" type="button">Send reset link</button>
         <div id="forgotMsg" class="msg"></div>
       </div>
     </section>
@@ -114,14 +116,17 @@
     <!-- SCREEN: RESET (opens from ?reset=TOKEN) -->
     <section id="screenReset" class="screen hidden">
       <div class="card auth-card">
-        <div class="h2">Set new password</div>
+        <div class="row between">
+          <button id="btnResetBack" class="btn secondary" type="button" onclick="window.location.href='/'">← Back</button>
+          <div class="h2">Set new password</div>
+        </div>
 
         <div class="field" style="margin-top:12px">
           <label>New password</label>
           <input id="r_pw" type="password" autocomplete="new-password" placeholder="••••••••">
         </div>
 
-        <button id="btnResetSave" class="btn primary">Save new password</button>
+        <button id="btnResetSave" class="btn primary" type="button">Save new password</button>
         <div id="resetMsg" class="msg"></div>
       </div>
     </section>
@@ -133,7 +138,7 @@
           <div class="title">Home</div>
           <div class="subtitle" id="homeSubtitle">—</div>
         </div>
-        <button id="btnLogout" class="btn pill">Logout</button>
+        <button id="btnLogout" class="btn pill" type="button">Logout</button>
       </div>
 
       <div class="cards">
@@ -165,10 +170,10 @@
         </div>
 
         <div class="gridActions">
-          <button id="goWeeks" class="btn secondary">Weeks</button>
-          <button id="goNewWeek" class="btn primary">+ New week</button>
-          <button id="goBH" class="btn secondary">Bank holidays</button>
-          <button id="goReports" class="btn secondary">Reports</button>
+          <button id="goWeeks" class="btn secondary" type="button">Weeks</button>
+          <button id="goNewWeek" class="btn primary" type="button">+ New week</button>
+          <button id="goBH" class="btn secondary" type="button">Bank holidays</button>
+          <button id="goReports" class="btn secondary" type="button">Reports</button>
         </div>
       </div>
     </section>
@@ -180,7 +185,7 @@
           <div class="title">Weeks</div>
           <div class="subtitle">Tap a week to open</div>
         </div>
-        <button id="btnNewWeek" class="btn primary">+ New</button>
+        <button id="btnNewWeek" class="btn primary" type="button">+ New</button>
       </div>
 
       <div id="weeksList" class="list"></div>
@@ -203,8 +208,8 @@
         </div>
 
         <div class="row gap">
-          <button id="btnCreateWeek" class="btn primary">Create</button>
-          <button id="btnCancelWeek" class="btn secondary">Cancel</button>
+          <button id="btnCreateWeek" class="btn primary" type="button">Create</button>
+          <button id="btnCancelWeek" class="btn secondary" type="button">Cancel</button>
         </div>
 
         <div id="weekMsg" class="msg"></div>
@@ -214,10 +219,10 @@
     <!-- SCREEN: WEEK DETAIL -->
     <section id="screenWeekDetail" class="screen hidden">
       <div class="pageHead">
-        <button id="btnBackWeeks" class="btn secondary">← Weeks</button>
+        <button id="btnBackWeeks" class="btn secondary" type="button">← Weeks</button>
         <div style="flex:1"></div>
-        <button id="btnReport" class="btn secondary">Report</button>
-        <button id="btnDeleteWeek" class="btn danger">Delete</button>
+        <button id="btnReport" class="btn secondary" type="button">Report</button>
+        <button id="btnDeleteWeek" class="btn danger" type="button">Delete</button>
       </div>
 
       <div class="card">
@@ -233,7 +238,7 @@
             <input id="rateEdit" type="number" step="0.01" min="0">
           </div>
           <div class="field" style="display:flex; align-items:end">
-            <button id="btnSaveRate" class="btn secondary" style="width:100%">Save rate</button>
+            <button id="btnSaveRate" class="btn secondary" type="button" style="width:100%">Save rate</button>
           </div>
         </div>
       </div>
@@ -244,7 +249,7 @@
             <div class="h2">Days</div>
             <div class="muted">Tap a day to edit. Sunday/Bank Holiday = 1.5x</div>
           </div>
-          <button id="btnAddDay" class="btn primary">+ Add day</button>
+          <button id="btnAddDay" class="btn primary" type="button">+ Add day</button>
         </div>
 
         <div class="table-wrap">
@@ -265,10 +270,10 @@
     <!-- SCREEN: DAY FORM -->
     <section id="screenDayForm" class="screen hidden">
       <div class="pageHead">
-        <button id="btnDayBack" class="btn secondary">← Back</button>
+        <button id="btnDayBack" class="btn secondary" type="button">← Back</button>
         <div class="title" id="dayFormTitle">Add day</div>
         <div style="flex:1"></div>
-        <button id="btnDeleteDay" class="btn danger hidden">Delete</button>
+        <button id="btnDeleteDay" class="btn danger hidden" type="button">Delete</button>
       </div>
 
       <div class="card">
@@ -291,7 +296,7 @@
           </div>
         </div>
 
-        <button id="btnSaveDay" class="btn primary" style="width:100%">Save</button>
+        <button id="btnSaveDay" class="btn primary" type="button" style="width:100%">Save</button>
         <div id="dayMsg" class="msg"></div>
       </div>
     </section>
@@ -305,7 +310,7 @@
         </div>
         <div class="row gap">
           <input id="bhYear" type="number" min="2020" max="2100" class="yearInput">
-          <button id="btnLoadBH" class="btn primary">Load</button>
+          <button id="btnLoadBH" class="btn primary" type="button">Load</button>
         </div>
       </div>
 
@@ -326,7 +331,7 @@
           <label>Select week</label>
           <select id="reportWeekSelect"></select>
         </div>
-        <button id="btnOpenReport" class="btn primary" style="width:100%">Open report</button>
+        <button id="btnOpenReport" class="btn primary" type="button" style="width:100%">Open report</button>
         <div class="muted" style="margin-top:10px">Tip: use your browser Print to PDF.</div>
       </div>
     </section>
@@ -345,20 +350,21 @@
         <div class="muted" id="profileEmail">—</div>
 
         <div style="height:12px"></div>
-        <button id="btnProfileLogout" class="btn danger" style="width:100%">Logout</button>
+        <button id="btnProfileLogout" class="btn danger" type="button" style="width:100%">Logout</button>
       </div>
     </section>
 
   </main>
 
   <nav id="bottomNav" class="bottomNav hidden">
-    <button class="navItem" data-screen="home">Home</button>
-    <button class="navItem" data-screen="weeks">Weeks</button>
-    <button class="navItem" data-screen="bh">Holidays</button>
-    <button class="navItem" data-screen="reports">Reports</button>
-    <button class="navItem" data-screen="profile">Profile</button>
+    <button class="navItem" data-screen="home" type="button">Home</button>
+    <button class="navItem" data-screen="weeks" type="button">Weeks</button>
+    <button class="navItem" data-screen="bh" type="button">Holidays</button>
+    <button class="navItem" data-screen="reports" type="button">Reports</button>
+    <button class="navItem" data-screen="profile" type="button">Profile</button>
   </nav>
 
-  <script src="/static/app.js"></script>
+  <!-- cache buster to avoid old app.js on Render/PWA -->
+  <script src="/static/app.js?v=3"></script>
 </body>
 </html>
