@@ -1,7 +1,11 @@
-*.exe
-__pycache__/
-.env
-workhours.db
-workhours.db-*
+# Python cache
 __pycache__/
 *.pyc
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Env
+.env
