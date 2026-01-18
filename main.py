@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 
 import os
 import hmac
@@ -31,6 +32,8 @@ COOKIE_AGE = 90 * 24 * 60 * 60  # 90 days
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"  # set 1 on Render (https)
 
 app = FastAPI(title="Work Hours Tracker", version="5.2")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getlogger("workhours")
 
 if not STATIC_DIR.exists():
     raise RuntimeError(f"Missing folder: {STATIC_DIR}")
@@ -638,9 +641,10 @@ def forgot(payload: ForgotIn, request: Request):
     # if SMTP not configured, do not break the app
     try:
         send_reset_email(email, reset_link)
+        logger.info("Password reset email sent to %s", email)
         return {"ok": True}
-    except Exception:
-        # dev fallback: return link (you can remove later if you want)
+    except Exception as e:
+        logger.exception("Failed to send reset email to %s. Error: %s", email, e)
         return {"ok": True, "dev_reset_link": reset_link}
 
 
