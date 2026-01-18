@@ -393,11 +393,10 @@ class SignupIn(BaseModel):
 
 
 class LoginIn(BaseModel):
-    email: Optional[EmailStr] = None
-    first_name: Optional[str] = Field(default=None, min_length=1, max_length=40)
-    last_name: Optional[str] = Field(default=None, min_length=1, max_length=40)
+    email: EmailStr
     password: str = Field(min_length=4, max_length=120)
     remember: bool = False
+
 
 
 class ForgotIn(BaseModel):
@@ -584,23 +583,13 @@ def signup(payload: SignupIn):
 
 @app.post("/api/login")
 def login(payload: LoginIn):
-    with db() as conn:
-        u = None
+    email = payload.email.lower().strip()
 
-        if payload.email:
-            email = payload.email.lower().strip()
-            u = conn.execute(
-                "SELECT * FROM users WHERE lower(email)=lower(?) LIMIT 1",
-                (email,),
-            ).fetchone()
-        else:
-            fn = (payload.first_name or "").strip()
-            ln = (payload.last_name or "").strip()
-            if fn and ln:
-                u = conn.execute(
-                    "SELECT * FROM users WHERE lower(first_name)=lower(?) AND lower(last_name)=lower(?) LIMIT 1",
-                    (fn, ln),
-                ).fetchone()
+    with db() as conn:
+        u = conn.execute(
+            "SELECT * FROM users WHERE lower(email)=lower(?) LIMIT 1",
+            (email,),
+        ).fetchone()
 
         if not u:
             raise HTTPException(401, "Invalid credentials")
