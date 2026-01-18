@@ -254,31 +254,32 @@ function openAuth() {
 $("btnSignIn")?.addEventListener("click", async () => {
   try {
     setMsg($("authMsg"), "");
-    const remember = $("rememberMe") ? $("rememberMe").checked : false;
 
+    const remember = $("rememberMe")?.checked || false;
     const email = ($("email")?.value || "").trim();
-    const first_name = ($("fn")?.value || "").trim();
-    const last_name = ($("ln")?.value || "").trim();
+    const password = $("pw")?.value || "";
+
+    if (!email || !password) {
+      throw new Error("Email and password are required.");
+    }
 
     await api("/api/login", {
       method: "POST",
       body: JSON.stringify({
-        email: email || null,
-        first_name,
-        last_name,
-        password: $("pw")?.value || "",
+        email,
+        password,
         remember,
       }),
     });
 
     saveRemember(remember);
-
     currentUser = await api("/api/me");
     await openHome();
   } catch (e) {
     setMsg($("authMsg"), e.message);
   }
 });
+
 
 $("btnSignUp")?.addEventListener("click", async () => {
   try {
