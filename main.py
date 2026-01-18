@@ -230,28 +230,32 @@ def send_reset_email(to_email: str, reset_link: str) -> None:
     port = int(os.environ.get("SMTP_PORT", "587"))
     user = os.environ.get("SMTP_USER")
     pw = os.environ.get("SMTP_PASS")
-    use_tls = os.environ.get("SMTP_TLS", "1") == "1"
     from_email = os.environ.get("FROM_EMAIL")
 
-    if not host or not from_email:
-        raise RuntimeError("SMTP not configured (SMTP_HOST/FROM_EMAIL missing)")
+    if not host or not pw or not from_email:
+        raise RuntimeError("SMTP not configured")
 
     msg = EmailMessage()
-    msg["Subject"] = "Work Hours Tracker - Password reset"
+    msg["Subject"] = "Work Hours Tracker – Password reset"
     msg["From"] = from_email
     msg["To"] = to_email
     msg.set_content(
-        "You requested a password reset.\n\n"
-        f"Open this link to set a new password:\n{reset_link}\n\n"
-        "If you did not request this, ignore this email."
+        f"""You requested a password reset.
+
+Click the link below to set a new password:
+{reset_link}
+
+If you did not request this, ignore this email.
+"""
     )
 
-    with smtplib.SMTP(host, port, timeout=20) as s:
-        if use_tls:
-            s.starttls()
-        if user and pw:
-            s.login(user, pw)
-        s.send_message(msg)
+    # 🔥 FORÇA IPv4 + STARTTLS (Render friendly)
+    with smtplib.SMTP(host, port) as server:
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+        server.login(user, pw)
+        server.send_message(msg)
 
 
 # =========================
