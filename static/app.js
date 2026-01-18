@@ -1,6 +1,8 @@
 /* =========================
    Work Hours Tracker - app.js
 ========================= */
+console.log("app.js loaded ✅");
+
 const $ = (id) => document.getElementById(id);
 
 function show(el) { el && el.classList.remove("hidden"); }
@@ -255,9 +257,10 @@ $("btnSignIn")?.addEventListener("click", async () => {
   try {
     setMsg($("authMsg"), "");
 
-    const remember = $("rememberMe")?.checked || false;
-    const email = ($("email")?.value || "").trim();
+    const email = ($("email")?.value || "").trim().toLowerCase();
+
     const password = $("pw")?.value || "";
+    const remember = $("rememberMe")?.checked || false;
 
     if (!email || !password) {
       throw new Error("Email and password are required.");
@@ -266,9 +269,9 @@ $("btnSignIn")?.addEventListener("click", async () => {
     await api("/api/login", {
       method: "POST",
       body: JSON.stringify({
-        email,
-        password,
-        remember,
+        email: email,
+        password: password,
+        remember: remember,
       }),
     });
 
@@ -279,6 +282,7 @@ $("btnSignIn")?.addEventListener("click", async () => {
     setMsg($("authMsg"), e.message);
   }
 });
+
 
 
 $("btnSignUp")?.addEventListener("click", async () => {
