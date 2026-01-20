@@ -10,7 +10,7 @@ from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any
 
 from fastapi import FastAPI, HTTPException, Request, Response, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 
@@ -35,8 +35,28 @@ APP_SECRET = os.environ.get("WORKHOURS_SECRET", "dev-secret-change-me").encode("
 COOKIE_AGE = 90 * 24 * 60 * 60  # 90 days
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"  # keep 0 in localhost/http
 
-app = FastAPI(title="Work Hours Tracker", version="8.0")
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app = FastAPI(title="Work Hours Tracker", version="8.2")
+
+
+# ======================================================
+# IMPORTANT: STATIC (fix CSS/JS not applying)
+# - Mount static FIRST
+# - Add no-cache headers for /static during dev (stops "old CSS" problems)
+# ======================================================
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.middleware("http")
+async def no_cache_static_dev(request: Request, call_next):
+    resp = await call_next(request)
+    p = request.url.path or ""
+    # During dev, prevent cached CSS/JS/HTML causing "layout not applied"
+    if p == "/" or p.startswith("/static/") or p in ("/hours", "/weeks", "/holidays", "/reports", "/profile", "/report", "/add-week"):
+
+        resp.headers["Cache-Control"] = "no-store, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+    return resp
 
 
 # ======================================================
@@ -61,6 +81,25 @@ def col_exists(conn: sqlite3.Connection, table: str, col: str) -> bool:
 def add_col_if_missing(conn: sqlite3.Connection, table: str, col: str, ddl: str) -> None:
     if not col_exists(conn, table, col):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+
+
+def ensure_clock_tables(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS clock_state(
+            user_id INTEGER PRIMARY KEY,
+            week_id INTEGER,
+            work_date TEXT,
+            in_time TEXT,
+            out_time TEXT,
+            break_running INTEGER DEFAULT 0,
+            break_start TEXT,
+            break_minutes INTEGER DEFAULT 0,
+            updated_at TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        """
+    )
 
 
 def init_db() -> None:
@@ -116,7 +155,7 @@ def init_db() -> None:
             """
         )
 
-        # ---- migrations (DB antigo) ----
+        # ---- migrations (for old DBs) ----
         add_col_if_missing(conn, "users", "salt_hex", "TEXT")
         add_col_if_missing(conn, "users", "pass_hash", "TEXT")
         add_col_if_missing(conn, "users", "avatar_path", "TEXT")
@@ -126,6 +165,7 @@ def init_db() -> None:
         add_col_if_missing(conn, "entries", "bh_paid", "INTEGER")
         add_col_if_missing(conn, "entries", "multiplier", "REAL")
 
+        ensure_clock_tables(conn)
         conn.commit()
 
 
@@ -237,16 +277,53 @@ class ResetIn(BaseModel):
 
 
 # ======================================================
-# PAGES
+# PAGES (serve index.html as a FILE to keep correct headers)
 # ======================================================
+
+@app.get("/add-week")
+def add_week_page():
+    return serve_index()
+
+
+def serve_index() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    return serve_index()
 
 
 @app.get("/report", response_class=HTMLResponse)
 def report():
     return (STATIC_DIR / "report.html").read_text(encoding="utf-8")
+
+
+
+# placeholders to avoid 404
+@app.get("/hours", response_class=HTMLResponse)
+def hours_page():
+    return serve_index()
+
+
+@app.get("/weeks", response_class=HTMLResponse)
+def weeks_page():
+    return serve_index()
+
+
+@app.get("/holidays", response_class=HTMLResponse)
+def holidays_page():
+    return serve_index()
+
+
+@app.get("/reports", response_class=HTMLResponse)
+def reports_page():
+    return serve_index()
+
+
+@app.get("/profile", response_class=HTMLResponse)
+def profile_page():
+    return serve_index()
 
 
 # ======================================================
@@ -336,7 +413,6 @@ def me(req: Request):
 # ======================================================
 # FORGOT / RESET (DEV MODE)
 # ======================================================
-# isso gera token e guarda em memória (pra dev/local). Em produção tu trocaria por email real.
 _RESET_TOKENS: Dict[str, Dict[str, Any]] = {}
 
 
@@ -346,8 +422,7 @@ def forgot(p: ForgotIn):
     with db() as conn:
         u = conn.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
         if not u:
-            # não vaza se existe ou não
-            return {"ok": True}
+            return {"ok": True}  # do not reveal existence
 
     token = secrets.token_urlsafe(32)
     _RESET_TOKENS[token] = {"email": email, "ts": datetime.utcnow().timestamp()}
@@ -422,11 +497,9 @@ def weekday_short_en(d: date) -> str:
 
 
 # ======================================================
-# BANK HOLIDAYS
+# BANK HOLIDAYS (placeholder minimal)
 # ======================================================
 def irish_bank_holidays(year: int) -> List[tuple[str, str]]:
-    # mínimo (tu pode melhorar depois). Datas aproximadas pra “placeholder”.
-    # Se tu quiser oficial 100% eu monto depois com regras certinhas.
     return [
         ("New Year's Day", f"{year}-01-01"),
         ("St. Patrick's Day", f"{year}-03-17"),
@@ -502,15 +575,14 @@ def patch_bh(bh_id: int, payload: BhPaidPatch, request: Request):
 def minutes_between(work_date: str, t_in: Optional[str], t_out: Optional[str], break_min: int) -> int:
     if not t_in or not t_out:
         return 0
-    # work_date is yyyy-mm-dd
     start = datetime.fromisoformat(f"{work_date} {t_in}:00")
     end = datetime.fromisoformat(f"{work_date} {t_out}:00")
     if end < start:
-        # crossing midnight: add 1 day
         end = end + timedelta(days=1)
     mins = int((end - start).total_seconds() // 60)
     mins = max(0, mins - int(break_min or 0))
     return mins
+
 
 
 @app.get("/api/weeks")
@@ -518,9 +590,14 @@ def list_weeks(req: Request):
     uid = require_user(req)
     with db() as conn:
         rows = conn.execute(
-            "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC",
+            """
+            SELECT * FROM weeks
+            WHERE user_id=?
+            ORDER BY week_number DESC, start_date DESC
+            """,
             (uid,),
         ).fetchall()
+
 
         out = []
         for w in rows:
@@ -727,7 +804,7 @@ def delete_entry(entry_id: int, req: Request):
 
 
 # ======================================================
-# DASHBOARD (optional for new UX)
+# DASHBOARD (for new UX)
 # ======================================================
 @app.get("/api/dashboard")
 def dashboard(req: Request):
@@ -753,7 +830,7 @@ def dashboard(req: Request):
                 total_min_all += m
                 total_pay_all += (m / 60.0) * rate * mult
 
-        # this week
+        # this week (most recent)
         this_week_min = 0
         this_week_pay = 0.0
         if most_recent:
@@ -777,40 +854,120 @@ def dashboard(req: Request):
             "this_week": {"hhmm": f"{this_week_min//60:02d}:{this_week_min%60:02d}", "pay_eur": round(this_week_pay, 2)},
             "totals": {"hhmm": f"{total_min_all//60:02d}:{total_min_all%60:02d}", "pay_eur": round(total_pay_all, 2)},
             "bank_holidays": {"available": available, "paid": paid},
-            
         }
-# ======================================================
-# CLOCK (IN / OUT / BREAK) - Current week (most recent)
-# ======================================================
+@app.get("/api/report/week/current")
+def report_current_week(req: Request):
+    uid = require_user(req)
 
-def ensure_clock_tables(conn: sqlite3.Connection) -> None:
-    conn.executescript("""
-    CREATE TABLE IF NOT EXISTS clock_state(
-        user_id INTEGER PRIMARY KEY,
-        week_id INTEGER,
-        work_date TEXT,
-        in_time TEXT,
-        out_time TEXT,
-        break_running INTEGER DEFAULT 0,
-        break_start TEXT,
-        break_minutes INTEGER DEFAULT 0,
-        updated_at TEXT,
-        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
-    """)
-    conn.commit()
 
+    with db() as conn:
+        w = conn.execute(
+            "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC LIMIT 1",
+            (uid,),
+        ).fetchone()
+
+        if not w:
+            return {
+                "ok": True,
+                "has_week": False,
+                "week": None,
+                "entries": [],
+                "totals": {"hhmm": "00:00", "pay_eur": 0.0},
+            }
+
+        rate = float(w["hourly_rate"] or 0)
+
+        rows = conn.execute(
+            "SELECT * FROM entries WHERE user_id=? AND week_id=? ORDER BY work_date ASC",
+            (uid, int(w["id"])),
+        ).fetchall()
+
+        entries = []
+        total_min = 0
+        total_pay = 0.0
+
+        for r in rows:
+            m = minutes_between(
+                r["work_date"],
+                r["time_in"],
+                r["time_out"],
+                int(r["break_minutes"] or 0),
+            )
+            mult = float(r["multiplier"] or 1.0)
+
+            total_min += m
+            total_pay += (m / 60.0) * rate * mult
+
+            d = parse_ymd(r["work_date"])
+            entries.append({
+                "work_date": r["work_date"],
+                "weekday": weekday_short_en(d),
+                "date_ddmmyyyy": ddmmyyyy(d),
+                "time_in": r["time_in"] or "",
+                "time_out": r["time_out"] or "",
+                "break_minutes": int(r["break_minutes"] or 0),
+                "worked_hhmm": f"{m//60:02d}:{m%60:02d}",
+                "pay_eur": round((m/60.0) * rate * mult, 2),
+            })
+
+        return {
+            "ok": True,
+            "has_week": True,
+            "week": {
+                "id": int(w["id"]),
+                "week_number": int(w["week_number"]),
+                "start_date": w["start_date"],
+                "hourly_rate": rate,
+            },
+            "entries": entries,
+            "totals": {
+                "hhmm": f"{total_min//60:02d}:{total_min%60:02d}",
+                "pay_eur": round(total_pay, 2),
+            },
+        }
+
+
+# ======================================================
+# CLOCK (IN / OUT / BREAK)
+# ======================================================
 def today_ymd() -> str:
     return date.today().isoformat()
+
 
 def hhmm_now() -> str:
     return datetime.now().strftime("%H:%M")
 
-def get_current_week(conn: sqlite3.Connection, uid: int) -> sqlite3.Row | None:
-    return conn.execute(
-        "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC LIMIT 1",
+
+def get_current_week(conn: sqlite3.Connection, uid: int) -> Optional[sqlite3.Row]:
+    """
+    Returns the week that contains today's date (start_date <= today <= start_date+6).
+    If none matches, falls back to the most recent week by start_date (keeps app usable).
+    """
+    today = date.today()
+
+    weeks = conn.execute(
+        "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC",
         (uid,),
-    ).fetchone()
+    ).fetchall()
+
+    if not weeks:
+        return None
+
+    # 1) Try: week that contains today
+    for w in weeks:
+        try:
+            start = parse_ymd(w["start_date"])
+        except Exception:
+            continue
+        end = start + timedelta(days=6)
+        if start <= today <= end:
+            return w
+
+    # 2) Fallback: most recent week
+    return weeks[0]
+
+
+
 
 def get_or_create_today_entry(conn: sqlite3.Connection, uid: int, week_id: int, work_date: str) -> sqlite3.Row:
     row = conn.execute(
@@ -833,6 +990,7 @@ def get_or_create_today_entry(conn: sqlite3.Connection, uid: int, week_id: int, 
         (uid, week_id, work_date),
     ).fetchone()
 
+
 @app.get("/api/clock/today")
 def clock_today(req: Request):
     uid = require_user(req)
@@ -853,10 +1011,8 @@ def clock_today(req: Request):
         work_date = today_ymd()
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
-        # load state
         st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
         if not st:
-            # initialize state from entry
             conn.execute(
                 """
                 INSERT INTO clock_state(user_id,week_id,work_date,in_time,out_time,break_running,break_start,break_minutes,updated_at)
@@ -883,6 +1039,7 @@ def clock_today(req: Request):
             "break_running": bool(int(st["break_running"] or 0)),
         }
 
+
 @app.post("/api/clock/in")
 def clock_in(req: Request):
     uid = require_user(req)
@@ -898,14 +1055,12 @@ def clock_in(req: Request):
 
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
-        # set entry time_in if empty
         if not e["time_in"]:
             conn.execute(
                 "UPDATE entries SET time_in=? WHERE id=? AND user_id=?",
                 (now_hhmm, int(e["id"]), uid),
             )
 
-        # upsert clock state
         conn.execute(
             """
             INSERT INTO clock_state(user_id,week_id,work_date,in_time,out_time,break_running,break_start,break_minutes,updated_at)
@@ -918,10 +1073,10 @@ def clock_in(req: Request):
             """,
             (uid, int(w["id"]), work_date, now_hhmm, None, 0, None, int(e["break_minutes"] or 0), now()),
         )
-
         conn.commit()
 
     return {"ok": True}
+
 
 @app.post("/api/clock/out")
 def clock_out(req: Request):
@@ -938,7 +1093,6 @@ def clock_out(req: Request):
 
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
-        # if break running, stop it first
         st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
         if st and int(st["break_running"] or 0) == 1 and st["break_start"]:
             bs = datetime.fromisoformat(st["break_start"])
@@ -953,7 +1107,6 @@ def clock_out(req: Request):
                 (new_break, int(e["id"]), uid),
             )
 
-        # set entry time_out
         conn.execute(
             "UPDATE entries SET time_out=? WHERE id=? AND user_id=?",
             (now_hhmm, int(e["id"]), uid),
@@ -976,6 +1129,7 @@ def clock_out(req: Request):
 
     return {"ok": True}
 
+
 @app.post("/api/clock/break")
 def clock_break(req: Request):
     uid = require_user(req)
@@ -989,15 +1143,24 @@ def clock_break(req: Request):
         work_date = today_ymd()
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
-        st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
+        st = conn.execute(
+    "SELECT * FROM clock_state WHERE user_id=? AND work_date=?",
+    (uid, work_date),
+).fetchone()
+
         if not st:
-            # initialize
             conn.execute(
                 """
                 INSERT INTO clock_state(user_id,week_id,work_date,in_time,out_time,break_running,break_start,break_minutes,updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?)
                 """,
-                (uid, int(w["id"]), work_date, e["time_in"], e["time_out"], 1, datetime.now().isoformat(timespec="seconds"), int(e["break_minutes"] or 0), now()),
+                (
+                    uid, int(w["id"]), work_date,
+                    e["time_in"], e["time_out"],
+                    1, datetime.now().isoformat(timespec="seconds"),
+                    int(e["break_minutes"] or 0),
+                    now()
+                ),
             )
             conn.commit()
             return {"ok": True, "break_running": True}
@@ -1005,7 +1168,6 @@ def clock_break(req: Request):
         running = int(st["break_running"] or 0) == 1
 
         if not running:
-            # start break
             conn.execute(
                 "UPDATE clock_state SET break_running=1, break_start=?, updated_at=? WHERE user_id=?",
                 (datetime.now().isoformat(timespec="seconds"), now(), uid),
@@ -1013,7 +1175,6 @@ def clock_break(req: Request):
             conn.commit()
             return {"ok": True, "break_running": True}
 
-        # stop break
         if not st["break_start"]:
             conn.execute(
                 "UPDATE clock_state SET break_running=0, break_start=NULL, updated_at=? WHERE user_id=?",
