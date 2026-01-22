@@ -212,8 +212,41 @@ const addWeekMsg = $("addWeekMsg");
 /* =========================
    State
 ========================= */
+let UI_DAY = todayYMD();          // "YYYY-MM-DD" local (usa tua função)
+let breakTick = null;             // setInterval handler
+let breakRemaining = 0;           // segundos
+let breakRunningUI = false;       // estado do countdown (UI)
+
 let CURRENT_WEEK_ID = null;
 let CLOCK = null;
+function stopBreakCountdown(vibrate = false){
+  if (breakTick) clearInterval(breakTick);
+  breakTick = null;
+  breakRunningUI = false;
+  breakRemaining = 0;
+
+  if (vibrate && "vibrate" in navigator) navigator.vibrate([150,80,150]);
+}
+
+function resetTodayVisual(){
+  // limpa só visual do "today"
+  if (cwIn) cwIn.textContent = "00:00";
+  if (cwOut) cwOut.textContent = "00:00";
+  if (cwBreak) cwBreak.textContent = "0m";
+  if (btnBreak) btnBreak.innerHTML = `<span class="pillIcon">⏱</span> BREAK`;
+  stopBreakCountdown(false);
+}
+
+function watchDayChange(){
+  const now = todayYMD();
+  if (now !== UI_DAY){
+    UI_DAY = now;
+    resetTodayVisual();
+    refreshClock().catch(()=>{});
+    refreshTodayPay().catch(()=>{});
+  }
+}
+
 
 /* =========================
    Auth entry
@@ -357,6 +390,47 @@ async function refreshClock() {
       if (allBreak) allBreak.textContent = "0m";
       return;
     }
+    function pad2(n){ return String(n).padStart(2,"0"); }
+
+function fmtMMSS(totalSec){
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${pad2(m)}:${pad2(s)}`;
+}
+
+function stopBreakCountdown(vibrate = false){
+  if (breakTick) clearInterval(breakTick);
+  breakTick = null;
+  breakRunningUI = false;
+  breakRemaining = 0;
+
+  if (vibrate && "vibrate" in navigator) navigator.vibrate([150,80,150]);
+}
+
+function resetTodayVisual(){
+  // limpa só visual
+  if (cwIn) cwIn.textContent = "00:00";
+  if (cwOut) cwOut.textContent = "00:00";
+  if (cwBreak) cwBreak.textContent = "0m";
+  if (btnBreak) btnBreak.innerHTML = `<span class="pillIcon">⏱</span> BREAK`;
+
+  stopBreakCountdown(false);
+}
+
+function watchDayChange(){
+  const now = todayYMD();
+  if (now !== UI_DAY){
+    UI_DAY = now;
+    resetTodayVisual();
+    // puxa o estado real de hoje
+    refreshClock().catch(()=>{});
+    refreshTodayPay().catch(()=>{});
+  }
+}
+
+// roda pra sempre (app aberto)
+setInterval(watchDayChange, 5000);
+
 
     CURRENT_WEEK_ID = c.week_id;
 
@@ -419,18 +493,40 @@ async function refreshTodayPay() {
 /* =========================
    Clock actions
 ========================= */
+function nowHHMM(){
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2,"0");
+  const mm = String(d.getMinutes()).padStart(2,"0");
+  return `${hh}:${mm}`;
+}
+
 async function doClockIn() {
   try {
     await api("/api/clock/in", { method: "POST" });
-    await refreshAll();
+
+    // busca estado atualizado do dia
+    const c = await api("/api/clock/today");
+
+    if (cwIn)  cwIn.textContent  = c.in_time || "00:00";
+    if (cwOut) cwOut.textContent = c.out_time || "00:00";
+    if (cwBreak) cwBreak.textContent = `${Number(c.break_minutes || 0)}m`;
+
+    // NÃO chama refreshAll aqui
+    // Totais podem atualizar depois, via polling natural
   } catch (e) {
     alert(e.message || "IN failed");
   }
 }
 
+
 async function doClockOut() {
   try {
     await api("/api/clock/out", { method: "POST" });
+
+    // update visual imediato
+    const t = nowHHMM();
+    if (cwOut) cwOut.textContent = t;
+
     await refreshAll();
   } catch (e) {
     alert(e.message || "OUT failed");
@@ -440,11 +536,14 @@ async function doClockOut() {
 async function doClockBreak() {
   try {
     await api("/api/clock/break", { method: "POST" });
+    await refreshClock();
+    await refreshTodayPay();
     await refreshAll();
   } catch (e) {
     alert(e.message || "BREAK failed");
   }
 }
+
 
 /* =========================
    Add week page (no modal)
@@ -550,8 +649,12 @@ function bind() {
 /* =========================
    Init
 ========================= */
+
+
 (async function init() {
   bind();
+  setInterval(watchDayChange, 5000);
+
 
   try {
     // check auth

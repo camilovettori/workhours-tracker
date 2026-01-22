@@ -1012,10 +1012,15 @@ def clock_today(req: Request):
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
         st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
+
+        # se não existe state, cria
         if not st:
             conn.execute(
                 """
-                INSERT INTO clock_state(user_id,week_id,work_date,in_time,out_time,break_running,break_start,break_minutes,updated_at)
+                INSERT INTO clock_state(
+                  user_id,week_id,work_date,in_time,out_time,
+                  break_running,break_start,break_minutes,updated_at
+                )
                 VALUES (?,?,?,?,?,?,?,?,?)
                 """,
                 (
@@ -1040,6 +1045,8 @@ def clock_today(req: Request):
         }
 
 
+
+
 @app.post("/api/clock/in")
 def clock_in(req: Request):
     uid = require_user(req)
@@ -1055,12 +1062,13 @@ def clock_in(req: Request):
 
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
-        if not e["time_in"]:
-            conn.execute(
-                "UPDATE entries SET time_in=? WHERE id=? AND user_id=?",
-                (now_hhmm, int(e["id"]), uid),
-            )
+        # ✅ OVERWRITE SEMPRE no entry
+        conn.execute(
+            "UPDATE entries SET time_in=?, time_out=NULL WHERE id=? AND user_id=?",
+            (now_hhmm, int(e["id"]), uid),
+        )
 
+        # ✅ state sempre sincroniza e sobrescreve in_time
         conn.execute(
             """
             INSERT INTO clock_state(user_id,week_id,work_date,in_time,out_time,break_running,break_start,break_minutes,updated_at)
@@ -1068,14 +1076,25 @@ def clock_in(req: Request):
             ON CONFLICT(user_id) DO UPDATE SET
               week_id=excluded.week_id,
               work_date=excluded.work_date,
-              in_time=COALESCE(clock_state.in_time, excluded.in_time),
+              in_time=excluded.in_time,
+              out_time=NULL,
+              break_running=0,
+              break_start=NULL,
+              break_minutes=excluded.break_minutes,
               updated_at=excluded.updated_at
             """,
-            (uid, int(w["id"]), work_date, now_hhmm, None, 0, None, int(e["break_minutes"] or 0), now()),
+            (
+                uid, int(w["id"]), work_date,
+                now_hhmm, None,
+                0, None, int(e["break_minutes"] or 0),
+                now()
+            ),
         )
+
         conn.commit()
 
     return {"ok": True}
+
 
 
 @app.post("/api/clock/out")
