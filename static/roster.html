@@ -10,14 +10,23 @@
   <link rel="stylesheet" href="/static/app.css?v=12" />
 
   <style>
-    .wrap{ width:min(820px,100%); margin:0 auto; padding:22px 16px 120px; }
+    .wrap{ width:min(980px,100%); margin:0 auto; padding:22px 16px 120px; }
     .top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
     .brand{ display:flex; align-items:center; gap:12px; }
     .brand img{ width:44px; height:44px; border-radius:12px; object-fit:cover; }
     .muted{ color: var(--muted); font-weight:900; }
 
     .cardPad{ padding:16px; }
-    .row{ display:flex; justify-content:space-between; gap:12px; align-items:center; }
+    .row{ display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; }
+
+    .layout{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:12px;
+    }
+    @media (min-width: 920px){
+      .layout{ grid-template-columns: 1fr 1fr; align-items:start; }
+    }
 
     .weekItem{
       display:flex; align-items:center; justify-content:space-between; gap:12px;
@@ -25,10 +34,15 @@
       border:1px solid rgba(15,23,42,.08);
       background: rgba(255,255,255,.60);
       cursor:pointer;
+      transition: transform .08s ease, border-color .08s ease;
     }
+    .weekItem:hover{ transform: translateY(-1px); border-color: rgba(37,99,235,.25); }
     .weekItem + .weekItem{ margin-top:10px; }
     .weekItem .t1{ font-weight:1000; font-size:16px; }
     .weekItem .t2{ margin-top:4px; font-size:13px; color:var(--muted); font-weight:900; }
+    .weekRight{ text-align:right; }
+    .weekRight .hhmm{ font-weight:1000; font-size:14px; }
+    .weekRight .eur{ font-weight:1000; font-size:13px; color:var(--muted); margin-top:4px; }
 
     .err{ color:#b91c1c; font-weight:1000; margin-top:8px; }
 
@@ -39,7 +53,8 @@
       border-radius:18px;
       padding:14px;
     }
-    .dayTitle{ font-weight:1000; font-size:16px; margin-bottom:10px; }
+    .dayTitle{ font-weight:1000; font-size:16px; margin-bottom:8px; }
+    .dayDate{ font-weight:1000; color:var(--muted); font-size:13px; margin-bottom:10px; }
     .btnRow{ display:flex; gap:10px; flex-wrap:wrap; }
     .btnChoice{
       padding:10px 14px; border-radius:14px; font-weight:1000;
@@ -47,15 +62,83 @@
       background: rgba(255,255,255,.80);
       cursor:pointer;
     }
-    .btnChoice.active{
-      border-color: rgba(37,99,235,.35);
-      background: rgba(37,99,235,.12);
-    }
+    .btnChoice:active{ transform: translateY(1px); }
     .field{ display:flex; flex-direction:column; gap:6px; }
     .field span{ font-weight:900; color: var(--muted); font-size:13px; }
     .field input{ padding:12px 12px; border-radius:14px; border:1px solid rgba(15,23,42,.12); background: rgba(255,255,255,.75); font-weight:900; }
     .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
     .hidden{ display:none !important; }
+
+    /* ===== Preview selected days ===== */
+    .rosterPreview{
+      margin-top:12px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.60);
+      border-radius:18px;
+      padding:14px;
+    }
+    .rpHead{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:10px; }
+    .rpTitle{ font-weight:1000; font-size:14px; }
+    .rpTotals{ font-weight:1000; font-size:13px; color:var(--muted); text-align:right; }
+    .rpList{ display:flex; flex-direction:column; gap:8px; }
+    .rpRow{
+      display:flex; justify-content:space-between; gap:12px; align-items:center;
+      padding:10px 12px;
+      border-radius:14px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.70);
+    }
+    .rpRow .d1{ font-weight:1000; font-size:13px; }
+    .rpRow .d2{ font-weight:900; font-size:12px; color:var(--muted); margin-top:2px; }
+    .rpRow .right{ font-weight:1000; font-size:13px; }
+
+    /* ===== Detail panel ===== */
+    .detailTitle{ font-weight:1000; font-size:18px; }
+    .detailSub{ font-weight:1000; font-size:13px; color:var(--muted); margin-top:4px; }
+    .detailTotals{
+      margin-top:10px;
+      display:flex; gap:10px; flex-wrap:wrap;
+    }
+    .pill{
+      padding:8px 10px; border-radius:999px;
+      border:1px solid rgba(15,23,42,.10);
+      background: rgba(255,255,255,.75);
+      font-weight:1000; font-size:13px;
+    }
+    .gridDays{
+      margin-top:12px;
+      display:grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap:10px;
+    }
+    @media (min-width: 520px){
+      .gridDays{ grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (min-width: 920px){
+      .gridDays{ grid-template-columns: repeat(4, 1fr); }
+    }
+    .dayCard{
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.60);
+      border-radius:18px;
+      padding:12px;
+      min-height:84px;
+    }
+    .dayCard .w{ font-weight:1000; font-size:14px; }
+    .dayCard .d{ font-weight:900; font-size:12px; color:var(--muted); margin-top:2px; }
+    .dayCard .s{ font-weight:1000; font-size:13px; margin-top:10px; }
+    .badgeOff{
+      display:inline-block;
+      margin-left:8px;
+      padding:3px 8px;
+      border-radius:999px;
+      border:1px solid rgba(15,23,42,.10);
+      background: rgba(15,23,42,.06);
+      font-size:11px;
+      font-weight:1000;
+      color:var(--muted);
+      vertical-align:middle;
+    }
   </style>
 </head>
 
@@ -76,53 +159,88 @@
       </div>
     </div>
 
-    <!-- LIST -->
-    <section id="viewList" class="card cardPad">
-      <div class="row" style="margin-bottom:10px;">
-        <div style="font-size:18px; font-weight:1000;">Weeks</div>
-        <button id="btnAddWeek" class="btn btn--soft" type="button">+ Add week</button>
-      </div>
-
-      <div id="list"></div>
-      <div id="listMsg" class="muted" style="margin-top:10px;"></div>
-      <div id="listErr" class="err"></div>
-    </section>
-
-    <!-- WIZARD -->
-    <section id="viewWizard" class="card cardPad hidden">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
-        <div style="font-size:18px; font-weight:1000;">Add roster week</div>
-        <button id="btnCancelWizard" class="btn btn--pill btn--ghost" type="button">Cancel</button>
-      </div>
-
-      <div class="grid2" style="margin-top:12px;">
-        <label class="field">
-          <span>Week number</span>
-          <input id="wkNumber" type="number" min="1" max="53" required />
-        </label>
-
-        <label class="field">
-          <span>Start date</span>
-          <input id="startDate" type="date" required />
-        </label>
-      </div>
-
-      <div id="wizardErr" class="err"></div>
-
-      <div id="dayBox" class="wizardDay">
-        <div id="dayTitle" class="dayTitle">Sunday</div>
-        <div class="btnRow">
-          <button id="btnA" class="btnChoice" type="button">09:45 → 19:00</button>
-          <button id="btnB" class="btnChoice" type="button">10:45 → 20:00</button>
-          <button id="btnOFF" class="btnChoice" type="button">DAY OFF</button>
+    <div class="layout">
+      <!-- LIST -->
+      <section id="viewList" class="card cardPad">
+        <div class="row" style="margin-bottom:10px;">
+          <div>
+            <div style="font-size:18px; font-weight:1000;">Weeks</div>
+            <div id="rateHint" class="muted" style="margin-top:4px;">Hourly rate: —</div>
+          </div>
+          <button id="btnAddWeek" class="btn btn--soft" type="button">+ Add week</button>
         </div>
-        <div class="muted" style="margin-top:10px;">Pick one option. It will move to next day.</div>
-      </div>
 
-      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
-        <button id="btnSave" class="btn btn--primary" type="button">Save week</button>
-      </div>
-    </section>
+        <div id="list"></div>
+        <div id="listMsg" class="muted" style="margin-top:10px;"></div>
+        <div id="listErr" class="err"></div>
+      </section>
+
+      <!-- DETAIL -->
+      <section id="viewDetail" class="card cardPad hidden">
+        <div class="row">
+          <div>
+            <div id="detailTitle" class="detailTitle">Select a roster week</div>
+            <div id="detailSub" class="detailSub">Click a week on the left.</div>
+          </div>
+          <button id="btnCloseDetail" class="btn btn--pill btn--ghost" type="button">Close</button>
+        </div>
+
+        <div id="detailTotals" class="detailTotals hidden">
+          <div id="pillExpectedHours" class="pill">Expected: —</div>
+          <div id="pillExpectedPay" class="pill">Pay: —</div>
+        </div>
+
+        <div id="detailGrid" class="gridDays"></div>
+      </section>
+
+      <!-- WIZARD -->
+      <section id="viewWizard" class="card cardPad hidden" style="grid-column: 1 / -1;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+          <div style="font-size:18px; font-weight:1000;">Add roster week</div>
+          <button id="btnCancelWizard" class="btn btn--pill btn--ghost" type="button">Cancel</button>
+        </div>
+
+        <div class="grid2" style="margin-top:12px;">
+          <label class="field">
+            <span>Week number</span>
+            <input id="wkNumber" type="number" min="1" max="53" required />
+          </label>
+
+          <label class="field">
+            <span>Start date</span>
+            <input id="startDate" type="date" required />
+          </label>
+        </div>
+
+        <div id="wizardErr" class="err"></div>
+
+        <div id="dayBox" class="wizardDay">
+          <div id="dayTitle" class="dayTitle">Sunday</div>
+          <div id="dayDate" class="dayDate"></div>
+
+          <div class="btnRow">
+            <button id="btnA" class="btnChoice" type="button">09:45 → 19:00</button>
+            <button id="btnB" class="btnChoice" type="button">10:45 → 20:00</button>
+            <button id="btnOFF" class="btnChoice" type="button">DAY OFF</button>
+          </div>
+
+          <div class="muted" style="margin-top:10px;">Pick one option. It will move to next day.</div>
+        </div>
+
+        <!-- ✅ PREVIEW fica aqui (não dentro do JS) -->
+        <div id="rosterPreview" class="rosterPreview hidden">
+          <div class="rpHead">
+            <div class="rpTitle">Selected days</div>
+            <div id="rpTotals" class="rpTotals">—</div>
+          </div>
+          <div id="rpList" class="rpList"></div>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
+          <button id="btnSave" class="btn btn--primary" type="button">Save week</button>
+        </div>
+      </section>
+    </div>
   </main>
 
   <script>
@@ -147,6 +265,12 @@
       return data;
     }
 
+    function fmtEUR(n){
+      const v = Number(n || 0);
+      try { return v.toLocaleString(undefined,{style:"currency",currency:"EUR"}); }
+      catch { return "€" + v.toFixed(2); }
+    }
+
     function isoWeekNumber(d = new Date()) {
       const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
       const dayNum = date.getUTCDay() || 7;
@@ -166,43 +290,207 @@
       return `${y}-${m}-${dd}`;
     }
 
+    function ymdAddDays(ymd, add){
+      const [y,m,d] = ymd.split("-").map(Number);
+      const dt = new Date(y, (m||1)-1, d||1);
+      dt.setDate(dt.getDate() + Number(add||0));
+      const yy = dt.getFullYear();
+      const mm = String(dt.getMonth()+1).padStart(2,"0");
+      const dd = String(dt.getDate()).padStart(2,"0");
+      return `${yy}-${mm}-${dd}`;
+    }
+    function ymdToDateObj(ymd){
+      const [y,m,d] = ymd.split("-").map(Number);
+      return new Date(y, (m||1)-1, d||1);
+    }
+    function weekdayShort(dt){
+      return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dt.getDay()];
+    }
+
+    // ===== business rule (expected paid)
+    const SHIFT_PAID_MIN = 495; // 8h15 (shift 9h15 - 60 break)
+    function codeToLabel(code){
+      if(code==="A") return "09:45 → 19:00";
+      if(code==="B") return "10:45 → 20:00";
+      return "OFF";
+    }
+    function expectedMinutesFromCodes(codes){
+      return (codes||[]).reduce((acc,c)=> (c==="A"||c==="B") ? (acc+SHIFT_PAID_MIN) : acc, 0);
+    }
+    function fmtHHMMFromMinutes(mins){
+      const m = Math.max(0, Math.floor(Number(mins||0)));
+      const hh = Math.floor(m/60);
+      const mm = m%60;
+      return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
+    }
+
     // ===== state
     const dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
     let wizardIndex = 0; // 0..6
     let wizardDays = ["", "", "", "", "", "", ""]; // A/B/OFF
+    let hourlyRate = 0;
+
+    function showList(){
+      hide($("viewWizard"));
+      show($("viewList"));
+      // detail fica visível se tiver selecionado; se preferir esconder, descomenta:
+      // hide($("viewDetail"));
+      $("subTitle").textContent = "Weekly schedule";
+    }
+
+    function openWizard() {
+      resetWizard();
+      hide($("viewList"));
+      show($("viewWizard"));
+      show($("viewDetail")); // mantém layout estável
+      $("subTitle").textContent = "Add weekly schedule";
+    }
 
     function resetWizard() {
       wizardIndex = 0;
       wizardDays = ["", "", "", "", "", "", ""];
+
       $("wkNumber").value = String(isoWeekNumber(new Date()));
       $("startDate").value = mondayOfThisWeek(new Date());
+
       $("wizardErr").textContent = "";
       renderWizardDay();
+      renderPreview();
     }
 
     function renderWizardDay() {
       $("dayTitle").textContent = dayNames[wizardIndex];
+
+      const start = ($("startDate").value || "").trim();
+      if(start){
+        const ymd = ymdAddDays(start, wizardIndex);
+        $("dayDate").textContent = `${ymd}`;
+      }else{
+        $("dayDate").textContent = "";
+      }
+
       // clear active
       $("btnA").classList.remove("active");
       $("btnB").classList.remove("active");
       $("btnOFF").classList.remove("active");
+
+      // set active if already selected for this day
+      const c = wizardDays[wizardIndex];
+      if(c==="A") $("btnA").classList.add("active");
+      if(c==="B") $("btnB").classList.add("active");
+      if(c==="OFF") $("btnOFF").classList.add("active");
+    }
+
+    function renderPreview(){
+      const start = ($("startDate").value || "").trim();
+      const preview = $("rosterPreview");
+      const list = $("rpList");
+      const totals = $("rpTotals");
+
+      const pickedCount = wizardDays.filter(Boolean).length;
+      if(!start || pickedCount===0){
+        hide(preview);
+        if(list) list.innerHTML = "";
+        if(totals) totals.textContent = "—";
+        return;
+      }
+
+      show(preview);
+      list.innerHTML = "";
+
+      // render only selected in order
+      const codesInOrder = wizardDays
+        .map((c, i)=> ({c,i}))
+        .filter(x=> !!x.c);
+
+      // totals for selected so far (not necessarily 7)
+      const mins = expectedMinutesFromCodes(codesInOrder.map(x=> x.c));
+      const hhmm = fmtHHMMFromMinutes(mins);
+      const pay = (mins/60) * Number(hourlyRate||0);
+      totals.textContent = `So far: ${hhmm} • ${fmtEUR(pay)}`;
+
+      for(const item of codesInOrder){
+        const ymd = ymdAddDays(start, item.i);
+        const dt = ymdToDateObj(ymd);
+
+        const row = document.createElement("div");
+        row.className = "rpRow";
+        row.innerHTML = `
+          <div class="left">
+            <div class="d1">${weekdayShort(dt)} • ${ymd}</div>
+            <div class="d2">${item.c==="OFF" ? "Day off" : "Shift selected"}</div>
+          </div>
+          <div class="right">${codeToLabel(item.c)}</div>
+        `;
+        list.appendChild(row);
+      }
     }
 
     function pick(code) {
+      $("wizardErr").textContent = "";
+
+      // set code for current day
       wizardDays[wizardIndex] = code;
 
+      renderWizardDay();
+      renderPreview();
+
+      // move next day automatically
       if (wizardIndex < 6) {
         wizardIndex += 1;
         renderWizardDay();
         return;
       }
+
       // last day picked -> ready to save
       $("wizardErr").textContent = "All days selected. Click “Save week”.";
     }
 
+    function showDetailShell(){
+      show($("viewDetail"));
+      $("detailTitle").textContent = "Select a roster week";
+      $("detailSub").textContent = "Click a week on the left.";
+      $("detailGrid").innerHTML = "";
+      hide($("detailTotals"));
+    }
+
+    function showDetailFromRoster(d){
+      show($("viewDetail"));
+
+      $("detailTitle").textContent = `Week ${d.week_number}`;
+      $("detailSub").textContent = `Start: ${d.start_date}`;
+
+      // codes from backend day structure
+      const codes = (d.days||[]).map(x => x.day_off ? "OFF" : (x.shift_in==="09:45" ? "A" : "B"));
+      const mins = expectedMinutesFromCodes(codes);
+      const hhmm = fmtHHMMFromMinutes(mins);
+      const pay = (mins/60) * Number(hourlyRate||0);
+
+      show($("detailTotals"));
+      $("pillExpectedHours").textContent = `Expected: ${hhmm}`;
+      $("pillExpectedPay").textContent = `Pay: ${fmtEUR(pay)}`;
+
+      const grid = $("detailGrid");
+      grid.innerHTML = "";
+
+      for(const x of d.days || []){
+        const dt = ymdToDateObj(x.work_date);
+        const isOff = !!x.day_off;
+        const shift = isOff ? "OFF" : (x.shift_in + " → " + x.shift_out);
+
+        const card = document.createElement("div");
+        card.className = "dayCard";
+        card.innerHTML = `
+          <div class="w">${weekdayShort(dt)} ${isOff ? `<span class="badgeOff">OFF</span>` : ""}</div>
+          <div class="d">${x.work_date}</div>
+          <div class="s">${shift}</div>
+        `;
+        grid.appendChild(card);
+      }
+    }
+
     async function loadList() {
-      hide($("viewWizard"));
-      show($("viewList"));
+      showList();
 
       $("list").innerHTML = "";
       $("listErr").textContent = "";
@@ -212,10 +500,12 @@
         const rows = await api("/api/roster");
         if (!rows || !rows.length) {
           $("listMsg").textContent = "No roster weeks yet. Click “Add week”.";
+          showDetailShell();
           return;
         }
 
         $("listMsg").textContent = "";
+        show($("viewDetail"));
 
         for (const r of rows) {
           const item = document.createElement("div");
@@ -225,35 +515,56 @@
               <div class="t1">Week ${r.week_number}</div>
               <div class="t2">Start: ${r.start_date}</div>
             </div>
-            <div style="font-weight:1000; color:var(--muted);">›</div>
+            <div class="weekRight">
+              <div class="hhmm">—</div>
+              <div class="eur">—</div>
+            </div>
           `;
+
+          // click = open detail panel (no alert)
           item.addEventListener("click", async () => {
-            // simple: open detail via alert (you can build a detail page later)
             try {
               const d = await api("/api/roster/" + r.id);
-              let txt = `Week ${d.week_number} (start ${d.start_date})\n\n`;
-              for (const x of d.days) {
-                txt += `${x.work_date}: ${x.day_off ? "OFF" : (x.shift_in + " → " + x.shift_out)}\n`;
-              }
-              alert(txt);
+              showDetailFromRoster(d);
             } catch (e) {
-              alert(e.message || "Failed");
+              $("listErr").textContent = "Error: " + (e.message || "failed");
+              if (e.status === 401) location.href = "/";
             }
           });
+
           $("list").appendChild(item);
+
+          // fill expected HH:MM + Pay (fetch detail for each item)
+          (async () => {
+            try {
+              const d = await api("/api/roster/" + r.id);
+              const codes = (d.days||[]).map(x => x.day_off ? "OFF" : (x.shift_in==="09:45" ? "A" : "B"));
+              const mins = expectedMinutesFromCodes(codes);
+              const hhmm = fmtHHMMFromMinutes(mins);
+              const pay = (mins/60) * Number(hourlyRate||0);
+
+              const right = item.querySelector(".weekRight");
+              right.querySelector(".hhmm").textContent = hhmm;
+              right.querySelector(".eur").textContent = fmtEUR(pay);
+            } catch {
+              // ignore
+            }
+          })();
         }
+
+        // auto-open first
+        try{
+          const first = await api("/api/roster/" + rows[0].id);
+          showDetailFromRoster(first);
+        }catch{
+          showDetailShell();
+        }
+
       } catch (e) {
         $("listMsg").textContent = "";
         $("listErr").textContent = "Error: " + (e.message || "failed");
         if (e.status === 401) location.href = "/";
       }
-    }
-
-    function openWizard() {
-      resetWizard();
-      hide($("viewList"));
-      show($("viewWizard"));
-      $("subTitle").textContent = "Add weekly schedule";
     }
 
     async function saveWizard() {
@@ -281,12 +592,21 @@
             days: wizardDays
           })
         });
-        $("subTitle").textContent = "Weekly schedule";
+
         await loadList();
       } catch (e) {
         $("wizardErr").textContent = e.message || "Failed to save";
         if (e.status === 401) location.href = "/";
       }
+    }
+
+    async function loadHourlyRate(){
+      hourlyRate = 0;
+      try{
+        const weeks = await api("/api/weeks");
+        hourlyRate = (weeks && weeks.length) ? Number(weeks[0].hourly_rate || 0) : 0;
+      }catch{}
+      $("rateHint").textContent = `Hourly rate: ${hourlyRate ? fmtEUR(hourlyRate) + " / hour" : "—"}`;
     }
 
     // ===== binds
@@ -301,9 +621,22 @@
 
     $("btnSave").addEventListener("click", saveWizard);
 
+    $("startDate").addEventListener("change", () => {
+      // mudar start date muda tudo -> reseta picks
+      wizardIndex = 0;
+      wizardDays = ["", "", "", "", "", "", ""];
+      $("wizardErr").textContent = "";
+      renderWizardDay();
+      renderPreview();
+    });
+
+    $("btnCloseDetail").addEventListener("click", () => hide($("viewDetail")));
+
     (async function init() {
       try {
         await api("/api/me");
+        await loadHourlyRate();
+        showDetailShell();
         await loadList();
       } catch {
         location.href = "/";
