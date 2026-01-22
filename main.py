@@ -1133,6 +1133,35 @@ def upsert_entry(week_id: int, p: EntryUpsert, req: Request):
                     now(),
                 ),
             )
+        # ✅ Sync dashboard clock_state if user edited TODAY via Week report
+        if p.work_date == today_ymd():
+            st = conn.execute(
+                "SELECT * FROM clock_state WHERE user_id=? AND work_date=?",
+                (uid, p.work_date),
+            ).fetchone()
+
+            if st:
+                # keep break_running/break_start as-is
+                conn.execute(
+                    """
+                    UPDATE clock_state
+                    SET week_id=?,
+                        in_time=?,
+                        out_time=?,
+                        break_minutes=?,
+                        updated_at=?
+                    WHERE user_id=? AND work_date=?
+                    """,
+                    (
+                        int(week_id),
+                        p.time_in,
+                        p.time_out,
+                        int(p.break_minutes or 0),
+                        now(),
+                        uid,
+                        p.work_date,
+                    ),
+                )
 
         conn.commit()
 
@@ -1340,13 +1369,21 @@ def clock_today(req: Request):
 
         w = get_current_week(conn, uid)
         if not w:
-            return {"ok": True, "has_week": False, "in_time": None, "out_time": None, "break_minutes": 0, "break_running": False}
+            return {
+                "ok": True,
+                "has_week": False,
+                "in_time": None,
+                "out_time": None,
+                "break_minutes": 0,
+                "break_running": False,
+            }
 
         work_date = today_ymd()
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
         st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
 
+        # If missing OR it's a different day: reset state for the new day (as you already do)
         if not st or st["work_date"] != work_date:
             conn.execute(
                 """
@@ -1363,10 +1400,42 @@ def clock_today(req: Request):
                   updated_at=excluded.updated_at
                 """,
                 (
-                    uid, int(w["id"]), work_date,
-                    e["time_in"], e["time_out"],
-                    0, None, int(e["break_minutes"] or 0),
-                    now()
+                    uid,
+                    int(w["id"]),
+                    work_date,
+                    e["time_in"],
+                    e["time_out"],
+                    0,
+                    None,
+                    int(e["break_minutes"] or 0),
+                    now(),
+                ),
+            )
+            conn.commit()
+            st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
+
+        else:
+            # ✅ IMPORTANT FIX:
+            # clock_state exists for TODAY, but user may have edited the day in /report.
+            # Sync in/out/break_minutes from today's entry WITHOUT touching break_running/break_start.
+            conn.execute(
+                """
+                UPDATE clock_state
+                SET week_id=?,
+                    in_time=?,
+                    out_time=?,
+                    break_minutes=?,
+                    updated_at=?
+                WHERE user_id=? AND work_date=?
+                """,
+                (
+                    int(w["id"]),
+                    e["time_in"],
+                    e["time_out"],
+                    int(e["break_minutes"] or 0),
+                    now(),
+                    uid,
+                    work_date,
                 ),
             )
             conn.commit()
