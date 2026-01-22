@@ -277,6 +277,9 @@ class WeekCreate(BaseModel):
 class WeekRatePatch(BaseModel):
     hourly_rate: float
 
+class RosterDayPatch(BaseModel):
+    work_date: str  # yyyy-mm-dd
+    code: str       # "A" | "B" | "OFF"
 
 class EntryUpsert(BaseModel):
     work_date: str  # yyyy-mm-dd
@@ -877,6 +880,53 @@ def roster_create(p: RosterCreate, req: Request):
 
     return {"ok": True, "id": int(roster_id)}
 
+@app.patch("/api/roster/{roster_id}/day")
+def roster_day_patch(roster_id: int, p: RosterDayPatch, req: Request):
+    uid = require_user(req)
+
+    code = (p.code or "").strip().upper()
+    if code not in ("A", "B", "OFF"):
+        raise HTTPException(400, "Invalid code (use A, B, OFF)")
+
+    with db() as conn:
+        # garante que o roster é do user
+        r = conn.execute(
+            "SELECT id FROM rosters WHERE id=? AND user_id=?",
+            (roster_id, uid),
+        ).fetchone()
+        if not r:
+            raise HTTPException(404, "Roster not found")
+
+        # garante que existe o dia dentro do roster
+        d = conn.execute(
+            """
+            SELECT id FROM roster_days
+            WHERE roster_id=? AND user_id=? AND work_date=?
+            """,
+            (roster_id, uid, p.work_date),
+        ).fetchone()
+        if not d:
+            raise HTTPException(404, "Roster day not found")
+
+        # aplica A / B / OFF
+        if code == "OFF":
+            shift_in, shift_out, day_off = None, None, 1
+        elif code == "A":
+            shift_in, shift_out, day_off = SHIFT_A_IN, SHIFT_A_OUT, 0
+        else:  # "B"
+            shift_in, shift_out, day_off = SHIFT_B_IN, SHIFT_B_OUT, 0
+
+        conn.execute(
+            """
+            UPDATE roster_days
+            SET shift_in=?, shift_out=?, day_off=?
+            WHERE id=? AND user_id=?
+            """,
+            (shift_in, shift_out, day_off, int(d["id"]), uid),
+        )
+        conn.commit()
+
+    return {"ok": True}
 
 # ======================================================
 # WEEKS / ENTRIES
