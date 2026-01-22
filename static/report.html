@@ -10,6 +10,20 @@
   <link rel="stylesheet" href="/static/app.css?v=12" />
 
   <style>
+    /* FIX: Save button appearing washed/white in the modal */
+#editModal .modalActions button[type="submit"]{
+  background: rgba(37,99,235,1) !important;
+  color: #fff !important;
+  border: 1px solid rgba(37,99,235,.35) !important;
+  opacity: 1 !important;
+  filter: none !important;
+  width: 100%;
+}
+
+#editModal .modalActions button[type="submit"]:hover{
+  background: rgba(37,99,235,.92) !important;
+}
+
     .reportWrap{ width:min(820px,100%); margin:0 auto; padding:22px 16px 120px; }
     .brandRow{ display:flex; align-items:center; gap:12px; }
     .brandRow img{ width:44px; height:44px; border-radius:12px; object-fit:cover; }
@@ -83,6 +97,31 @@
     }
   </style>
 </head>
+<!-- DAY DETAILS MODAL -->
+<div id="dayModal" class="modal hidden">
+  <div class="modalCard">
+    <div class="modalHeader">
+      <h2 id="ddTitle">Day details</h2>
+      <button onclick="closeDayModal()">✕</button>
+    </div>
+
+    <div class="modalSection">
+      <h4>🕒 Clocked</h4>
+      <div id="ddClocked"></div>
+    </div>
+
+    <div class="modalSection">
+      <h4>🏢 Tesco rules</h4>
+      <div id="ddTesco"></div>
+    </div>
+
+    <div class="modalSection highlight">
+      <h4>📊 Result</h4>
+      <div id="ddResult"></div>
+    </div>
+  </div>
+</div>
+
 
 <body>
   <main class="reportWrap">
@@ -146,6 +185,8 @@
               <th>Break</th>
               <th>Worked</th>
               <th>Pay</th>
+              <th>Details</th>
+
             </tr>
           </thead>
           <tbody id="rows"></tbody>
@@ -157,6 +198,8 @@
         <div>
           <div class="label">Total hours</div>
           <div id="totalHHMM" class="big">00:00</div>
+          <div id="totalMadeVsPaid" class="muted" style="margin-top:8px;">Made: 00:00 • Paid: 00:00</div>
+
           <div class="muted" style="margin-top:6px;">Highlighted totals at the end</div>
         </div>
         <div style="text-align:right;">
@@ -302,6 +345,61 @@
       const mult = Number(multiplier || 1);
       return (mins/60) * Number(rate || 0) * mult;
     }
+    // =====================
+// Day details (Tesco)
+// =====================
+function openDayDetails(entryId) {
+  const modal = $("dayModal");
+  const ddTitle = $("ddTitle");
+  const ddClocked = $("ddClocked");
+  const ddTesco = $("ddTesco");
+  const ddResult = $("ddResult");
+
+  if (!modal || !ddTitle || !ddClocked || !ddTesco || !ddResult) {
+    alert("Day details modal not found in HTML.");
+    return;
+  }
+
+  api(`/api/day-details/${entryId}`)
+    .then(d => {
+      ddTitle.textContent = `${d.weekday} • ${d.date}`;
+
+      ddClocked.innerHTML = `
+        <strong>IN:</strong> ${d.clocked.in || "—"}<br>
+        <strong>OUT:</strong> ${d.clocked.out || "—"}<br>
+        <strong>Break real:</strong> ${d.clocked.break_real ?? 0} min
+      `;
+
+      ddTesco.innerHTML = `
+        <strong>Shift:</strong> ${d.tesco.shift || "—"}<br>
+        <strong>Tolerance:</strong> ${d.tesco.tolerance || "—"}<br>
+        <strong>Fixed break:</strong> ${d.tesco.break_fixed ?? 60} min
+      `;
+
+      ddResult.innerHTML = `
+        <strong>Hours made:</strong> ${d.result.hours_made || "00:00"}<br>
+        <strong>Hours paid:</strong> ${d.result.hours_paid || "00:00"}<br>
+        <strong>Pay:</strong> €${Number(d.result.pay ?? 0).toFixed(2)}
+      `;
+
+      show(modal);
+    })
+    .catch(err => alert(err.message || "Failed to load day details"));
+}
+
+function closeDayModal() {
+  hide($("dayModal"));
+}
+
+// close modal clicking outside
+(() => {
+  const m = $("dayModal");
+  if (!m) return;
+  m.addEventListener("click", (e) => {
+    if (e.target === m) closeDayModal();
+  });
+})();
+
 
     // ===== add week helpers
     function isoWeekNumber(d = new Date()) {
@@ -345,14 +443,17 @@
       $("modalTitle").textContent = title || "Edit day";
       ACTIVE_ENTRY_ID = entryId || null;
 
-      $("mDate").value = date || "";
+      $("mDate").value = date ? date : "";
       $("mIn").value = timeIn || "";
       $("mOut").value = timeOut || "";
       $("mBreak").value = String(Number(breakMin || 0));
       $("mNote").value = note || "";
 
       $("btnDeleteDay").style.display = entryId ? "" : "none";
-      show($("editModal"));
+      show($("editModal"))
+      const saveBtn = document.querySelector('#editModal button[type="submit"]');
+if (saveBtn) saveBtn.disabled = false;
+
     }
 
     function closeEditModal(){
@@ -435,14 +536,25 @@
             const pay = computePayForRow(e.worked_hhmm, w.hourly_rate, e.multiplier);
 
             tr.innerHTML = `
-              <td>${e.weekday || ""}</td>
-              <td>${e.work_date || ""}</td>
-              <td>${e.time_in || "—"}</td>
-              <td>${e.time_out || "—"}</td>
-              <td>${(e.break_minutes ?? 0)}m</td>
-              <td>${e.worked_hhmm || "00:00"}</td>
-              <td>${fmtEUR(pay)}</td>
-            `;
+  <td>${e.weekday || ""}</td>
+  <td>${e.work_date || ""}</td>
+  <td>${e.time_in || "—"}</td>
+  <td>${e.time_out || "—"}</td>
+  <td>${(e.break_minutes ?? 0)}m</td>
+  <td>${e.worked_hhmm || "00:00"}</td>
+  <td>${fmtEUR(pay)}</td>
+  <td>
+    <button class="btn btn--soft btnSmall" type="button" data-details="1">View</button>
+  </td>
+`;
+const btn = tr.querySelector('button[data-details="1"]');
+if (btn) {
+  btn.addEventListener("click", (ev) => {
+    ev.stopPropagation();          // não abre o edit modal
+    openDayDetails(e.id);          // abre day details
+  });
+}
+
 
             tr.addEventListener("click", () => {
               openEditModal({
@@ -462,6 +574,21 @@
 
         $("totalHHMM").textContent = (w.totals && w.totals.total_hhmm) ? w.totals.total_hhmm : "00:00";
         $("totalPay").textContent  = fmtEUR(w.totals ? w.totals.total_pay : 0);
+        $("totalHHMM").textContent = (w.totals && w.totals.total_hhmm) ? w.totals.total_hhmm : "00:00";
+        $("totalPay").textContent  = fmtEUR(w.totals ? w.totals.total_pay : 0);
+// UX: Made vs Paid (requires backend day-details for exact paid rules per day)
+// We'll estimate "made" using raw clock times - break_real and "paid" using worked_hhmm sum.
+let paidMin = 0;
+for (const e of entries) paidMin += minutesFromHHMM(e.worked_hhmm || "00:00");
+
+// "made" can't be perfectly computed without raw minutes, so we show paid only if missing.
+const madePaidEl = $("totalMadeVsPaid");
+if (madePaidEl) {
+  const paidHH = String(Math.floor(paidMin / 60)).padStart(2, "0");
+  const paidMM = String(paidMin % 60).padStart(2, "0");
+  madePaidEl.textContent = `Paid: ${paidHH}:${paidMM} • (Details per day: View)`;
+}
+
       }catch(e){
         $("detailErr").textContent = "Error loading report: " + (e.message || "failed");
         if(e.status === 401) location.href = "/";

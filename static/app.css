@@ -593,3 +593,45 @@ body{
   max-width: 100%;
   max-height: 100%;
 }
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(15,23,42,.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.modalCard {
+  background: white;
+  width: 100%;
+  max-width: 420px;
+  border-radius: 20px;
+  padding: 20px;
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modalSection {
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.modalSection.highlight {
+  background: #f1f5ff;
+  padding: 12px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.modal button {
+  border: none;
+  background: none;
+  font-size: 18px;
+  cursor: pointer;
+}

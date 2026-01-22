@@ -606,7 +606,36 @@ async function doClockBreak() {
   } catch (e) {
     alert(e.message || "BREAK failed");
   }
+}function openDayDetails(entryId) {
+  api(`/api/day-details/${entryId}`).then(d => {
+    $("ddTitle").textContent = `${d.weekday} • ${d.date}`;
+
+    $("ddClocked").innerHTML = `
+      IN: ${d.clocked.in}<br>
+      OUT: ${d.clocked.out}<br>
+      Break: ${d.clocked.break_real} min
+    `;
+
+    $("ddTesco").innerHTML = `
+      Shift: ${d.tesco.shift}<br>
+      Tolerance: ${d.tesco.tolerance}<br>
+      Fixed break: ${d.tesco.break_fixed} min
+    `;
+
+    $("ddResult").innerHTML = `
+      Hours made: ${d.result.hours_made}<br>
+      Hours paid: ${d.result.hours_paid}<br>
+      Pay: €${d.result.pay}
+    `;
+
+    show($("dayModal"));
+  });
 }
+
+function closeDayModal() {
+  hide($("dayModal"));
+}
+
 
 /* =========================
    Add week page (no modal)

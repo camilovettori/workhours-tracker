@@ -35,13 +35,11 @@ APP_SECRET = os.environ.get("WORKHOURS_SECRET", "dev-secret-change-me").encode("
 COOKIE_AGE = 90 * 24 * 60 * 60  # 90 days
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"  # keep 0 in localhost/http
 
-app = FastAPI(title="Work Hours Tracker", version="8.2")
+app = FastAPI(title="Work Hours Tracker", version="9.1")
 
 
 # ======================================================
-# IMPORTANT: STATIC (fix CSS/JS not applying)
-# - Mount static FIRST
-# - Add no-cache headers for /static during dev (stops "old CSS" problems)
+# STATIC
 # ======================================================
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -50,9 +48,9 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 async def no_cache_static_dev(request: Request, call_next):
     resp = await call_next(request)
     p = request.url.path or ""
-    # During dev, prevent cached CSS/JS/HTML causing "layout not applied"
-    if p == "/" or p.startswith("/static/") or p in ("/hours", "/weeks", "/holidays", "/reports", "/profile", "/report", "/add-week"):
-
+    if p == "/" or p.startswith("/static/") or p in (
+        "/hours", "/weeks", "/holidays", "/reports", "/profile", "/report", "/add-week"
+    ):
         resp.headers["Cache-Control"] = "no-store, max-age=0"
         resp.headers["Pragma"] = "no-cache"
         resp.headers["Expires"] = "0"
@@ -155,7 +153,7 @@ def init_db() -> None:
             """
         )
 
-        # ---- migrations (for old DBs) ----
+        # migrations
         add_col_if_missing(conn, "users", "salt_hex", "TEXT")
         add_col_if_missing(conn, "users", "pass_hash", "TEXT")
         add_col_if_missing(conn, "users", "avatar_path", "TEXT")
@@ -170,7 +168,6 @@ def init_db() -> None:
 
 
 init_db()
-
 
 
 # ======================================================
@@ -278,14 +275,8 @@ class ResetIn(BaseModel):
 
 
 # ======================================================
-# PAGES (serve index.html as a FILE to keep correct headers)
+# PAGES
 # ======================================================
-
-@app.get("/add-week")
-def add_week_page():
-    return serve_index()
-
-
 def serve_index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
@@ -295,13 +286,16 @@ def index():
     return serve_index()
 
 
+@app.get("/add-week")
+def add_week_page():
+    return serve_index()
+
+
 @app.get("/report", response_class=HTMLResponse)
 def report():
     return (STATIC_DIR / "report.html").read_text(encoding="utf-8")
 
 
-
-# placeholders to avoid 404
 @app.get("/hours", response_class=HTMLResponse)
 def hours_page():
     return serve_index()
@@ -482,7 +476,7 @@ async def upload_avatar(req: Request, file: UploadFile = File(...)):
 
 
 # ======================================================
-# UTIL dates
+# DATE HELPERS
 # ======================================================
 def parse_ymd(s: str) -> date:
     y, m, d = s.split("-")
@@ -498,7 +492,7 @@ def weekday_short_en(d: date) -> str:
 
 
 # ======================================================
-# BANK HOLIDAYS (placeholder minimal)
+# BANK HOLIDAYS (minimal)
 # ======================================================
 def irish_bank_holidays(year: int) -> List[tuple[str, str]]:
     return [
@@ -571,36 +565,156 @@ def patch_bh(bh_id: int, payload: BhPaidPatch, request: Request):
 
 
 # ======================================================
+# COMPANY RULES (TESCO) - CALC CORE
+# ======================================================
+SHIFT_A_IN = "09:45"
+SHIFT_A_OUT = "19:00"
+SHIFT_B_IN = "10:45"
+SHIFT_B_OUT = "20:00"
+
+BREAK_FIXED_MIN = 60
+TOLERANCE_MIN = 5
+
+
+def hhmm_to_min(hhmm: str) -> int:
+    h, m = hhmm.split(":")
+    return int(h) * 60 + int(m)
+
+
+def min_to_hhmm(m: int) -> str:
+    m = int(m or 0)
+    return f"{m//60:02d}:{m%60:02d}"
+
+
+def detect_shift(time_in: Optional[str]):
+    if not time_in:
+        return None
+    t = hhmm_to_min(time_in)
+    if t <= hhmm_to_min("10:15"):
+        return (SHIFT_A_IN, SHIFT_A_OUT)
+    return (SHIFT_B_IN, SHIFT_B_OUT)
+
+
+def apply_tolerance(real: str, official: str) -> int:
+    real_m = hhmm_to_min(real)
+    off_m = hhmm_to_min(official)
+    if abs(real_m - off_m) <= TOLERANCE_MIN:
+        return off_m
+    return real_m
+
+
+def effective_break_minutes(t_in: Optional[str], t_out: Optional[str], break_real: int) -> int:
+    """
+    RULE:
+    - If IN and OUT exist => break_effective = max(60, break_real)
+    - If missing IN or OUT => 0
+    """
+    if not t_in or not t_out:
+        return 0
+    return max(BREAK_FIXED_MIN, int(break_real or 0))
+
+
+def minutes_between(work_date: str, t_in: Optional[str], t_out: Optional[str], break_real: int) -> int:
+    """
+    Paid minutes using Tesco rules:
+    - shift detect by IN
+    - apply tolerance to IN/OUT vs official shift
+    - subtract break_effective (min 60)
+    """
+    if not t_in or not t_out:
+        return 0
+
+    shift = detect_shift(t_in)
+    if not shift:
+        return 0
+
+    shift_in, shift_out = shift
+    in_m = apply_tolerance(t_in, shift_in)
+    out_m = apply_tolerance(t_out, shift_out)
+
+    if out_m < in_m:
+        out_m += 24 * 60
+
+    worked = out_m - in_m
+    br = effective_break_minutes(t_in, t_out, break_real)
+    return max(0, worked - br)
+
+
+# ======================================================
+# DAY DETAILS (TESCO VIEW)
+# ======================================================
+@app.get("/api/day-details/{entry_id}")
+def day_details(entry_id: int, req: Request):
+    uid = require_user(req)
+
+    with db() as conn:
+        r = conn.execute(
+            "SELECT * FROM entries WHERE id=? AND user_id=?",
+            (entry_id, uid),
+        ).fetchone()
+        if not r:
+            raise HTTPException(404, "Entry not found")
+
+        w = conn.execute(
+            "SELECT * FROM weeks WHERE id=? AND user_id=?",
+            (r["week_id"], uid),
+        ).fetchone()
+        if not w:
+            raise HTTPException(404, "Week not found")
+
+        clocked_in = r["time_in"]
+        clocked_out = r["time_out"]
+        break_real = int(r["break_minutes"] or 0)
+
+        shift = detect_shift(clocked_in)
+        shift_in, shift_out = shift if shift else (None, None)
+
+        # Paid timeline (tolerance)
+        if not clocked_in or not clocked_out or not shift_in or not shift_out:
+            return {
+                "date": r["work_date"],
+                "weekday": weekday_short_en(parse_ymd(r["work_date"])),
+                "clocked": {"in": clocked_in, "out": clocked_out, "break_real": break_real},
+                "tesco": {"shift": None, "tolerance": "±5 min", "break_fixed": BREAK_FIXED_MIN},
+                "result": {"hours_made": "00:00", "hours_paid": "00:00", "pay": 0.0},
+            }
+
+        paid_in_min = apply_tolerance(clocked_in, shift_in)
+        paid_out_min = apply_tolerance(clocked_out, shift_out)
+        if paid_out_min < paid_in_min:
+            paid_out_min += 24 * 60
+
+        worked_raw = paid_out_min - paid_in_min
+
+        break_eff = effective_break_minutes(clocked_in, clocked_out, break_real)
+        worked_paid_min = max(0, worked_raw - break_eff)
+
+        rate = float(w["hourly_rate"] or 0)
+        mult = float(r["multiplier"] or 1.0)
+        pay = (worked_paid_min / 60) * rate * mult
+
+        # Hours made vs paid:
+        # - made = (raw - break_real)  (what you actually took)
+        # - paid = (raw - break_eff)   (Tesco rule)
+        hours_made_min = max(0, worked_raw - break_real)
+
+        return {
+            "date": r["work_date"],
+            "weekday": weekday_short_en(parse_ymd(r["work_date"])),
+            "clocked": {"in": clocked_in, "out": clocked_out, "break_real": break_real},
+            "tesco": {"shift": f"{shift_in} → {shift_out}", "tolerance": "±5 min", "break_fixed": BREAK_FIXED_MIN},
+            "result": {
+                "hours_made": min_to_hhmm(hours_made_min),
+                "hours_paid": min_to_hhmm(worked_paid_min),
+                "break_effective": break_eff,
+                "pay": round(pay, 2),
+            },
+        }
+
+
+# ======================================================
 # WEEKS / ENTRIES
 # ======================================================
-
-def effective_break_minutes(t_in: Optional[str], t_out: Optional[str], break_min: int) -> int:
-    """
-    FIXED 60 rule (display + calc):
-    - If the day has IN and OUT -> break_effective = max(60, break_min)
-    - If missing IN or OUT -> 0
-    """
-    if not t_in or not t_out:
-        return 0
-    return max(60, int(break_min or 0))
-
-
-def minutes_between(work_date: str, t_in: Optional[str], t_out: Optional[str], break_min: int) -> int:
-    if not t_in or not t_out:
-        return 0
-
-    start = datetime.fromisoformat(f"{work_date} {t_in}:00")
-    end = datetime.fromisoformat(f"{work_date} {t_out}:00")
-    if end < start:
-        end = end + timedelta(days=1)
-
-    mins = int((end - start).total_seconds() // 60)
-
-    br = effective_break_minutes(t_in, t_out, break_min)  # ✅ fixed 60 rule
-    mins = max(0, mins - br)
-    return mins
-
-
 @app.get("/api/weeks")
 def list_weeks(req: Request):
     uid = require_user(req)
@@ -678,16 +792,14 @@ def get_week(week_id: int, req: Request):
         rate = float(w["hourly_rate"] or 0)
 
         for r in rows:
-            # ✅ calc uses fixed 60 too
             m = minutes_between(r["work_date"], r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
             mult = float(r["multiplier"] or 1.0)
             total_min += m
             total_pay += (m / 60.0) * rate * mult
 
-            # ✅ THIS is what makes the table show 60m even if DB has 0m
-            break_effective = effective_break_minutes(r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
-
+            break_eff = effective_break_minutes(r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
             d = parse_ymd(r["work_date"])
+
             entries.append(
                 {
                     "id": r["id"],
@@ -697,10 +809,7 @@ def get_week(week_id: int, req: Request):
                     "date_ddmmyyyy": ddmmyyyy(d),
                     "time_in": r["time_in"],
                     "time_out": r["time_out"],
-
-                    # 👇 show the FIXED 60 (or 60+extra) in the report
-                    "break_minutes": int(break_effective),
-
+                    "break_minutes": int(break_eff),  # shows 60 even if stored 0
                     "note": r["note"],
                     "bh_paid": (None if r["bh_paid"] is None else bool(int(r["bh_paid"]))),
                     "multiplier": float(r["multiplier"] or 1.0),
@@ -750,7 +859,7 @@ def delete_week(week_id: int, req: Request):
 def upsert_entry(week_id: int, p: EntryUpsert, req: Request):
     uid = require_user(req)
 
-    # multiplier rule: Sunday => 1.5, else 1.0
+    # multiplier: Sunday => 1.5, else 1.0
     d = parse_ymd(p.work_date)
     is_sunday = (d.weekday() == 6)
     mult = 1.5 if is_sunday else 1.0
@@ -824,8 +933,9 @@ def delete_entry(entry_id: int, req: Request):
         raise HTTPException(404, "Not found")
     return {"ok": True}
 
+
 # ======================================================
-# DASHBOARD (for new UX)
+# DASHBOARD
 # ======================================================
 @app.get("/api/dashboard")
 def dashboard(req: Request):
@@ -836,9 +946,9 @@ def dashboard(req: Request):
         weeks = conn.execute("SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC", (uid,)).fetchall()
         most_recent = weeks[0] if weeks else None
 
-        # totals all
         total_min_all = 0
         total_pay_all = 0.0
+
         for w in weeks:
             rate = float(w["hourly_rate"] or 0)
             rows = conn.execute(
@@ -851,7 +961,6 @@ def dashboard(req: Request):
                 total_min_all += m
                 total_pay_all += (m / 60.0) * rate * mult
 
-        # this week (most recent)
         this_week_min = 0
         this_week_pay = 0.0
         if most_recent:
@@ -876,10 +985,11 @@ def dashboard(req: Request):
             "totals": {"hhmm": f"{total_min_all//60:02d}:{total_min_all%60:02d}", "pay_eur": round(total_pay_all, 2)},
             "bank_holidays": {"available": available, "paid": paid},
         }
+
+
 @app.get("/api/report/week/current")
 def report_current_week(req: Request):
     uid = require_user(req)
-
 
     with db() as conn:
         w = conn.execute(
@@ -897,7 +1007,6 @@ def report_current_week(req: Request):
             }
 
         rate = float(w["hourly_rate"] or 0)
-
         rows = conn.execute(
             "SELECT * FROM entries WHERE user_id=? AND week_id=? ORDER BY work_date ASC",
             (uid, int(w["id"])),
@@ -908,25 +1017,23 @@ def report_current_week(req: Request):
         total_pay = 0.0
 
         for r in rows:
-            m = minutes_between(
-                r["work_date"],
-                r["time_in"],
-                r["time_out"],
-                int(r["break_minutes"] or 0),
-            )
+            m = minutes_between(r["work_date"], r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
             mult = float(r["multiplier"] or 1.0)
 
             total_min += m
             total_pay += (m / 60.0) * rate * mult
 
             d = parse_ymd(r["work_date"])
+            break_eff = effective_break_minutes(r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
+
             entries.append({
+                "id": int(r["id"]),
                 "work_date": r["work_date"],
                 "weekday": weekday_short_en(d),
                 "date_ddmmyyyy": ddmmyyyy(d),
                 "time_in": r["time_in"] or "",
                 "time_out": r["time_out"] or "",
-                "break_minutes": int(r["break_minutes"] or 0),
+                "break_minutes": int(break_eff),
                 "worked_hhmm": f"{m//60:02d}:{m%60:02d}",
                 "pay_eur": round((m/60.0) * rate * mult, 2),
             })
@@ -961,11 +1068,9 @@ def hhmm_now() -> str:
 
 def get_current_week(conn: sqlite3.Connection, uid: int) -> Optional[sqlite3.Row]:
     """
-    Returns the week that contains today's date (start_date <= today <= start_date+6).
-    If none matches, falls back to the most recent week by start_date (keeps app usable).
+    Returns week that contains today; else most recent week.
     """
     today = date.today()
-
     weeks = conn.execute(
         "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC",
         (uid,),
@@ -974,7 +1079,6 @@ def get_current_week(conn: sqlite3.Connection, uid: int) -> Optional[sqlite3.Row
     if not weeks:
         return None
 
-    # 1) Try: week that contains today
     for w in weeks:
         try:
             start = parse_ymd(w["start_date"])
@@ -984,10 +1088,7 @@ def get_current_week(conn: sqlite3.Connection, uid: int) -> Optional[sqlite3.Row
         if start <= today <= end:
             return w
 
-    # 2) Fallback: most recent week
     return weeks[0]
-
-
 
 
 def get_or_create_today_entry(conn: sqlite3.Connection, uid: int, week_id: int, work_date: str) -> sqlite3.Row:
@@ -1006,6 +1107,7 @@ def get_or_create_today_entry(conn: sqlite3.Connection, uid: int, week_id: int, 
         (uid, week_id, work_date, None, None, 0, None, None, 1.0, now()),
     )
     conn.commit()
+
     return conn.execute(
         "SELECT * FROM entries WHERE user_id=? AND week_id=? AND work_date=?",
         (uid, week_id, work_date),
@@ -1020,29 +1122,27 @@ def clock_today(req: Request):
 
         w = get_current_week(conn, uid)
         if not w:
-            return {
-                "ok": True,
-                "has_week": False,
-                "in_time": None,
-                "out_time": None,
-                "break_minutes": 0,
-                "break_running": False,
-            }
+            return {"ok": True, "has_week": False, "in_time": None, "out_time": None, "break_minutes": 0, "break_running": False}
 
         work_date = today_ymd()
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
         st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
 
-        # se não existe state, cria
-        if not st:
+        if not st or st["work_date"] != work_date:
             conn.execute(
                 """
-                INSERT INTO clock_state(
-                  user_id,week_id,work_date,in_time,out_time,
-                  break_running,break_start,break_minutes,updated_at
-                )
+                INSERT INTO clock_state(user_id,week_id,work_date,in_time,out_time,break_running,break_start,break_minutes,updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                  week_id=excluded.week_id,
+                  work_date=excluded.work_date,
+                  in_time=excluded.in_time,
+                  out_time=excluded.out_time,
+                  break_running=0,
+                  break_start=NULL,
+                  break_minutes=excluded.break_minutes,
+                  updated_at=excluded.updated_at
                 """,
                 (
                     uid, int(w["id"]), work_date,
@@ -1066,8 +1166,6 @@ def clock_today(req: Request):
         }
 
 
-
-
 @app.post("/api/clock/in")
 def clock_in(req: Request):
     uid = require_user(req)
@@ -1080,16 +1178,14 @@ def clock_in(req: Request):
 
         work_date = today_ymd()
         now_hhmm = hhmm_now()
-
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
-        # ✅ OVERWRITE SEMPRE no entry
+        # overwrite IN always + clear OUT
         conn.execute(
             "UPDATE entries SET time_in=?, time_out=NULL WHERE id=? AND user_id=?",
             (now_hhmm, int(e["id"]), uid),
         )
 
-        # ✅ state sempre sincroniza e sobrescreve in_time
         conn.execute(
             """
             INSERT INTO clock_state(user_id,week_id,work_date,in_time,out_time,break_running,break_start,break_minutes,updated_at)
@@ -1104,18 +1200,12 @@ def clock_in(req: Request):
               break_minutes=excluded.break_minutes,
               updated_at=excluded.updated_at
             """,
-            (
-                uid, int(w["id"]), work_date,
-                now_hhmm, None,
-                0, None, int(e["break_minutes"] or 0),
-                now()
-            ),
+            (uid, int(w["id"]), work_date, now_hhmm, None, 0, None, int(e["break_minutes"] or 0), now()),
         )
 
         conn.commit()
 
     return {"ok": True}
-
 
 
 @app.post("/api/clock/out")
@@ -1130,7 +1220,6 @@ def clock_out(req: Request):
 
         work_date = today_ymd()
         now_hhmm = hhmm_now()
-
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
         st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
@@ -1138,6 +1227,7 @@ def clock_out(req: Request):
             bs = datetime.fromisoformat(st["break_start"])
             add = int((datetime.now() - bs).total_seconds() // 60)
             new_break = int(st["break_minutes"] or 0) + max(0, add)
+
             conn.execute(
                 "UPDATE clock_state SET break_running=0, break_start=NULL, break_minutes=?, updated_at=? WHERE user_id=?",
                 (new_break, now(), uid),
@@ -1184,9 +1274,9 @@ def clock_break(req: Request):
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
         st = conn.execute(
-    "SELECT * FROM clock_state WHERE user_id=? AND work_date=?",
-    (uid, work_date),
-).fetchone()
+            "SELECT * FROM clock_state WHERE user_id=? AND work_date=?",
+            (uid, work_date),
+        ).fetchone()
 
         if not st:
             conn.execute(
@@ -1207,6 +1297,7 @@ def clock_break(req: Request):
 
         running = int(st["break_running"] or 0) == 1
 
+        # start
         if not running:
             conn.execute(
                 "UPDATE clock_state SET break_running=1, break_start=?, updated_at=? WHERE user_id=?",
@@ -1215,6 +1306,7 @@ def clock_break(req: Request):
             conn.commit()
             return {"ok": True, "break_running": True}
 
+        # stop
         if not st["break_start"]:
             conn.execute(
                 "UPDATE clock_state SET break_running=0, break_start=NULL, updated_at=? WHERE user_id=?",
