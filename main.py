@@ -35,7 +35,7 @@ APP_SECRET = os.environ.get("WORKHOURS_SECRET", "dev-secret-change-me").encode("
 COOKIE_AGE = 90 * 24 * 60 * 60  # 90 days
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"  # keep 0 in localhost/http
 
-app = FastAPI(title="Work Hours Tracker", version="9.1")
+app = FastAPI(title="Work Hours Tracker", version="9.2")
 
 
 # ======================================================
@@ -49,7 +49,7 @@ async def no_cache_static_dev(request: Request, call_next):
     resp = await call_next(request)
     p = request.url.path or ""
     if p == "/" or p.startswith("/static/") or p in (
-        "/hours", "/weeks", "/holidays", "/reports", "/profile", "/report", "/add-week"
+        "/hours", "/weeks", "/holidays", "/reports", "/profile", "/report", "/add-week", "/roster"
     ):
         resp.headers["Cache-Control"] = "no-store, max-age=0"
         resp.headers["Pragma"] = "no-cache"
@@ -150,6 +150,28 @@ def init_db() -> None:
                 paid INTEGER DEFAULT 0,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS rosters(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                week_number INTEGER,
+                start_date TEXT,
+                created_at TEXT,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS roster_days(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                roster_id INTEGER,
+                work_date TEXT,
+                shift_in TEXT,
+                shift_out TEXT,
+                day_off INTEGER DEFAULT 0,
+                created_at TEXT,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(roster_id) REFERENCES rosters(id) ON DELETE CASCADE
+            );
             """
         )
 
@@ -162,6 +184,10 @@ def init_db() -> None:
         add_col_if_missing(conn, "entries", "note", "TEXT")
         add_col_if_missing(conn, "entries", "bh_paid", "INTEGER")
         add_col_if_missing(conn, "entries", "multiplier", "REAL")
+
+        # Roster extra-hours confirmation flags
+        add_col_if_missing(conn, "entries", "extra_authorized", "INTEGER DEFAULT 0")
+        add_col_if_missing(conn, "entries", "extra_checked", "INTEGER DEFAULT 0")
 
         ensure_clock_tables(conn)
         conn.commit()
@@ -274,6 +300,18 @@ class ResetIn(BaseModel):
     new_password: str = Field(..., min_length=4)
 
 
+# Roster models
+class RosterCreate(BaseModel):
+    week_number: int
+    start_date: str  # yyyy-mm-dd (Sunday)
+    days: List[str]  # 7 items: "A", "B", "OFF"
+
+
+class ExtraConfirmIn(BaseModel):
+    work_date: str  # yyyy-mm-dd
+    authorized: bool
+
+
 # ======================================================
 # PAGES
 # ======================================================
@@ -319,6 +357,12 @@ def reports_page():
 @app.get("/profile", response_class=HTMLResponse)
 def profile_page():
     return serve_index()
+
+
+@app.get("/roster", response_class=HTMLResponse)
+def roster_page():
+    return (STATIC_DIR / "roster.html").read_text(encoding="utf-8")
+
 
 
 # ======================================================
@@ -476,6 +520,71 @@ async def upload_avatar(req: Request, file: UploadFile = File(...)):
 
 
 # ======================================================
+# COMPANY RULES (TESCO) - CALC CORE
+# ======================================================
+SHIFT_A_IN = "09:45"
+SHIFT_A_OUT = "19:00"
+SHIFT_B_IN = "10:45"
+SHIFT_B_OUT = "20:00"
+
+BREAK_FIXED_MIN = 60
+TOLERANCE_MIN = 5
+
+
+def hhmm_to_min(hhmm: str) -> int:
+    h, m = hhmm.split(":")
+    return int(h) * 60 + int(m)
+
+
+def min_to_hhmm(m: int) -> str:
+    m = int(m or 0)
+    return f"{m//60:02d}:{m%60:02d}"
+
+
+def detect_shift(time_in: Optional[str]):
+    if not time_in:
+        return None
+    t = hhmm_to_min(time_in)
+    if t <= hhmm_to_min("10:15"):
+        return (SHIFT_A_IN, SHIFT_A_OUT)
+    return (SHIFT_B_IN, SHIFT_B_OUT)
+
+
+def apply_tolerance(real: str, official: str) -> int:
+    real_m = hhmm_to_min(real)
+    off_m = hhmm_to_min(official)
+    if abs(real_m - off_m) <= TOLERANCE_MIN:
+        return off_m
+    return real_m
+
+
+def effective_break_minutes(t_in: Optional[str], t_out: Optional[str], break_real: int) -> int:
+    if not t_in or not t_out:
+        return 0
+    return max(BREAK_FIXED_MIN, int(break_real or 0))
+
+
+def minutes_between(work_date: str, t_in: Optional[str], t_out: Optional[str], break_real: int) -> int:
+    if not t_in or not t_out:
+        return 0
+
+    shift = detect_shift(t_in)
+    if not shift:
+        return 0
+
+    shift_in, shift_out = shift
+    in_m = apply_tolerance(t_in, shift_in)
+    out_m = apply_tolerance(t_out, shift_out)
+
+    if out_m < in_m:
+        out_m += 24 * 60
+
+    worked = out_m - in_m
+    br = effective_break_minutes(t_in, t_out, break_real)
+    return max(0, worked - br)
+
+
+# ======================================================
 # DATE HELPERS
 # ======================================================
 def parse_ymd(s: str) -> date:
@@ -489,6 +598,42 @@ def ddmmyyyy(d: date) -> str:
 
 def weekday_short_en(d: date) -> str:
     return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][d.weekday()]
+
+
+# ======================================================
+# ROSTER HELPERS (used by clock)
+# ======================================================
+def roster_for_date(conn: sqlite3.Connection, uid: int, ymd: str) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT rd.shift_in, rd.shift_out, rd.day_off
+        FROM roster_days rd
+        JOIN rosters r ON r.id = rd.roster_id
+        WHERE rd.user_id=? AND rd.work_date=?
+        ORDER BY r.start_date DESC
+        LIMIT 1
+        """,
+        (uid, ymd),
+    ).fetchone()
+
+
+def needs_extra_confirm(real_hhmm: str, official_hhmm: str) -> bool:
+    if not real_hhmm or not official_hhmm:
+        return False
+    return abs(hhmm_to_min(real_hhmm) - hhmm_to_min(official_hhmm)) > TOLERANCE_MIN
+
+
+def snap_to_official_if_not_authorized(real_hhmm: str, official_hhmm: Optional[str], authorized: bool) -> str:
+    """
+    If NOT authorized and roster exists: we store OFFICIAL time (so extra does NOT count).
+    If authorized: store real.
+    If no official: store real.
+    """
+    if not official_hhmm:
+        return real_hhmm
+    if authorized:
+        return real_hhmm
+    return official_hhmm
 
 
 # ======================================================
@@ -565,82 +710,6 @@ def patch_bh(bh_id: int, payload: BhPaidPatch, request: Request):
 
 
 # ======================================================
-# COMPANY RULES (TESCO) - CALC CORE
-# ======================================================
-SHIFT_A_IN = "09:45"
-SHIFT_A_OUT = "19:00"
-SHIFT_B_IN = "10:45"
-SHIFT_B_OUT = "20:00"
-
-BREAK_FIXED_MIN = 60
-TOLERANCE_MIN = 5
-
-
-def hhmm_to_min(hhmm: str) -> int:
-    h, m = hhmm.split(":")
-    return int(h) * 60 + int(m)
-
-
-def min_to_hhmm(m: int) -> str:
-    m = int(m or 0)
-    return f"{m//60:02d}:{m%60:02d}"
-
-
-def detect_shift(time_in: Optional[str]):
-    if not time_in:
-        return None
-    t = hhmm_to_min(time_in)
-    if t <= hhmm_to_min("10:15"):
-        return (SHIFT_A_IN, SHIFT_A_OUT)
-    return (SHIFT_B_IN, SHIFT_B_OUT)
-
-
-def apply_tolerance(real: str, official: str) -> int:
-    real_m = hhmm_to_min(real)
-    off_m = hhmm_to_min(official)
-    if abs(real_m - off_m) <= TOLERANCE_MIN:
-        return off_m
-    return real_m
-
-
-def effective_break_minutes(t_in: Optional[str], t_out: Optional[str], break_real: int) -> int:
-    """
-    RULE:
-    - If IN and OUT exist => break_effective = max(60, break_real)
-    - If missing IN or OUT => 0
-    """
-    if not t_in or not t_out:
-        return 0
-    return max(BREAK_FIXED_MIN, int(break_real or 0))
-
-
-def minutes_between(work_date: str, t_in: Optional[str], t_out: Optional[str], break_real: int) -> int:
-    """
-    Paid minutes using Tesco rules:
-    - shift detect by IN
-    - apply tolerance to IN/OUT vs official shift
-    - subtract break_effective (min 60)
-    """
-    if not t_in or not t_out:
-        return 0
-
-    shift = detect_shift(t_in)
-    if not shift:
-        return 0
-
-    shift_in, shift_out = shift
-    in_m = apply_tolerance(t_in, shift_in)
-    out_m = apply_tolerance(t_out, shift_out)
-
-    if out_m < in_m:
-        out_m += 24 * 60
-
-    worked = out_m - in_m
-    br = effective_break_minutes(t_in, t_out, break_real)
-    return max(0, worked - br)
-
-
-# ======================================================
 # DAY DETAILS (TESCO VIEW)
 # ======================================================
 @app.get("/api/day-details/{entry_id}")
@@ -669,7 +738,6 @@ def day_details(entry_id: int, req: Request):
         shift = detect_shift(clocked_in)
         shift_in, shift_out = shift if shift else (None, None)
 
-        # Paid timeline (tolerance)
         if not clocked_in or not clocked_out or not shift_in or not shift_out:
             return {
                 "date": r["work_date"],
@@ -693,9 +761,6 @@ def day_details(entry_id: int, req: Request):
         mult = float(r["multiplier"] or 1.0)
         pay = (worked_paid_min / 60) * rate * mult
 
-        # Hours made vs paid:
-        # - made = (raw - break_real)  (what you actually took)
-        # - paid = (raw - break_eff)   (Tesco rule)
         hours_made_min = max(0, worked_raw - break_real)
 
         return {
@@ -710,6 +775,107 @@ def day_details(entry_id: int, req: Request):
                 "pay": round(pay, 2),
             },
         }
+
+
+# ======================================================
+# ROSTER API
+# ======================================================
+@app.get("/api/roster")
+def roster_list(req: Request):
+    uid = require_user(req)
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM rosters WHERE user_id=? ORDER BY start_date DESC",
+            (uid,),
+        ).fetchall()
+        return [
+            {"id": r["id"], "week_number": r["week_number"], "start_date": r["start_date"]}
+            for r in rows
+        ]
+
+
+@app.get("/api/roster/{roster_id}")
+def roster_get(roster_id: int, req: Request):
+    uid = require_user(req)
+    with db() as conn:
+        r = conn.execute(
+            "SELECT * FROM rosters WHERE id=? AND user_id=?",
+            (roster_id, uid),
+        ).fetchone()
+        if not r:
+            raise HTTPException(404, "Roster not found")
+
+        days = conn.execute(
+            "SELECT * FROM roster_days WHERE roster_id=? AND user_id=? ORDER BY work_date ASC",
+            (roster_id, uid),
+        ).fetchall()
+
+        return {
+            "id": r["id"],
+            "week_number": r["week_number"],
+            "start_date": r["start_date"],
+            "days": [
+                {
+                    "work_date": d["work_date"],
+                    "day_off": bool(int(d["day_off"] or 0)),
+                    "shift_in": d["shift_in"],
+                    "shift_out": d["shift_out"],
+                }
+                for d in days
+            ],
+        }
+
+
+@app.post("/api/roster")
+def roster_create(p: RosterCreate, req: Request):
+    uid = require_user(req)
+
+    if not p.days or len(p.days) != 7:
+        raise HTTPException(400, "days must have 7 items (Sun..Sat)")
+
+    start = parse_ymd(p.start_date)
+
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO rosters(user_id,week_number,start_date,created_at) VALUES (?,?,?,?)",
+            (uid, int(p.week_number), p.start_date, now()),
+        )
+        roster_id = conn.execute("SELECT last_insert_rowid() id").fetchone()["id"]
+
+        for i, code in enumerate(p.days):
+            d = start + timedelta(days=i)
+            ymd = d.isoformat()
+
+            if code == "OFF":
+                conn.execute(
+                    """
+                    INSERT INTO roster_days(user_id,roster_id,work_date,shift_in,shift_out,day_off,created_at)
+                    VALUES (?,?,?,?,?,?,?)
+                    """,
+                    (uid, roster_id, ymd, None, None, 1, now()),
+                )
+            elif code == "A":
+                conn.execute(
+                    """
+                    INSERT INTO roster_days(user_id,roster_id,work_date,shift_in,shift_out,day_off,created_at)
+                    VALUES (?,?,?,?,?,?,?)
+                    """,
+                    (uid, roster_id, ymd, SHIFT_A_IN, SHIFT_A_OUT, 0, now()),
+                )
+            elif code == "B":
+                conn.execute(
+                    """
+                    INSERT INTO roster_days(user_id,roster_id,work_date,shift_in,shift_out,day_off,created_at)
+                    VALUES (?,?,?,?,?,?,?)
+                    """,
+                    (uid, roster_id, ymd, SHIFT_B_IN, SHIFT_B_OUT, 0, now()),
+                )
+            else:
+                raise HTTPException(400, "Invalid day code (use A, B, OFF)")
+
+        conn.commit()
+
+    return {"ok": True, "id": int(roster_id)}
 
 
 # ======================================================
@@ -809,7 +975,7 @@ def get_week(week_id: int, req: Request):
                     "date_ddmmyyyy": ddmmyyyy(d),
                     "time_in": r["time_in"],
                     "time_out": r["time_out"],
-                    "break_minutes": int(break_eff),  # shows 60 even if stored 0
+                    "break_minutes": int(break_eff),
                     "note": r["note"],
                     "bh_paid": (None if r["bh_paid"] is None else bool(int(r["bh_paid"]))),
                     "multiplier": float(r["multiplier"] or 1.0),
@@ -1056,7 +1222,7 @@ def report_current_week(req: Request):
 
 
 # ======================================================
-# CLOCK (IN / OUT / BREAK)
+# CLOCK (IN / OUT / BREAK) + ROSTER EXTRA CONFIRM
 # ======================================================
 def today_ymd() -> str:
     return date.today().isoformat()
@@ -1067,9 +1233,6 @@ def hhmm_now() -> str:
 
 
 def get_current_week(conn: sqlite3.Connection, uid: int) -> Optional[sqlite3.Row]:
-    """
-    Returns week that contains today; else most recent week.
-    """
     today = date.today()
     weeks = conn.execute(
         "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC",
@@ -1101,10 +1264,15 @@ def get_or_create_today_entry(conn: sqlite3.Connection, uid: int, week_id: int, 
 
     conn.execute(
         """
-        INSERT INTO entries(user_id,week_id,work_date,time_in,time_out,break_minutes,note,bh_paid,multiplier,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
+        INSERT INTO entries(
+            user_id,week_id,work_date,
+            time_in,time_out,break_minutes,
+            note,bh_paid,multiplier,created_at,
+            extra_authorized,extra_checked
+        )
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         """,
-        (uid, week_id, work_date, None, None, 0, None, None, 1.0, now()),
+        (uid, week_id, work_date, None, None, 0, None, None, 1.0, now(), 0, 0),
     )
     conn.commit()
 
@@ -1166,6 +1334,27 @@ def clock_today(req: Request):
         }
 
 
+@app.post("/api/clock/extra-confirm")
+def clock_extra_confirm(p: ExtraConfirmIn, req: Request):
+    uid = require_user(req)
+
+    # store confirmation on today's entry (or create it)
+    with db() as conn:
+        w = get_current_week(conn, uid)
+        if not w:
+            raise HTTPException(400, "Create a week first")
+
+        e = get_or_create_today_entry(conn, uid, int(w["id"]), p.work_date)
+
+        conn.execute(
+            "UPDATE entries SET extra_checked=1, extra_authorized=? WHERE id=? AND user_id=?",
+            (1 if p.authorized else 0, int(e["id"]), uid),
+        )
+        conn.commit()
+
+    return {"ok": True}
+
+
 @app.post("/api/clock/in")
 def clock_in(req: Request):
     uid = require_user(req)
@@ -1177,13 +1366,33 @@ def clock_in(req: Request):
             raise HTTPException(400, "Create a week first")
 
         work_date = today_ymd()
-        now_hhmm = hhmm_now()
+        real_now = hhmm_now()
+
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
+
+        ro = roster_for_date(conn, uid, work_date)
+        if ro and int(ro["day_off"] or 0) == 1:
+            raise HTTPException(400, "Today is DAY OFF in roster")
+
+        official_in = ro["shift_in"] if ro else None
+
+        # If roster exists and this IN differs > tolerance, ask once
+        if official_in and needs_extra_confirm(real_now, official_in) and int(e["extra_checked"] or 0) == 0:
+            return {
+                "ok": True,
+                "needs_extra_confirm": True,
+                "kind": "IN",
+                "official": official_in,
+                "real": real_now,
+            }
+
+        authorized = bool(int(e["extra_authorized"] or 0) == 1)
+        store_in = snap_to_official_if_not_authorized(real_now, official_in, authorized)
 
         # overwrite IN always + clear OUT
         conn.execute(
             "UPDATE entries SET time_in=?, time_out=NULL WHERE id=? AND user_id=?",
-            (now_hhmm, int(e["id"]), uid),
+            (store_in, int(e["id"]), uid),
         )
 
         conn.execute(
@@ -1200,7 +1409,7 @@ def clock_in(req: Request):
               break_minutes=excluded.break_minutes,
               updated_at=excluded.updated_at
             """,
-            (uid, int(w["id"]), work_date, now_hhmm, None, 0, None, int(e["break_minutes"] or 0), now()),
+            (uid, int(w["id"]), work_date, store_in, None, 0, None, int(e["break_minutes"] or 0), now()),
         )
 
         conn.commit()
@@ -1219,8 +1428,27 @@ def clock_out(req: Request):
             raise HTTPException(400, "Create a week first")
 
         work_date = today_ymd()
-        now_hhmm = hhmm_now()
+        real_now = hhmm_now()
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
+
+        ro = roster_for_date(conn, uid, work_date)
+        if ro and int(ro["day_off"] or 0) == 1:
+            raise HTTPException(400, "Today is DAY OFF in roster")
+
+        official_out = ro["shift_out"] if ro else None
+
+        # Ask once if OUT differs > tolerance
+        if official_out and needs_extra_confirm(real_now, official_out) and int(e["extra_checked"] or 0) == 0:
+            return {
+                "ok": True,
+                "needs_extra_confirm": True,
+                "kind": "OUT",
+                "official": official_out,
+                "real": real_now,
+            }
+
+        authorized = bool(int(e["extra_authorized"] or 0) == 1)
+        store_out = snap_to_official_if_not_authorized(real_now, official_out, authorized)
 
         st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
         if st and int(st["break_running"] or 0) == 1 and st["break_start"]:
@@ -1239,7 +1467,7 @@ def clock_out(req: Request):
 
         conn.execute(
             "UPDATE entries SET time_out=? WHERE id=? AND user_id=?",
-            (now_hhmm, int(e["id"]), uid),
+            (store_out, int(e["id"]), uid),
         )
 
         conn.execute(
@@ -1252,7 +1480,7 @@ def clock_out(req: Request):
               out_time=excluded.out_time,
               updated_at=excluded.updated_at
             """,
-            (uid, int(w["id"]), work_date, None, now_hhmm, 0, None, int(e["break_minutes"] or 0), now()),
+            (uid, int(w["id"]), work_date, None, store_out, 0, None, int(e["break_minutes"] or 0), now()),
         )
 
         conn.commit()

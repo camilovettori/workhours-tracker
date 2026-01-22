@@ -606,31 +606,47 @@ async function doClockBreak() {
   } catch (e) {
     alert(e.message || "BREAK failed");
   }
-}function openDayDetails(entryId) {
+};
+
+function openDayDetails(entryId) {
+  const modal = $("dayModal");
+  const ddTitle = $("ddTitle");
+  const ddClocked = $("ddClocked");
+  const ddTesco = $("ddTesco");
+  const ddResult = $("ddResult");
+
+  if (!modal || !ddTitle || !ddClocked || !ddTesco || !ddResult) {
+    alert("Day details modal not found in HTML yet.");
+    return;
+  }
+
   api(`/api/day-details/${entryId}`).then(d => {
-    $("ddTitle").textContent = `${d.weekday} • ${d.date}`;
+    ddTitle.textContent = `${d.weekday} • ${d.date}`;
 
-    $("ddClocked").innerHTML = `
-      IN: ${d.clocked.in}<br>
-      OUT: ${d.clocked.out}<br>
-      Break: ${d.clocked.break_real} min
+    ddClocked.innerHTML = `
+      IN: ${d.clocked.in || ""}<br>
+      OUT: ${d.clocked.out || ""}<br>
+      Break: ${d.clocked.break_real ?? 0} min
     `;
 
-    $("ddTesco").innerHTML = `
-      Shift: ${d.tesco.shift}<br>
-      Tolerance: ${d.tesco.tolerance}<br>
-      Fixed break: ${d.tesco.break_fixed} min
+    ddTesco.innerHTML = `
+      Shift: ${d.tesco.shift || "-"}<br>
+      Tolerance: ${d.tesco.tolerance || "-"}<br>
+      Fixed break: ${d.tesco.break_fixed ?? 60} min
     `;
 
-    $("ddResult").innerHTML = `
-      Hours made: ${d.result.hours_made}<br>
-      Hours paid: ${d.result.hours_paid}<br>
-      Pay: €${d.result.pay}
+    ddResult.innerHTML = `
+      Hours made: ${d.result.hours_made || "00:00"}<br>
+      Hours paid: ${d.result.hours_paid || "00:00"}<br>
+      Pay: €${(d.result.pay ?? 0).toFixed(2)}
     `;
 
-    show($("dayModal"));
+    show(modal);
+  }).catch(err => {
+    alert(err.message || "Failed to load day details");
   });
 }
+
 
 function closeDayModal() {
   hide($("dayModal"));
@@ -721,7 +737,7 @@ function bind() {
   addWeekForm?.addEventListener("submit", createWeekFromPage);
 
   navHome?.addEventListener("click", () => go("/"));
-  navHistory?.addEventListener("click", () => go("/weeks"));
+  navHistory?.addEventListener("click", () => go("/roster"));
   navHolidays?.addEventListener("click", () => go("/holidays"));
   navReports?.addEventListener("click", () => go("/report"));
   navProfile?.addEventListener("click", () => go("/profile"));

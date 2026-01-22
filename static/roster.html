@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>Roster</title>
+
+  <link rel="icon" href="/static/logo.png" />
+  <link rel="stylesheet" href="/static/app.css?v=12" />
+
+  <style>
+    .wrap{ width:min(820px,100%); margin:0 auto; padding:22px 16px 120px; }
+    .top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
+    .brand{ display:flex; align-items:center; gap:12px; }
+    .brand img{ width:44px; height:44px; border-radius:12px; object-fit:cover; }
+    .muted{ color: var(--muted); font-weight:900; }
+
+    .cardPad{ padding:16px; }
+    .row{ display:flex; justify-content:space-between; gap:12px; align-items:center; }
+
+    .weekItem{
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding:14px 14px; border-radius:18px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.60);
+      cursor:pointer;
+    }
+    .weekItem + .weekItem{ margin-top:10px; }
+    .weekItem .t1{ font-weight:1000; font-size:16px; }
+    .weekItem .t2{ margin-top:4px; font-size:13px; color:var(--muted); font-weight:900; }
+
+    .err{ color:#b91c1c; font-weight:1000; margin-top:8px; }
+
+    .wizardDay{
+      margin-top:12px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.60);
+      border-radius:18px;
+      padding:14px;
+    }
+    .dayTitle{ font-weight:1000; font-size:16px; margin-bottom:10px; }
+    .btnRow{ display:flex; gap:10px; flex-wrap:wrap; }
+    .btnChoice{
+      padding:10px 14px; border-radius:14px; font-weight:1000;
+      border:1px solid rgba(15,23,42,.12);
+      background: rgba(255,255,255,.80);
+      cursor:pointer;
+    }
+    .btnChoice.active{
+      border-color: rgba(37,99,235,.35);
+      background: rgba(37,99,235,.12);
+    }
+    .field{ display:flex; flex-direction:column; gap:6px; }
+    .field span{ font-weight:900; color: var(--muted); font-size:13px; }
+    .field input{ padding:12px 12px; border-radius:14px; border:1px solid rgba(15,23,42,.12); background: rgba(255,255,255,.75); font-weight:900; }
+    .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .hidden{ display:none !important; }
+  </style>
+</head>
+
+<body>
+  <main class="wrap">
+    <div class="top">
+      <div class="brand">
+        <img src="/static/logo.png" alt="logo" />
+        <div>
+          <div style="font-size:34px; font-weight:1000; letter-spacing:-.03em; line-height:1;">Roster</div>
+          <div id="subTitle" class="muted">Weekly schedule</div>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:10px; align-items:center;">
+        <button id="btnHome" class="btn btn--pill btn--soft" type="button">Home</button>
+        <button id="btnBack" class="btn btn--pill btn--ghost" type="button">Back</button>
+      </div>
+    </div>
+
+    <!-- LIST -->
+    <section id="viewList" class="card cardPad">
+      <div class="row" style="margin-bottom:10px;">
+        <div style="font-size:18px; font-weight:1000;">Weeks</div>
+        <button id="btnAddWeek" class="btn btn--soft" type="button">+ Add week</button>
+      </div>
+
+      <div id="list"></div>
+      <div id="listMsg" class="muted" style="margin-top:10px;"></div>
+      <div id="listErr" class="err"></div>
+    </section>
+
+    <!-- WIZARD -->
+    <section id="viewWizard" class="card cardPad hidden">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+        <div style="font-size:18px; font-weight:1000;">Add roster week</div>
+        <button id="btnCancelWizard" class="btn btn--pill btn--ghost" type="button">Cancel</button>
+      </div>
+
+      <div class="grid2" style="margin-top:12px;">
+        <label class="field">
+          <span>Week number</span>
+          <input id="wkNumber" type="number" min="1" max="53" required />
+        </label>
+
+        <label class="field">
+          <span>Start date</span>
+          <input id="startDate" type="date" required />
+        </label>
+      </div>
+
+      <div id="wizardErr" class="err"></div>
+
+      <div id="dayBox" class="wizardDay">
+        <div id="dayTitle" class="dayTitle">Sunday</div>
+        <div class="btnRow">
+          <button id="btnA" class="btnChoice" type="button">09:45 → 19:00</button>
+          <button id="btnB" class="btnChoice" type="button">10:45 → 20:00</button>
+          <button id="btnOFF" class="btnChoice" type="button">DAY OFF</button>
+        </div>
+        <div class="muted" style="margin-top:10px;">Pick one option. It will move to next day.</div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
+        <button id="btnSave" class="btn btn--primary" type="button">Save week</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const show = (el) => el && el.classList.remove("hidden");
+    const hide = (el) => el && el.classList.add("hidden");
+
+    async function api(path, opts = {}) {
+      const res = await fetch(path, {
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+        ...opts,
+      });
+      const ct = res.headers.get("content-type") || "";
+      const data = ct.includes("application/json") ? await res.json() : await res.text();
+      if (!res.ok) {
+        const msg = (data && data.detail) ? data.detail : (typeof data === "string" ? data : "Request failed");
+        const e = new Error(msg);
+        e.status = res.status;
+        throw e;
+      }
+      return data;
+    }
+
+    function isoWeekNumber(d = new Date()) {
+      const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+      const dayNum = date.getUTCDay() || 7;
+      date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+      return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+    }
+
+    function mondayOfThisWeek(d = new Date()) {
+      const x = new Date(d);
+      const day = x.getDay();
+      const diff = (day === 0 ? -6 : 1 - day);
+      x.setDate(x.getDate() + diff);
+      const y = x.getFullYear();
+      const m = String(x.getMonth() + 1).padStart(2, "0");
+      const dd = String(x.getDate()).padStart(2, "0");
+      return `${y}-${m}-${dd}`;
+    }
+
+    // ===== state
+    const dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    let wizardIndex = 0; // 0..6
+    let wizardDays = ["", "", "", "", "", "", ""]; // A/B/OFF
+
+    function resetWizard() {
+      wizardIndex = 0;
+      wizardDays = ["", "", "", "", "", "", ""];
+      $("wkNumber").value = String(isoWeekNumber(new Date()));
+      $("startDate").value = mondayOfThisWeek(new Date());
+      $("wizardErr").textContent = "";
+      renderWizardDay();
+    }
+
+    function renderWizardDay() {
+      $("dayTitle").textContent = dayNames[wizardIndex];
+      // clear active
+      $("btnA").classList.remove("active");
+      $("btnB").classList.remove("active");
+      $("btnOFF").classList.remove("active");
+    }
+
+    function pick(code) {
+      wizardDays[wizardIndex] = code;
+
+      if (wizardIndex < 6) {
+        wizardIndex += 1;
+        renderWizardDay();
+        return;
+      }
+      // last day picked -> ready to save
+      $("wizardErr").textContent = "All days selected. Click “Save week”.";
+    }
+
+    async function loadList() {
+      hide($("viewWizard"));
+      show($("viewList"));
+
+      $("list").innerHTML = "";
+      $("listErr").textContent = "";
+      $("listMsg").textContent = "Loading...";
+
+      try {
+        const rows = await api("/api/roster");
+        if (!rows || !rows.length) {
+          $("listMsg").textContent = "No roster weeks yet. Click “Add week”.";
+          return;
+        }
+
+        $("listMsg").textContent = "";
+
+        for (const r of rows) {
+          const item = document.createElement("div");
+          item.className = "weekItem";
+          item.innerHTML = `
+            <div>
+              <div class="t1">Week ${r.week_number}</div>
+              <div class="t2">Start: ${r.start_date}</div>
+            </div>
+            <div style="font-weight:1000; color:var(--muted);">›</div>
+          `;
+          item.addEventListener("click", async () => {
+            // simple: open detail via alert (you can build a detail page later)
+            try {
+              const d = await api("/api/roster/" + r.id);
+              let txt = `Week ${d.week_number} (start ${d.start_date})\n\n`;
+              for (const x of d.days) {
+                txt += `${x.work_date}: ${x.day_off ? "OFF" : (x.shift_in + " → " + x.shift_out)}\n`;
+              }
+              alert(txt);
+            } catch (e) {
+              alert(e.message || "Failed");
+            }
+          });
+          $("list").appendChild(item);
+        }
+      } catch (e) {
+        $("listMsg").textContent = "";
+        $("listErr").textContent = "Error: " + (e.message || "failed");
+        if (e.status === 401) location.href = "/";
+      }
+    }
+
+    function openWizard() {
+      resetWizard();
+      hide($("viewList"));
+      show($("viewWizard"));
+      $("subTitle").textContent = "Add weekly schedule";
+    }
+
+    async function saveWizard() {
+      $("wizardErr").textContent = "";
+
+      const week_number = Number($("wkNumber").value || 0);
+      const start_date = ($("startDate").value || "").trim();
+
+      if (!week_number || !start_date) {
+        $("wizardErr").textContent = "Fill week number and start date.";
+        return;
+      }
+
+      if (wizardDays.some(x => !x)) {
+        $("wizardErr").textContent = "You must pick all days (Sun..Sat).";
+        return;
+      }
+
+      try {
+        await api("/api/roster", {
+          method: "POST",
+          body: JSON.stringify({
+            week_number,
+            start_date,
+            days: wizardDays
+          })
+        });
+        $("subTitle").textContent = "Weekly schedule";
+        await loadList();
+      } catch (e) {
+        $("wizardErr").textContent = e.message || "Failed to save";
+        if (e.status === 401) location.href = "/";
+      }
+    }
+
+    // ===== binds
+    $("btnHome").addEventListener("click", () => location.href = "/");
+    $("btnBack").addEventListener("click", () => history.length > 1 ? history.back() : (location.href = "/"));
+    $("btnAddWeek").addEventListener("click", openWizard);
+    $("btnCancelWizard").addEventListener("click", () => loadList());
+
+    $("btnA").addEventListener("click", () => pick("A"));
+    $("btnB").addEventListener("click", () => pick("B"));
+    $("btnOFF").addEventListener("click", () => pick("OFF"));
+
+    $("btnSave").addEventListener("click", saveWizard);
+
+    (async function init() {
+      try {
+        await api("/api/me");
+        await loadList();
+      } catch {
+        location.href = "/";
+      }
+    })();
+  </script>
+</body>
+</html>
