@@ -573,17 +573,32 @@ def patch_bh(bh_id: int, payload: BhPaidPatch, request: Request):
 # ======================================================
 # WEEKS / ENTRIES
 # ======================================================
+
+def effective_break_minutes(t_in: Optional[str], t_out: Optional[str], break_min: int) -> int:
+    """
+    FIXED 60 rule (display + calc):
+    - If the day has IN and OUT -> break_effective = max(60, break_min)
+    - If missing IN or OUT -> 0
+    """
+    if not t_in or not t_out:
+        return 0
+    return max(60, int(break_min or 0))
+
+
 def minutes_between(work_date: str, t_in: Optional[str], t_out: Optional[str], break_min: int) -> int:
     if not t_in or not t_out:
         return 0
+
     start = datetime.fromisoformat(f"{work_date} {t_in}:00")
     end = datetime.fromisoformat(f"{work_date} {t_out}:00")
     if end < start:
         end = end + timedelta(days=1)
-    mins = int((end - start).total_seconds() // 60)
-    mins = max(0, mins - int(break_min or 0))
-    return mins
 
+    mins = int((end - start).total_seconds() // 60)
+
+    br = effective_break_minutes(t_in, t_out, break_min)  # ✅ fixed 60 rule
+    mins = max(0, mins - br)
+    return mins
 
 
 @app.get("/api/weeks")
@@ -598,7 +613,6 @@ def list_weeks(req: Request):
             """,
             (uid,),
         ).fetchall()
-
 
         out = []
         for w in rows:
@@ -664,10 +678,14 @@ def get_week(week_id: int, req: Request):
         rate = float(w["hourly_rate"] or 0)
 
         for r in rows:
+            # ✅ calc uses fixed 60 too
             m = minutes_between(r["work_date"], r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
             mult = float(r["multiplier"] or 1.0)
             total_min += m
             total_pay += (m / 60.0) * rate * mult
+
+            # ✅ THIS is what makes the table show 60m even if DB has 0m
+            break_effective = effective_break_minutes(r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
 
             d = parse_ymd(r["work_date"])
             entries.append(
@@ -679,7 +697,10 @@ def get_week(week_id: int, req: Request):
                     "date_ddmmyyyy": ddmmyyyy(d),
                     "time_in": r["time_in"],
                     "time_out": r["time_out"],
-                    "break_minutes": int(r["break_minutes"] or 0),
+
+                    # 👇 show the FIXED 60 (or 60+extra) in the report
+                    "break_minutes": int(break_effective),
+
                     "note": r["note"],
                     "bh_paid": (None if r["bh_paid"] is None else bool(int(r["bh_paid"]))),
                     "multiplier": float(r["multiplier"] or 1.0),
@@ -802,7 +823,6 @@ def delete_entry(entry_id: int, req: Request):
     if not ok:
         raise HTTPException(404, "Not found")
     return {"ok": True}
-
 
 # ======================================================
 # DASHBOARD (for new UX)
