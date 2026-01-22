@@ -1,9 +1,11 @@
 /* =========================
-   Work Hours Tracker - app.js (v13)
-   - Adds: Roster page (/roster) with:
-     ✅ list + detail (no browser alert)
-     ✅ Add roster week wizard (Sun..Sat) with live preview + expected hours/pay
-   - Keeps: Login, Home, Add-week, Reports, etc.
+   Work Hours Tracker - app.js (v14)
+   FIXES:
+   ✅ Removes stray debug PATCH that was breaking /roster
+   ✅ Fixes undefined rosterId reference
+   ✅ Adds missing doClockBreak()
+   ✅ Keeps overtime prompt flow (DAY OFF + tolerance)
+   ✅ Keeps: Login, Home, Add-week, Roster page
 ========================= */
 
 console.log("app.js loaded ✅");
@@ -73,7 +75,7 @@ function isoWeekNumber(d = new Date()) {
 function mondayOfThisWeek(d = new Date()) {
   const x = new Date(d);
   const day = x.getDay(); // 0 Sun .. 6 Sat
-  const diff = (day === 0 ? -6 : 1 - day); // go back to Monday
+  const diff = day === 0 ? -6 : 1 - day; // go back to Monday
   x.setDate(x.getDate() + diff);
   const y = x.getFullYear();
   const m = String(x.getMonth() + 1).padStart(2, "0");
@@ -87,13 +89,6 @@ function go(path) {
 
 function pathIs(p) {
   return window.location.pathname === p;
-}
-
-function nowHHMM() {
-  const d = new Date();
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
 }
 
 /* ===== date helpers for roster ===== */
@@ -115,7 +110,6 @@ function ymdToDateObj(ymd) {
   const [y, m, d] = ymd.split("-").map(Number);
   return new Date(y, (m || 1) - 1, d || 1);
 }
-
 function codeToLabel(code) {
   if (code === "A") return "09:45 → 19:00";
   if (code === "B") return "10:45 → 20:00";
@@ -262,31 +256,26 @@ const LS_BREAK_DAY = "wh_break_day";
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
-
 function fmtMMSS(totalSec) {
   const sec = Math.max(0, Math.floor(totalSec));
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${pad2(m)}:${pad2(s)}`;
 }
-
 function setBreakButtonRunning(running) {
   if (!btnBreak) return;
   btnBreak.innerHTML = running
     ? `<span class="pillIcon">⏱</span> BREAK (stop)`
     : `<span class="pillIcon">⏱</span> BREAK`;
 }
-
 function saveBreakEnd(endEpochMs) {
   localStorage.setItem(LS_BREAK_END, String(endEpochMs));
   localStorage.setItem(LS_BREAK_DAY, UI_DAY);
 }
-
 function clearBreakStorage() {
   localStorage.removeItem(LS_BREAK_END);
   localStorage.removeItem(LS_BREAK_DAY);
 }
-
 function stopBreakCountdown(vibrate = false) {
   if (breakTick) clearInterval(breakTick);
   breakTick = null;
@@ -305,7 +294,6 @@ function stopBreakCountdown(vibrate = false) {
     navigator.vibrate([200, 100, 200]);
   }
 }
-
 function tickBreakCountdown() {
   const endEpoch = Number(localStorage.getItem(LS_BREAK_END) || "0");
   if (!endEpoch) {
@@ -325,7 +313,6 @@ function tickBreakCountdown() {
       .catch(() => {});
   }
 }
-
 function startBreakCountdown(seconds = BREAK_DEFAULT_SEC) {
   breakRunningUI = true;
   const endEpoch = Date.now() + seconds * 1000;
@@ -337,7 +324,6 @@ function startBreakCountdown(seconds = BREAK_DEFAULT_SEC) {
   if (breakTick) clearInterval(breakTick);
   breakTick = setInterval(tickBreakCountdown, 250);
 }
-
 function resumeBreakCountdownIfAny() {
   const savedDay = localStorage.getItem(LS_BREAK_DAY);
   const endEpoch = Number(localStorage.getItem(LS_BREAK_END) || "0");
@@ -351,7 +337,6 @@ function resumeBreakCountdownIfAny() {
   if (leftSec > 0) startBreakCountdown(leftSec);
   else clearBreakStorage();
 }
-
 function resetTodayVisual() {
   if (cwIn) cwIn.textContent = "00:00";
   if (cwOut) cwOut.textContent = "00:00";
@@ -570,20 +555,60 @@ async function refreshTodayPay() {
 }
 
 /* =========================
+   Overtime prompt (Yes/No)
+========================= */
+async function handleOvertimePrompt(resObj) {
+  const reason = resObj.reason || "";
+  const kind = resObj.kind || "";
+  const work_date = resObj.work_date || todayYMD();
+
+  let text = "";
+  if (reason === "DAY_OFF") {
+    text = "You are off today.\nOvertime Authorized? (Yes / No)";
+  } else {
+    text = "Overtime Authorized? (Yes / No)";
+  }
+
+  const yes = window.confirm(text); // OK=Yes / Cancel=No
+
+  if (yes) {
+    await api("/api/clock/extra-confirm", {
+      method: "POST",
+      body: JSON.stringify({ work_date, authorized: true }),
+    });
+    return { proceed: true, authorized: true, reason };
+  } else {
+    await api("/api/clock/extra-confirm", {
+      method: "POST",
+      body: JSON.stringify({ work_date, authorized: false }),
+    });
+
+    if (reason === "DAY_OFF") {
+      alert("Overtime not authorized.");
+      return { proceed: false, authorized: false, reason };
+    }
+
+    if (kind === "IN") alert("You are early (or late). You will not get paid.");
+    else alert("Outside roster time. Extra will not be paid.");
+
+    return { proceed: true, authorized: false, reason };
+  }
+}
+
+/* =========================
    Clock actions
 ========================= */
 async function doClockIn() {
   try {
-    await api("/api/clock/in", { method: "POST" });
-    const c = await api("/api/clock/today");
-    CLOCK = c;
+    const r = await api("/api/clock/in", { method: "POST" });
 
-    if (cwIn) cwIn.textContent = c.in_time || "00:00";
-    if (cwOut) cwOut.textContent = c.out_time || "00:00";
-
-    if (!breakRunningUI) {
-      if (cwBreak) cwBreak.textContent = `${Number(c.break_minutes || 0)}m`;
+    if (r?.needs_extra_confirm) {
+      const decision = await handleOvertimePrompt(r);
+      if (!decision.proceed) return;
+      await api("/api/clock/in", { method: "POST" });
     }
+
+    await refreshAll();
   } catch (e) {
     alert(e.message || "IN failed");
   }
@@ -591,68 +616,39 @@ async function doClockIn() {
 
 async function doClockOut() {
   try {
-    await api("/api/clock/out", { method: "POST" });
-    if (cwOut) cwOut.textContent = nowHHMM();
+    const r = await api("/api/clock/out", { method: "POST" });
+
+    if (r?.needs_extra_confirm) {
+      const decision = await handleOvertimePrompt(r);
+      if (!decision.proceed) return;
+      await api("/api/clock/out", { method: "POST" });
+    }
+
     await refreshAll();
   } catch (e) {
     alert(e.message || "OUT failed");
   }
 }
 
+
 async function doClockBreak() {
   try {
-    if (breakRunningUI) {
-      await api("/api/clock/break", { method: "POST" });
+    const r = await api("/api/clock/break", { method: "POST" });
+
+    // backend returns break_running true/false (+ break_minutes when stopping)
+    if (r && r.break_running === true) {
+      // Start local countdown (60 min default)
+      startBreakCountdown(BREAK_DEFAULT_SEC);
+    } else {
+      // Stop local countdown, show minutes
       stopBreakCountdown(false);
-      await refreshAll();
-      return;
+      await refreshClock();
     }
 
-    await api("/api/clock/break", { method: "POST" });
-    startBreakCountdown(BREAK_DEFAULT_SEC);
+    await refreshAll();
   } catch (e) {
     alert(e.message || "BREAK failed");
   }
-}
-
-/* =========================
-   Day Details modal (optional)
-========================= */
-function openDayDetails(entryId) {
-  const modal = $("dayModal");
-  const ddTitle = $("ddTitle");
-  const ddClocked = $("ddClocked");
-  const ddTesco = $("ddTesco");
-  const ddResult = $("ddResult");
-
-  if (!modal || !ddTitle || !ddClocked || !ddTesco || !ddResult) {
-    alert("Day details modal not found in HTML yet.");
-    return;
-  }
-
-  api(`/api/day-details/${entryId}`)
-    .then((d) => {
-      ddTitle.textContent = `${d.weekday} • ${d.date}`;
-
-      ddClocked.innerHTML = `IN: ${d.clocked.in || ""}<br>OUT: ${d.clocked.out || ""}<br>Break: ${
-        d.clocked.break_real ?? 0
-      } min`;
-
-      ddTesco.innerHTML = `Shift: ${d.tesco.shift || "-"}<br>Tolerance: ${
-        d.tesco.tolerance || "-"
-      }<br>Fixed break: ${d.tesco.break_fixed ?? 60} min`;
-
-      ddResult.innerHTML = `Hours made: ${d.result.hours_made || "00:00"}<br>Hours paid: ${
-        d.result.hours_paid || "00:00"
-      }<br>Pay: €${(d.result.pay ?? 0).toFixed(2)}`;
-
-      show(modal);
-    })
-    .catch((err) => alert(err.message || "Failed to load day details"));
-}
-
-function closeDayModal() {
-  hide($("dayModal"));
 }
 
 /* =========================
@@ -696,31 +692,14 @@ async function createWeekFromPage(ev) {
 
 /* =========================
    ROSTER PAGE (/roster)
-   Required IDs in roster.html:
-   - rosterWeeksList (container)
-   - rosterListMsg (optional)
-   - rosterDetail (container)
-   - rosterDetailTitle, rosterDetailTotals, rosterDetailGrid (optional)
-   - btnRosterAddWeek (button)
-   - rosterWizard (container)
-   - rwWeekNumber, rwStartDate (inputs)
-   - rwDayTitle (e.g. "Monday")
-   - rwDayDate (e.g. "2026-01-18")
-   - btnRwA, btnRwB, btnRwOFF (buttons)
-   - btnRwBack (button) optional
-   - btnRwCancel (button) optional
-   - btnRwSave (button)
-   - rosterPreview, rpTotals, rpList (preview area)
 ========================= */
 let rosterHourlyRate = 0;
-let rosterPicked = []; // array of codes length 0..7
+let rosterPicked = []; // 7 codes
 let rosterStartDate = "";
-let rosterActiveDayIndex = 0; // 0..6
-let rosterActiveRosterId = null;
+let rosterActiveDayIndex = 0;
 
-const SHIFT_PAID_MIN = 495; // 8h15 = 495 min (09:45->19:00 or 10:45->20:00 minus 60 break)
+const SHIFT_PAID_MIN = 495; // 8h15 (495m) paid
 
-/* safe getters */
 function R(id) {
   return document.getElementById(id);
 }
@@ -796,14 +775,12 @@ function rosterRenderWizardDay() {
     return;
   }
 
-  // current target date = start + rosterActiveDayIndex
   const ymd = ymdAddDays(rosterStartDate, rosterActiveDayIndex);
   const dt = ymdToDateObj(ymd);
 
   if (dayTitle) dayTitle.textContent = `${weekdayShort(dt)}`;
   if (dayDate) dayDate.textContent = `${ymd}`;
 
-  // auto-fill week number if empty
   if (weekInput && !String(weekInput.value || "").trim()) {
     weekInput.value = String(isoWeekNumber(new Date()));
   }
@@ -819,20 +796,21 @@ function rosterWizardReset() {
   const startInput = R("rwStartDate");
 
   if (weekInput) weekInput.value = String(isoWeekNumber(new Date()));
-  if (startInput) startInput.value = todayYMD(); // you can change to mondayOfThisWeek(new Date()) if you prefer
+  if (startInput) startInput.value = todayYMD(); // Sunday-based roster? You can choose your default.
   rosterStartDate = (startInput?.value || "").trim();
 
   rosterRenderWizardDay();
 }
 
 function rosterPick(code) {
-  // needs start date
   const startInput = R("rwStartDate");
   rosterStartDate = (startInput?.value || "").trim();
   if (!rosterStartDate) {
     alert("Select start date first.");
     return;
   }
+
+  if (rosterPicked.length >= 7) return;
 
   rosterPicked.push(code);
   rosterActiveDayIndex = Math.min(6, rosterPicked.length); // next day
@@ -857,11 +835,11 @@ function rosterShowDetail(roster) {
   const grid = R("rosterDetailGrid");
 
   if (detail) detail.classList.remove("hidden");
-
   if (title) title.textContent = `Week ${roster.week_number} (start ${roster.start_date})`;
 
-  // calculate expected mins from returned days
-  const codes = (roster.days || []).map((d) => (d.day_off ? "OFF" : (d.shift_in === "09:45" ? "A" : "B")));
+  const codes = (roster.days || []).map((d) =>
+    d.day_off ? "OFF" : d.shift_in === "09:45" ? "A" : "B"
+  );
   const mins = rosterExpectedMinutesFromCodes(codes);
   const hhmm = rosterFmtHHMMFromMinutes(mins);
   const pay = (mins / 60) * Number(rosterHourlyRate || 0);
@@ -872,7 +850,7 @@ function rosterShowDetail(roster) {
     grid.innerHTML = "";
     for (const d of roster.days || []) {
       const dt = ymdToDateObj(d.work_date);
-      const code = d.day_off ? "OFF" : (d.shift_in === "09:45" ? "A" : "B");
+      const code = d.day_off ? "OFF" : d.shift_in === "09:45" ? "A" : "B";
 
       const cell = document.createElement("div");
       cell.className = "rosterCell";
@@ -889,7 +867,6 @@ function rosterShowDetail(roster) {
 async function rosterLoadDetail(rosterId) {
   try {
     const r = await api(`/api/roster/${rosterId}`);
-    rosterActiveRosterId = rosterId;
     rosterShowDetail(r);
   } catch (e) {
     alert(e.message || "Failed to load roster");
@@ -914,22 +891,21 @@ async function rosterLoadList() {
 
     for (const it of items) {
       const card = document.createElement("div");
-      card.className = "weekItem"; // reuse your report style
+      card.className = "weekItem";
       card.innerHTML = `
         <div class="weekLeft">
           <div class="t1">Week ${it.week_number}</div>
           <div class="t2">Start: ${it.start_date}</div>
         </div>
         <div class="weekRight">
-          <div class="hhmm">${" "}</div>
-          <div class="eur">${" "}</div>
+          <div class="hhmm"></div>
+          <div class="eur"></div>
         </div>
       `;
       card.addEventListener("click", () => rosterLoadDetail(it.id));
       list.appendChild(card);
     }
 
-    // auto-open first roster
     await rosterLoadDetail(items[0].id);
   } catch (e) {
     if (msg) msg.textContent = "";
@@ -964,7 +940,7 @@ async function rosterSaveWeek() {
       body: JSON.stringify({
         week_number,
         start_date,
-        days: rosterPicked, // backend expects 7 items, in order start_date + i
+        days: rosterPicked,
       }),
     });
 
@@ -976,7 +952,7 @@ async function rosterSaveWeek() {
 }
 
 async function enterRoster() {
-  // load hourly rate from latest week (for expected pay)
+  // hourly rate from latest week (for expected pay)
   try {
     const weeks = await api("/api/weeks");
     rosterHourlyRate = weeks && weeks.length ? Number(weeks[0].hourly_rate || 0) : 0;
@@ -985,28 +961,53 @@ async function enterRoster() {
   }
 
   // bind roster buttons if exist
-  R("btnRosterAddWeek")?.addEventListener("click", rosterOpenWizard);
-  R("btnRwCancel")?.addEventListener("click", rosterCloseWizard);
-  R("btnRwBack")?.addEventListener("click", rosterCloseWizard);
+  const addBtn = R("btnRosterAddWeek");
+  const cancelBtn = R("btnRwCancel");
+  const backBtn = R("btnRwBack");
+  const saveBtn = R("btnRwSave");
+  const startInput = R("rwStartDate");
 
-  // wizard option buttons
-  R("btnRwA")?.addEventListener("click", () => rosterPick("A"));
-  R("btnRwB")?.addEventListener("click", () => rosterPick("B"));
-  R("btnRwOFF")?.addEventListener("click", () => rosterPick("OFF"));
+  // avoid double-binding if user navigates back/forward
+  if (addBtn && !addBtn.dataset.bound) {
+    addBtn.dataset.bound = "1";
+    addBtn.addEventListener("click", rosterOpenWizard);
+  }
+  if (cancelBtn && !cancelBtn.dataset.bound) {
+    cancelBtn.dataset.bound = "1";
+    cancelBtn.addEventListener("click", rosterCloseWizard);
+  }
+  if (backBtn && !backBtn.dataset.bound) {
+    backBtn.dataset.bound = "1";
+    backBtn.addEventListener("click", rosterCloseWizard);
+  }
 
-  // when start date changes, re-render current day + preview
-  R("rwStartDate")?.addEventListener("change", () => {
-    rosterStartDate = (R("rwStartDate")?.value || "").trim();
-    // reset picks because changing start date changes all dates
-    rosterPicked = [];
-    rosterActiveDayIndex = 0;
-    rosterRenderWizardDay();
-  });
+  if (R("btnRwA") && !R("btnRwA").dataset.bound) {
+    R("btnRwA").dataset.bound = "1";
+    R("btnRwA").addEventListener("click", () => rosterPick("A"));
+  }
+  if (R("btnRwB") && !R("btnRwB").dataset.bound) {
+    R("btnRwB").dataset.bound = "1";
+    R("btnRwB").addEventListener("click", () => rosterPick("B"));
+  }
+  if (R("btnRwOFF") && !R("btnRwOFF").dataset.bound) {
+    R("btnRwOFF").dataset.bound = "1";
+    R("btnRwOFF").addEventListener("click", () => rosterPick("OFF"));
+  }
 
-  R("btnRwSave")?.addEventListener("click", rosterSaveWeek);
+  if (startInput && !startInput.dataset.bound) {
+    startInput.dataset.bound = "1";
+    startInput.addEventListener("change", () => {
+      rosterStartDate = (R("rwStartDate")?.value || "").trim();
+      rosterPicked = [];
+      rosterActiveDayIndex = 0;
+      rosterRenderWizardDay();
+    });
+  }
 
-  // preview close on outside click if you use modal overlay (optional)
-  // R("rosterWizardOverlay")?.addEventListener("click", (e)=>{ if(e.target===R("rosterWizardOverlay")) rosterCloseWizard(); });
+  if (saveBtn && !saveBtn.dataset.bound) {
+    saveBtn.dataset.bound = "1";
+    saveBtn.addEventListener("click", rosterSaveWeek);
+  }
 
   await rosterLoadList();
 }
@@ -1015,6 +1016,7 @@ async function enterRoster() {
    Route after auth
 ========================= */
 async function routeAfterAuth() {
+  // standalone pages
   if (pathIs("/add-week")) {
     let defaultRate = 0;
     try {
@@ -1026,10 +1028,12 @@ async function routeAfterAuth() {
   }
 
   if (pathIs("/roster")) {
+    // roster.html is a standalone page: no views to show/hide here
     await enterRoster();
     return;
   }
 
+  // default (index)
   await enterHome();
 }
 

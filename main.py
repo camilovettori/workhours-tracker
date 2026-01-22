@@ -1457,7 +1457,6 @@ def clock_today(req: Request):
 def clock_extra_confirm(p: ExtraConfirmIn, req: Request):
     uid = require_user(req)
 
-    # store confirmation on today's entry (or create it)
     with db() as conn:
         w = get_current_week(conn, uid)
         if not w:
@@ -1471,7 +1470,8 @@ def clock_extra_confirm(p: ExtraConfirmIn, req: Request):
         )
         conn.commit()
 
-    return {"ok": True}
+    return {"ok": True, "work_date": p.work_date, "authorized": bool(p.authorized)}
+
 
 
 @app.post("/api/clock/in")
@@ -1490,17 +1490,36 @@ def clock_in(req: Request):
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
         ro = roster_for_date(conn, uid, work_date)
+
+        # --- DAY OFF: ask overtime instead of 400
         if ro and int(ro["day_off"] or 0) == 1:
-            raise HTTPException(400, "Today is DAY OFF in roster")
+            if int(e["extra_checked"] or 0) == 0:
+                return {
+                    "ok": True,
+                    "needs_extra_confirm": True,
+                    "reason": "DAY_OFF",
+                    "kind": "IN",
+                    "work_date": work_date,
+                    "official": None,
+                    "real": real_now,
+                }
+
+            # if user answered already
+            authorized = bool(int(e["extra_authorized"] or 0) == 1)
+            if not authorized:
+                return {"ok": True, "ignored": True, "reason": "DAY_OFF", "work_date": work_date}
+            # authorized => proceed with real time
 
         official_in = ro["shift_in"] if ro else None
 
-        # If roster exists and this IN differs > tolerance, ask once
+        # --- Working day: outside tolerance => ask once
         if official_in and needs_extra_confirm(real_now, official_in) and int(e["extra_checked"] or 0) == 0:
             return {
                 "ok": True,
                 "needs_extra_confirm": True,
+                "reason": "OUTSIDE_TOLERANCE",
                 "kind": "IN",
+                "work_date": work_date,
                 "official": official_in,
                 "real": real_now,
             }
@@ -1508,7 +1527,6 @@ def clock_in(req: Request):
         authorized = bool(int(e["extra_authorized"] or 0) == 1)
         store_in = snap_to_official_if_not_authorized(real_now, official_in, authorized)
 
-        # overwrite IN always + clear OUT
         conn.execute(
             "UPDATE entries SET time_in=?, time_out=NULL WHERE id=? AND user_id=?",
             (store_in, int(e["id"]), uid),
@@ -1530,10 +1548,9 @@ def clock_in(req: Request):
             """,
             (uid, int(w["id"]), work_date, store_in, None, 0, None, int(e["break_minutes"] or 0), now()),
         )
-
         conn.commit()
 
-    return {"ok": True}
+    return {"ok": True, "work_date": work_date}
 
 
 @app.post("/api/clock/out")
@@ -1548,20 +1565,39 @@ def clock_out(req: Request):
 
         work_date = today_ymd()
         real_now = hhmm_now()
+
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
         ro = roster_for_date(conn, uid, work_date)
+
+        # --- DAY OFF: ask overtime instead of 400
         if ro and int(ro["day_off"] or 0) == 1:
-            raise HTTPException(400, "Today is DAY OFF in roster")
+            if int(e["extra_checked"] or 0) == 0:
+                return {
+                    "ok": True,
+                    "needs_extra_confirm": True,
+                    "reason": "DAY_OFF",
+                    "kind": "OUT",
+                    "work_date": work_date,
+                    "official": None,
+                    "real": real_now,
+                }
+
+            authorized = bool(int(e["extra_authorized"] or 0) == 1)
+            if not authorized:
+                return {"ok": True, "ignored": True, "reason": "DAY_OFF", "work_date": work_date}
+            # authorized => proceed with real time
 
         official_out = ro["shift_out"] if ro else None
 
-        # Ask once if OUT differs > tolerance
+        # --- Working day: outside tolerance => ask once
         if official_out and needs_extra_confirm(real_now, official_out) and int(e["extra_checked"] or 0) == 0:
             return {
                 "ok": True,
                 "needs_extra_confirm": True,
+                "reason": "OUTSIDE_TOLERANCE",
                 "kind": "OUT",
+                "work_date": work_date,
                 "official": official_out,
                 "real": real_now,
             }
@@ -1597,6 +1633,9 @@ def clock_out(req: Request):
               week_id=excluded.week_id,
               work_date=excluded.work_date,
               out_time=excluded.out_time,
+              break_running=0,
+              break_start=NULL,
+              break_minutes=excluded.break_minutes,
               updated_at=excluded.updated_at
             """,
             (uid, int(w["id"]), work_date, None, store_out, 0, None, int(e["break_minutes"] or 0), now()),
@@ -1604,7 +1643,8 @@ def clock_out(req: Request):
 
         conn.commit()
 
-    return {"ok": True}
+    return {"ok": True, "work_date": work_date}
+
 
 
 @app.post("/api/clock/break")
