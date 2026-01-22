@@ -171,6 +171,7 @@ def init_db() -> None:
 
 init_db()
 
+print("DB PATH =>", DB_PATH)
 
 # ======================================================
 # AUTH (cookie session)
