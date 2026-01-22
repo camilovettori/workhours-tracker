@@ -171,7 +171,7 @@ def init_db() -> None:
 
 init_db()
 
-print("isso ai meu", DB_PATH)
+
 
 # ======================================================
 # AUTH (cookie session)

@@ -89,6 +89,13 @@ function pathIs(p) {
   return window.location.pathname === p;
 }
 
+function nowHHMM() {
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 /* =========================
    Views
 ========================= */
@@ -161,7 +168,6 @@ function toggleForgot() {
 const welcomeName = $("welcomeName");
 const btnLogout = $("btnLogout");
 
-// dashboard buttons (Add week)
 const btnAddWeek = $("btnAddWeek");
 
 // Current week
@@ -212,41 +218,142 @@ const addWeekMsg = $("addWeekMsg");
 /* =========================
    State
 ========================= */
-let UI_DAY = todayYMD();          // "YYYY-MM-DD" local (usa tua função)
-let breakTick = null;             // setInterval handler
-let breakRemaining = 0;           // segundos
-let breakRunningUI = false;       // estado do countdown (UI)
-
+let UI_DAY = todayYMD();
 let CURRENT_WEEK_ID = null;
 let CLOCK = null;
-function stopBreakCountdown(vibrate = false){
+
+/* =========================
+   Break countdown (UI)
+========================= */
+let breakTick = null;
+let breakRemaining = 0;
+let breakRunningUI = false;
+
+const BREAK_DEFAULT_SEC = 60 * 60; // 60 minutes
+const LS_BREAK_END = "wh_break_end_epoch";
+const LS_BREAK_DAY = "wh_break_day";
+
+function pad2(n) { return String(n).padStart(2, "0"); }
+
+function fmtMMSS(totalSec) {
+  const sec = Math.max(0, Math.floor(totalSec));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${pad2(m)}:${pad2(s)}`;
+}
+
+function setBreakButtonRunning(running) {
+  if (!btnBreak) return;
+  btnBreak.innerHTML = running
+    ? `<span class="pillIcon">⏱</span> BREAK (stop)`
+    : `<span class="pillIcon">⏱</span> BREAK`;
+}
+
+function saveBreakEnd(endEpochMs) {
+  localStorage.setItem(LS_BREAK_END, String(endEpochMs));
+  localStorage.setItem(LS_BREAK_DAY, UI_DAY);
+}
+
+function clearBreakStorage() {
+  localStorage.removeItem(LS_BREAK_END);
+  localStorage.removeItem(LS_BREAK_DAY);
+}
+
+function stopBreakCountdown(vibrate = false) {
   if (breakTick) clearInterval(breakTick);
   breakTick = null;
+
   breakRunningUI = false;
   breakRemaining = 0;
 
-  if (vibrate && "vibrate" in navigator) navigator.vibrate([150,80,150]);
-}
+  clearBreakStorage();
+  setBreakButtonRunning(false);
 
-function resetTodayVisual(){
-  // limpa só visual do "today"
-  if (cwIn) cwIn.textContent = "00:00";
-  if (cwOut) cwOut.textContent = "00:00";
-  if (cwBreak) cwBreak.textContent = "0m";
-  if (btnBreak) btnBreak.innerHTML = `<span class="pillIcon">⏱</span> BREAK`;
-  stopBreakCountdown(false);
-}
+  // volta o texto do break pro modo normal (minutos)
+  if (cwBreak && CLOCK) {
+    cwBreak.textContent = `${Number(CLOCK.break_minutes || 0)}m`;
+  }
 
-function watchDayChange(){
-  const now = todayYMD();
-  if (now !== UI_DAY){
-    UI_DAY = now;
-    resetTodayVisual();
-    refreshClock().catch(()=>{});
-    refreshTodayPay().catch(()=>{});
+  if (vibrate && "vibrate" in navigator) {
+    navigator.vibrate([200, 100, 200]);
   }
 }
 
+function tickBreakCountdown() {
+  const endEpoch = Number(localStorage.getItem(LS_BREAK_END) || "0");
+  if (!endEpoch) {
+    stopBreakCountdown(false);
+    return;
+  }
+
+  const leftSec = Math.ceil((endEpoch - Date.now()) / 1000);
+  breakRemaining = leftSec;
+
+  if (cwBreak) cwBreak.textContent = fmtMMSS(leftSec);
+
+  if (leftSec <= 0) {
+    // terminou -> vibra + stop no backend
+    stopBreakCountdown(true);
+
+    api("/api/clock/break", { method: "POST" })
+      .then(() => refreshAll())
+      .catch(() => {});
+  }
+}
+
+function startBreakCountdown(seconds = BREAK_DEFAULT_SEC) {
+  breakRunningUI = true;
+  const endEpoch = Date.now() + seconds * 1000;
+  saveBreakEnd(endEpoch);
+
+  setBreakButtonRunning(true);
+
+  tickBreakCountdown();
+
+  if (breakTick) clearInterval(breakTick);
+  breakTick = setInterval(tickBreakCountdown, 250);
+}
+
+function resumeBreakCountdownIfAny() {
+  const savedDay = localStorage.getItem(LS_BREAK_DAY);
+  const endEpoch = Number(localStorage.getItem(LS_BREAK_END) || "0");
+
+  if (!savedDay || savedDay !== UI_DAY || !endEpoch) {
+    clearBreakStorage();
+    return;
+  }
+
+  const leftSec = Math.ceil((endEpoch - Date.now()) / 1000);
+  if (leftSec > 0) {
+    startBreakCountdown(leftSec);
+  } else {
+    clearBreakStorage();
+  }
+}
+
+function resetTodayVisual() {
+  if (cwIn) cwIn.textContent = "00:00";
+  if (cwOut) cwOut.textContent = "00:00";
+  if (cwBreak) cwBreak.textContent = "0m";
+  setBreakButtonRunning(false);
+
+  stopBreakCountdown(false);
+}
+
+/* =========================
+   Day change watcher (ONLY ONCE)
+========================= */
+function watchDayChange() {
+  const now = todayYMD();
+  if (now !== UI_DAY) {
+    UI_DAY = now;
+    resetTodayVisual();
+
+    // puxa estado real do dia novo
+    refreshClock().catch(() => {});
+    refreshTodayPay().catch(() => {});
+  }
+}
 
 /* =========================
    Auth entry
@@ -266,6 +373,9 @@ async function enterHome() {
   if (welcomeName) welcomeName.textContent = full;
 
   await refreshAll();
+
+  // Se tinha countdown salvo, tenta retomar
+  resumeBreakCountdownIfAny();
 }
 
 async function doLogin(ev) {
@@ -351,20 +461,17 @@ async function sendReset() {
 async function refreshAll() {
   const dash = await api("/api/dashboard");
 
-  // Current week totals
   if (cwHHMM) cwHHMM.textContent = dash?.this_week?.hhmm || "00:00";
   if (cwPay) cwPay.textContent = fmtEUR(dash?.this_week?.pay_eur || 0);
 
-  // All-time totals
   if (allHHMM) allHHMM.textContent = dash?.totals?.hhmm || "00:00";
   if (allPay) allPay.textContent = fmtEUR(dash?.totals?.pay_eur || 0);
 
-  // Bank holidays
   const avail = Number(dash?.bank_holidays?.available ?? 0);
   const paid = Number(dash?.bank_holidays?.paid ?? 0);
   if (bhAvail) bhAvail.textContent = String(avail);
   if (bhPaid) bhPaid.textContent = String(paid);
-  if (bhRemain) bhRemain.textContent = "0"; // backend not providing remaining yet
+  if (bhRemain) bhRemain.textContent = "0";
 
   await refreshClock();
   await refreshTodayPay();
@@ -382,55 +489,13 @@ async function refreshClock() {
       if (cwOut) cwOut.textContent = "00:00";
       if (cwBreak) cwBreak.textContent = "0m";
       if (cwStatusText) cwStatusText.textContent = "Create a week to start tracking.";
-
-      if (btnBreak) btnBreak.innerHTML = `<span class="pillIcon">⏱</span> BREAK`;
+      setBreakButtonRunning(false);
 
       if (allIn) allIn.textContent = "00:00";
       if (allOut) allOut.textContent = "00:00";
       if (allBreak) allBreak.textContent = "0m";
       return;
     }
-    function pad2(n){ return String(n).padStart(2,"0"); }
-
-function fmtMMSS(totalSec){
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${pad2(m)}:${pad2(s)}`;
-}
-
-function stopBreakCountdown(vibrate = false){
-  if (breakTick) clearInterval(breakTick);
-  breakTick = null;
-  breakRunningUI = false;
-  breakRemaining = 0;
-
-  if (vibrate && "vibrate" in navigator) navigator.vibrate([150,80,150]);
-}
-
-function resetTodayVisual(){
-  // limpa só visual
-  if (cwIn) cwIn.textContent = "00:00";
-  if (cwOut) cwOut.textContent = "00:00";
-  if (cwBreak) cwBreak.textContent = "0m";
-  if (btnBreak) btnBreak.innerHTML = `<span class="pillIcon">⏱</span> BREAK`;
-
-  stopBreakCountdown(false);
-}
-
-function watchDayChange(){
-  const now = todayYMD();
-  if (now !== UI_DAY){
-    UI_DAY = now;
-    resetTodayVisual();
-    // puxa o estado real de hoje
-    refreshClock().catch(()=>{});
-    refreshTodayPay().catch(()=>{});
-  }
-}
-
-// roda pra sempre (app aberto)
-setInterval(watchDayChange, 5000);
-
 
     CURRENT_WEEK_ID = c.week_id;
 
@@ -440,16 +505,19 @@ setInterval(watchDayChange, 5000);
 
     if (cwIn) cwIn.textContent = inT;
     if (cwOut) cwOut.textContent = outT;
-    if (cwBreak) cwBreak.textContent = brM;
+
+    // Se countdown rodando, NÃO sobrescreve cwBreak
+    if (!breakRunningUI) {
+      if (cwBreak) cwBreak.textContent = brM;
+    }
 
     if (allIn) allIn.textContent = inT;
     if (allOut) allOut.textContent = outT;
     if (allBreak) allBreak.textContent = brM;
 
-    if (btnBreak) {
-      btnBreak.innerHTML = c.break_running
-        ? `<span class="pillIcon">⏱</span> BREAK (stop)`
-        : `<span class="pillIcon">⏱</span> BREAK`;
+    // Botão: se UI countdown rodando, respeita UI
+    if (!breakRunningUI) {
+      setBreakButtonRunning(!!c.break_running);
     }
 
     const hhmm = (cwHHMM?.textContent || "00:00").includes(":") ? cwHHMM.textContent : "00:00";
@@ -493,40 +561,29 @@ async function refreshTodayPay() {
 /* =========================
    Clock actions
 ========================= */
-function nowHHMM(){
-  const d = new Date();
-  const hh = String(d.getHours()).padStart(2,"0");
-  const mm = String(d.getMinutes()).padStart(2,"0");
-  return `${hh}:${mm}`;
-}
-
 async function doClockIn() {
   try {
     await api("/api/clock/in", { method: "POST" });
-
-    // busca estado atualizado do dia
     const c = await api("/api/clock/today");
+    CLOCK = c;
 
-    if (cwIn)  cwIn.textContent  = c.in_time || "00:00";
+    if (cwIn) cwIn.textContent = c.in_time || "00:00";
     if (cwOut) cwOut.textContent = c.out_time || "00:00";
-    if (cwBreak) cwBreak.textContent = `${Number(c.break_minutes || 0)}m`;
 
-    // NÃO chama refreshAll aqui
-    // Totais podem atualizar depois, via polling natural
+    if (!breakRunningUI) {
+      if (cwBreak) cwBreak.textContent = `${Number(c.break_minutes || 0)}m`;
+    }
+
+    // Totais atualizam com refreshAll natural
   } catch (e) {
     alert(e.message || "IN failed");
   }
 }
 
-
 async function doClockOut() {
   try {
     await api("/api/clock/out", { method: "POST" });
-
-    // update visual imediato
-    const t = nowHHMM();
-    if (cwOut) cwOut.textContent = t;
-
+    if (cwOut) cwOut.textContent = nowHHMM();
     await refreshAll();
   } catch (e) {
     alert(e.message || "OUT failed");
@@ -535,15 +592,21 @@ async function doClockOut() {
 
 async function doClockBreak() {
   try {
+    // STOP
+    if (breakRunningUI) {
+      await api("/api/clock/break", { method: "POST" });
+      stopBreakCountdown(false);
+      await refreshAll();
+      return;
+    }
+
+    // START
     await api("/api/clock/break", { method: "POST" });
-    await refreshClock();
-    await refreshTodayPay();
-    await refreshAll();
+    startBreakCountdown(BREAK_DEFAULT_SEC);
   } catch (e) {
     alert(e.message || "BREAK failed");
   }
 }
-
 
 /* =========================
    Add week page (no modal)
@@ -578,7 +641,6 @@ async function createWeekFromPage(ev) {
       body: JSON.stringify({ week_number, start_date, hourly_rate }),
     });
 
-    // go home
     window.location.href = "/";
   } catch (e) {
     if (addWeekMsg) addWeekMsg.textContent = e.message || "Failed to create week";
@@ -589,7 +651,6 @@ async function createWeekFromPage(ev) {
    Route after auth
 ========================= */
 async function routeAfterAuth() {
-  // already authed because /api/me works
   if (pathIs("/add-week")) {
     let defaultRate = 0;
     try {
@@ -607,38 +668,29 @@ async function routeAfterAuth() {
    Bind
 ========================= */
 function bind() {
-  // auth forms
   loginForm?.addEventListener("submit", doLogin);
   signupForm?.addEventListener("submit", doSignup);
 
-  // signup/login toggles
   btnShowSignup?.addEventListener("click", showSignup);
   btnShowLogin?.addEventListener("click", showLogin);
 
-  // forgot
   btnForgot?.addEventListener("click", toggleForgot);
   btnSendReset?.addEventListener("click", sendReset);
 
-  // logout
   btnLogout?.addEventListener("click", doLogout);
 
-  // clock
   btnIn?.addEventListener("click", doClockIn);
   btnOut?.addEventListener("click", doClockOut);
   btnBreak?.addEventListener("click", doClockBreak);
 
-  // cards
   cardHolidays?.addEventListener("click", () => go("/holidays"));
   cardReports?.addEventListener("click", () => go("/report"));
 
-  // add week button (home)
   btnAddWeek?.addEventListener("click", () => go("/add-week"));
 
-  // add week page
   btnBackAddWeek?.addEventListener("click", backFromAddWeek);
   addWeekForm?.addEventListener("submit", createWeekFromPage);
 
-  // bottom nav
   navHome?.addEventListener("click", () => go("/"));
   navHistory?.addEventListener("click", () => go("/weeks"));
   navHolidays?.addEventListener("click", () => go("/holidays"));
@@ -649,15 +701,18 @@ function bind() {
 /* =========================
    Init
 ========================= */
-
+let dayWatcherStarted = false;
 
 (async function init() {
   bind();
-  setInterval(watchDayChange, 5000);
 
+  // Start day watcher ONCE
+  if (!dayWatcherStarted) {
+    dayWatcherStarted = true;
+    setInterval(watchDayChange, 5000);
+  }
 
   try {
-    // check auth
     await api("/api/me");
     await routeAfterAuth();
   } catch {
