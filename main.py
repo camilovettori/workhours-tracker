@@ -731,6 +731,8 @@ def ensure_bh_for_year(conn: sqlite3.Connection, uid: int, year: int) -> None:
     conn.commit()
 
 
+from datetime import date
+
 @app.get("/api/bank-holidays/2026")
 def list_bh_2026(request: Request):
     uid = require_user(request)
@@ -738,9 +740,19 @@ def list_bh_2026(request: Request):
         ensure_bh_for_year(conn, uid, 2026)
 
         rows = conn.execute(
-            "SELECT id, name, bh_date, paid, paid_date, paid_week FROM bank_holidays WHERE user_id=? AND year=? ORDER BY bh_date ASC",
+            "SELECT id, name, bh_date, paid, paid_date, paid_week "
+            "FROM bank_holidays WHERE user_id=? AND year=?",
             (uid, 2026),
         ).fetchall()
+
+        # força ordem crescente (YYYY-MM-DD)
+        def key(r: sqlite3.Row):
+            try:
+                return date.fromisoformat((r["bh_date"] or "").strip())
+            except Exception:
+                return date.max
+
+        rows = sorted(rows, key=key)
 
         return [
             {
@@ -753,6 +765,7 @@ def list_bh_2026(request: Request):
             }
             for r in rows
         ]
+
 @app.patch("/api/bank-holidays/{bh_id}")
 def patch_bh(bh_id: int, p: BhPaidPatch, req: Request):
     uid = require_user(req)
@@ -1012,6 +1025,43 @@ def roster_day_patch(roster_id: int, p: RosterDayPatch, req: Request):
         conn.commit()
 
     return {"ok": True}
+
+@app.get("/api/bank-holidays/lookup")
+def bh_lookup(req: Request, date_ymd: str):
+    uid = require_user(req)
+
+    # date_ymd = "YYYY-MM-DD"
+    try:
+        y = int(date_ymd.split("-")[0])
+    except Exception:
+        raise HTTPException(400, "Invalid date")
+
+    with db() as conn:
+        ensure_bh_for_year(conn, uid, y)
+
+        row = conn.execute(
+            """
+            SELECT id, name, bh_date, paid, paid_date, paid_week
+            FROM bank_holidays
+            WHERE user_id=? AND year=? AND bh_date=?
+            LIMIT 1
+            """,
+            (uid, y, date_ymd),
+        ).fetchone()
+
+        if not row:
+            return {"is_bh": False}
+
+        return {
+            "is_bh": True,
+            "id": int(row["id"]),
+            "name": row["name"],
+            "date": row["bh_date"],
+            "paid": bool(row["paid"]),
+            "paid_date": row["paid_date"],
+            "paid_week": row["paid_week"],
+        }
+
 
 
 # ======================================================
@@ -1323,12 +1373,9 @@ def dashboard(req: Request):
                 "allowance": allowance,
                 "paid": paid,
                 "remaining": remaining,
-                "available": remaining,  # compat com seu JS antigo
+                "available": remaining,  # compat com JS antigo
             },
         }
-
-    
-
 
 
 

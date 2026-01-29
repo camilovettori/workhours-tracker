@@ -88,6 +88,43 @@
       color:var(--muted);
       vertical-align:middle;
     }
+    .badgeBH{
+  display:inline-block;
+  margin-left:8px;
+  padding:3px 8px;
+  border-radius:999px;
+  border:1px solid rgba(245,158,11,.25);
+  background: rgba(245,158,11,.12);
+  font-size:11px;
+  font-weight:1000;
+  color: rgba(180,83,9,1);
+  vertical-align:middle;
+}
+.badgePaid{
+  display:inline-block;
+  margin-left:6px;
+  padding:3px 8px;
+  border-radius:999px;
+  border:1px solid rgba(34,197,94,.22);
+  background: rgba(34,197,94,.10);
+  font-size:11px;
+  font-weight:1000;
+  color: rgba(21,128,61,1);
+  vertical-align:middle;
+}
+.badgeNotPaid{
+  display:inline-block;
+  margin-left:6px;
+  padding:3px 8px;
+  border-radius:999px;
+  border:1px solid rgba(239,68,68,.18);
+  background: rgba(239,68,68,.08);
+  font-size:11px;
+  font-weight:1000;
+  color: rgba(185,28,28,1);
+  vertical-align:middle;
+}
+
 
     /* ===== WIZARD ===== */
     .wizardDay{
@@ -428,6 +465,15 @@
     const $ = (id) => document.getElementById(id);
     const show = (el) => el && el.classList.remove("hidden");
     const hide = (el) => el && el.classList.add("hidden");
+    // --- BH lookup cache (date -> result)
+const bhCache = new Map();
+async function bhLookup(dateYmd){
+  if (bhCache.has(dateYmd)) return bhCache.get(dateYmd);
+  const r = await api(`/api/bank-holidays/lookup?date_ymd=${encodeURIComponent(dateYmd)}`);
+  bhCache.set(dateYmd, r);
+  return r;
+}
+
 
     async function api(path, opts = {}) {
       const res = await fetch(path, {
@@ -758,41 +804,68 @@
       return (x.shift_in === "09:45") ? "A" : "B";
     }
 
-    async function renderDetail(rosterId){
-      $("detailErr").textContent = "";
-      $("detailGrid").innerHTML = "";
 
-      try{
-        const d = await api("/api/roster/" + rosterId);
-        rosterCache.set(rosterId, d);
 
-        setDetailHeader(d);
+async function renderDetail(rosterId){
+  $("detailErr").textContent = "";
+  $("detailGrid").innerHTML = "";
 
-        const grid = $("detailGrid");
-        grid.innerHTML = "";
+  // BH cache global-safe (evita "Cannot redeclare...")
+  const bhCache = window.__bhCache || (window.__bhCache = new Map());
 
-        for(const x of d.days || []){
-          const dt = ymdToDateObj(x.work_date);
-          const isOff = !!x.day_off;
-          const shift = isOff ? "OFF" : (x.shift_in + " → " + x.shift_out);
+  async function bhLookup(dateYmd){
+    if (bhCache.has(dateYmd)) return bhCache.get(dateYmd);
+    const r = await api(`/api/bank-holidays/lookup?date_ymd=${encodeURIComponent(dateYmd)}`);
+    bhCache.set(dateYmd, r);
+    return r;
+  }
 
-          const card = document.createElement("div");
-          card.className = "dayCard";
-          card.innerHTML = `
-            <div class="w">${weekdayShort(dt)} ${isOff ? `<span class="badgeOff">OFF</span>` : ""}</div>
-            <div class="d">${x.work_date}</div>
-            <div class="s">${shift}</div>
-          `;
+  try{
+    const d = await api("/api/roster/" + rosterId);
+    rosterCache.set(rosterId, d);
 
-          card.addEventListener("click", () => openEditDayModal(rosterId, x.work_date, dayToCode(x)));
-          grid.appendChild(card);
-        }
+    setDetailHeader(d);
 
-      }catch(e){
-        $("detailErr").textContent = e.message || "Failed to load roster";
-        if (e.status === 401) location.href = "/";
-      }
+    const grid = $("detailGrid");
+    grid.innerHTML = "";
+
+    for (const x of (d.days || [])){
+      const dt = ymdToDateObj(x.work_date);
+      const isOff = !!x.day_off;
+      const shift = isOff ? "OFF" : (x.shift_in + " → " + x.shift_out);
+
+      // Bank Holiday lookup (não quebra a UI se falhar)
+      let bh = null;
+      try { bh = await bhLookup(x.work_date); } catch { bh = null; }
+
+      // você decide o formato do retorno do endpoint:
+      // exemplo esperado: { is_bank_holiday: true/false, name: "Easter Monday" }
+      const isBH = !!(bh && (bh.is_bank_holiday || bh.isBH));
+      const bhName = (bh && (bh.name || bh.bh_name)) ? (bh.name || bh.bh_name) : "";
+
+      const card = document.createElement("div");
+      card.className = "dayCard";
+
+      card.innerHTML = `
+        <div class="w">
+          ${weekdayShort(dt)}
+          ${isOff ? `<span class="badgeOff">OFF</span>` : ""}
+          ${isBH ? `<span class="badgeOff" title="${bhName}">BH</span>` : ""}
+        </div>
+        <div class="d">${x.work_date}${isBH && bhName ? ` • ${bhName}` : ""}</div>
+        <div class="s">${shift}</div>
+      `;
+
+      card.addEventListener("click", () => openEditDayModal(rosterId, x.work_date, dayToCode(x)));
+      grid.appendChild(card);
     }
+
+  } catch(e){
+    $("detailErr").textContent = e.message || "Failed to load roster";
+    if (e.status === 401) location.href = "/";
+  }
+}
+
 
     // ===== EDIT MODAL
     let editState = { rosterId:null, workDate:null, code:null };

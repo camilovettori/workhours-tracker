@@ -1,20 +1,13 @@
-self.addEventListener("install", (event) => {
-  self.skipWaiting();
-});
+self.addEventListener("fetch", event => {
+  const req = event.request;
 
-self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
-});
-
-// IMPORTANT: never cache /api requests
-self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
-
-  // Let the browser handle API calls normally (no caching)
-  if (url.pathname.startsWith("/api/")) {
+  // SEMPRE pega HTML da rede
+  if (req.mode === "navigate") {
+    event.respondWith(
+      fetch(req).catch(() => caches.match(req))
+    );
     return;
   }
 
-  // For everything else: just do a normal fetch (no custom caching)
-  event.respondWith(fetch(event.request));
+  // outros assets podem continuar cache-first
 });

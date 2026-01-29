@@ -16,14 +16,14 @@
     .brand img{ width:44px; height:44px; border-radius:12px; object-fit:cover; }
     .muted{ color: var(--muted); font-weight:900; }
     .cardPad{ padding:16px; }
-    .row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 12px; border-radius:14px; border:1px solid rgba(15,23,42,.08); background: rgba(255,255,255,.60); }
+    .row{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:12px 12px; border-radius:14px; border:1px solid rgba(15,23,42,.08); background: rgba(255,255,255,.60); }
     .row + .row{ margin-top:10px; }
     .t1{ font-weight:1000; }
     .t2{ color: var(--muted); font-weight:900; font-size:13px; margin-top:2px; }
     .err{ color:#b91c1c; font-weight:1000; margin-top:10px; }
     .actions{ display:flex; gap:10px; }
 
-    .pillGrp{ display:flex; gap:8px; align-items:center; }
+    .pillGrp{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
     .pillBtn{
       padding:8px 12px; border-radius:999px; font-weight:1000;
       border:1px solid rgba(15,23,42,.10);
@@ -42,58 +42,131 @@
     .mini{
       font-size:12px; font-weight:900; color: var(--muted);
       margin-top:6px;
+      line-height: 1.25;
     }
 
-    /* Modal */
-    .modalOverlay{
-      position:fixed; inset:0; background: rgba(2,6,23,.55);
-      display:flex; align-items:flex-end; justify-content:center;
-      padding:16px;
+    /* ===== Modal (IDÊNTICO ao card do Add week) ===== */
+    .hidden{ display:none !important; }
+
+    .modalBackdrop{
+      position: fixed;
+      inset: 0;
+      background: rgba(2,6,23,.55);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding: 18px;
       z-index: 9999;
     }
-    .modal{
-      width:min(560px,100%);
-      background: rgba(255,255,255,.96);
-      border:1px solid rgba(15,23,42,.10);
-      border-radius:20px;
-      box-shadow: 0 24px 60px rgba(2,6,23,.35);
-      overflow:hidden;
+
+    /* card igual Add week */
+    .modalCard{
+      width: min(520px, 100%);
+      border-radius: 26px;
+      background: rgba(255,255,255,.92);
+      border: 1px solid rgba(15,23,42,.10);
+      box-shadow: 0 22px 80px rgba(2,6,23,.32);
+      backdrop-filter: blur(10px);
+      padding: 22px 18px 18px;
+      max-height: calc(100vh - 36px);
+      overflow: auto;
     }
-    .modalHead{
-      padding:14px 16px;
-      border-bottom:1px solid rgba(15,23,42,.08);
-      display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
+
+    .modalTop{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap: 12px;
+      margin-bottom: 14px;
     }
-    .modalTitle{ font-weight:1000; font-size:18px; letter-spacing:-.02em; }
-    .modalSub{ color: var(--muted); font-weight:900; margin-top:4px; font-size:13px; }
-    .modalBody{ padding:14px 16px 16px; }
-    .fRow{ display:flex; gap:10px; flex-wrap:wrap; }
-    .field{
-      flex:1;
-      min-width: 160px;
-      display:flex; flex-direction:column; gap:6px;
-      margin-top:10px;
+
+    .modalTitleBig{
+      font-size: 28px;
+      font-weight: 1000;
+      letter-spacing: -.03em;
+      line-height: 1.05;
     }
-    .label{ font-weight:1000; font-size:12px; color: var(--muted); }
-    .inp{
-      width:100%;
-      padding:12px 12px;
-      border-radius:14px;
-      border:1px solid rgba(15,23,42,.12);
+
+    .modalSubtitle{
+      margin-top: 6px;
+      font-weight: 900;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .modalCloseIcon{
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      border: 1px solid rgba(15,23,42,.12);
       background: rgba(255,255,255,.85);
-      font-weight:900;
-      outline:none;
+      cursor: pointer;
+      font-weight: 1000;
+      color: var(--muted);
     }
-    .modalActions{
-      display:flex; gap:10px;
-      padding:0 16px 16px;
+    .modalCloseIcon:active{ transform: translateY(1px); }
+
+    .modalFields{
+      display:flex;
+      flex-direction:column;
+      gap: 12px;
+      margin-top: 10px;
     }
-    .btnFull{ width:100%; }
-    .xBtn{
-      border:0; background:transparent; cursor:pointer;
-      font-weight:1000; color: var(--muted);
-      padding:4px 6px;
+
+    .modalField .label{
+      font-weight: 900;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
     }
+
+    .modalField .inp{
+      width:100%;
+      padding: 12px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(15,23,42,.12);
+      background: rgba(255,255,255,.85);
+      font-weight: 900;
+      outline: none;
+    }
+
+    .modalTip{
+      margin-top: 12px;
+      font-size: 12px;
+      font-weight: 900;
+      color: var(--muted);
+      line-height: 1.25;
+    }
+
+    .modalBottom{
+      margin-top: 14px;
+      display:flex;
+      flex-direction:column;
+      gap: 10px;
+    }
+
+    .modalCancelLink{
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      font-weight: 1000;
+      color: var(--muted);
+      padding: 8px 4px;
+      text-align:center;
+    }
+
+    .modalPrimaryBtn{
+      width:100%;
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-weight: 1000;
+      cursor: pointer;
+      background: #2563eb;
+      color: #fff;
+      box-shadow: 0 10px 30px rgba(37,99,235,.22);
+    }
+    .modalPrimaryBtn:active{ transform: translateY(1px); }
   </style>
 </head>
 
@@ -121,35 +194,34 @@
     </section>
   </main>
 
-  <!-- Modal -->
-  <div id="paidModal" class="modalOverlay" style="display:none;">
-    <div class="modal" role="dialog" aria-modal="true">
-      <div class="modalHead">
+  <!-- Modal (Add-week style) -->
+  <div id="paidModal" class="modalBackdrop hidden" aria-hidden="true">
+    <div class="modalCard" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+      <div class="modalTop">
         <div>
-          <div class="modalTitle" id="mTitle">Mark as Paid</div>
-          <div class="modalSub" id="mSub"></div>
+          <div class="modalTitleBig" id="mTitle">Mark as Paid</div>
+          <div class="modalSubtitle" id="mSub"></div>
         </div>
-        <button class="xBtn" id="mClose" type="button">✕</button>
+        <button class="modalCloseIcon" id="mClose" type="button">✕</button>
       </div>
 
-      <div class="modalBody">
-        <div class="fRow">
-          <div class="field">
-            <div class="label">Paid date (when Tesco paid)</div>
-            <input id="mPaidDate" class="inp" type="date" />
-          </div>
-          <div class="field">
-            <div class="label">Paid in week #</div>
-            <input id="mPaidWeek" class="inp" type="number" min="1" max="53" placeholder="ex: 5" />
-          </div>
+      <div class="modalFields">
+        <div class="modalField">
+          <div class="label">Paid date (when Tesco paid)</div>
+          <input id="mPaidDate" class="inp" type="date" />
         </div>
 
-        <div class="mini">Tip: Tesco pays later — use the week you received it on the payslip.</div>
+        <div class="modalField">
+          <div class="label">Paid in week #</div>
+          <input id="mPaidWeek" class="inp" type="number" min="1" max="53" placeholder="ex: 5" />
+        </div>
       </div>
 
-      <div class="modalActions">
-        <button id="mCancel" class="btn btn--pill btn--ghost btnFull" type="button">Cancel</button>
-        <button id="mSave" class="btn btn--pill btn--soft btnFull" type="button">Save</button>
+      <div class="modalTip">Tip: Tesco pays later — use the week you received it on the payslip.</div>
+
+      <div class="modalBottom">
+        <button id="mSave" class="modalPrimaryBtn" type="button">Save</button>
+        <button id="mCancel" class="modalCancelLink" type="button">Cancel</button>
       </div>
     </div>
   </div>
@@ -197,12 +269,14 @@
       $("mPaidDate").value = item.paid_date || "";
       $("mPaidWeek").value = item.paid_week || isoWeekNumber(new Date());
 
-      $("paidModal").style.display = "flex";
+      $("paidModal").classList.remove("hidden");
+      $("paidModal").setAttribute("aria-hidden","false");
       setTimeout(()=> $("mPaidDate").focus(), 0);
     }
 
     function closePaidModal(){
-      $("paidModal").style.display = "none";
+      $("paidModal").classList.add("hidden");
+      $("paidModal").setAttribute("aria-hidden","true");
       MODAL_ITEM = null;
     }
 
@@ -214,7 +288,6 @@
         return;
       }
 
-      // mark NOT paid -> clear details
       await api(`/api/bank-holidays/${item.id}`, {
         method:"PATCH",
         body: JSON.stringify({ paid:false })
@@ -281,30 +354,65 @@
       }
     }
 
-    async function load(){
-      $("err").textContent = "";
-      $("list").innerHTML = "";
-      $("msg").textContent = "Loading...";
+    // ===== CHANGE ONLY WHAT'S NEEDED: ORDER ASC BY DATE =====
+   function dateKey(it){
+  const s = String(it.date || it.date_ymd || it.work_date || it.ymd || "").trim();
+  if(!s) return Number.POSITIVE_INFINITY;
 
-      try{
-        const items = await api("/api/bank-holidays/2026", { method:"GET", headers:{} });
+  // YYYY-M-D or YYYY-MM-DD
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m){
+    const y = +m[1], mo = +m[2], d = +m[3];
+    const t = new Date(y, mo-1, d).getTime();
+    return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
+  }
 
-        if(!items || !items.length){
-          $("msg").textContent = "No bank holidays found.";
-          return;
-        }
+  // DD/M/YYYY or DD/MM/YYYY
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m){
+    const d = +m[1], mo = +m[2], y = +m[3];
+    const t = new Date(y, mo-1, d).getTime();
+    return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
+  }
 
-        $("msg").textContent = "";
-        ITEMS = items;
-        render();
+  // last fallback: try Date.parse
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
+}
+async function load(){
+  $("err").textContent = "";
+  $("list").innerHTML = "";
+  $("msg").textContent = "Loading...";
 
-      }catch(e){
-        $("msg").textContent = "";
-        $("err").textContent = e.message || "Failed";
-        if(e.status === 401) location.href = "/";
-      }
+  try{
+    const items = await api("/api/bank-holidays/2026", { method:"GET", headers:{} });
+
+    if(!items || !items.length){
+      $("msg").textContent = "No bank holidays found.";
+      return;
     }
 
+    $("msg").textContent = "";
+
+  
+
+
+
+   ITEMS = [...items].sort((a, b) => {
+  return new Date(a.date) - new Date(b.date);
+});
+
+render();
+
+
+  }catch(e){
+    $("msg").textContent = "";
+    $("err").textContent = e.message || "Failed";
+    if(e.status === 401) location.href = "/";
+  }
+}
+
+    
     $("btnHome").addEventListener("click", ()=> location.href="/");
     $("btnBack").addEventListener("click", back);
 
@@ -318,7 +426,7 @@
       }
     });
 
-    // click outside modal closes
+    // click outside closes
     $("paidModal").addEventListener("click", (ev)=>{
       if(ev.target === $("paidModal")) closePaidModal();
     });
