@@ -16,13 +16,84 @@
     .brand img{ width:44px; height:44px; border-radius:12px; object-fit:cover; }
     .muted{ color: var(--muted); font-weight:900; }
     .cardPad{ padding:16px; }
-    .row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 12px; border-radius:14px; border:1px solid rgba(15,23,42,.08); background: rgba(255,255,255,.60); }
+    .row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 12px; border-radius:14px; border:1px solid rgba(15,23,42,.08); background: rgba(255,255,255,.60); }
     .row + .row{ margin-top:10px; }
     .t1{ font-weight:1000; }
     .t2{ color: var(--muted); font-weight:900; font-size:13px; margin-top:2px; }
-    .pill{ padding:8px 12px; border-radius:999px; font-weight:1000; border:1px solid rgba(15,23,42,.10); background: rgba(255,255,255,.70); }
     .err{ color:#b91c1c; font-weight:1000; margin-top:10px; }
     .actions{ display:flex; gap:10px; }
+
+    .pillGrp{ display:flex; gap:8px; align-items:center; }
+    .pillBtn{
+      padding:8px 12px; border-radius:999px; font-weight:1000;
+      border:1px solid rgba(15,23,42,.10);
+      background: rgba(255,255,255,.75);
+      cursor:pointer;
+      transition: .15s ease;
+      user-select:none;
+      white-space:nowrap;
+    }
+    .pillBtn:hover{ transform: translateY(-1px); }
+    .pillBtn--on{
+      border-color: rgba(37,99,235,.45);
+      background: rgba(37,99,235,.10);
+      color: rgba(37,99,235,1);
+    }
+    .mini{
+      font-size:12px; font-weight:900; color: var(--muted);
+      margin-top:6px;
+    }
+
+    /* Modal */
+    .modalOverlay{
+      position:fixed; inset:0; background: rgba(2,6,23,.55);
+      display:flex; align-items:flex-end; justify-content:center;
+      padding:16px;
+      z-index: 9999;
+    }
+    .modal{
+      width:min(560px,100%);
+      background: rgba(255,255,255,.96);
+      border:1px solid rgba(15,23,42,.10);
+      border-radius:20px;
+      box-shadow: 0 24px 60px rgba(2,6,23,.35);
+      overflow:hidden;
+    }
+    .modalHead{
+      padding:14px 16px;
+      border-bottom:1px solid rgba(15,23,42,.08);
+      display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
+    }
+    .modalTitle{ font-weight:1000; font-size:18px; letter-spacing:-.02em; }
+    .modalSub{ color: var(--muted); font-weight:900; margin-top:4px; font-size:13px; }
+    .modalBody{ padding:14px 16px 16px; }
+    .fRow{ display:flex; gap:10px; flex-wrap:wrap; }
+    .field{
+      flex:1;
+      min-width: 160px;
+      display:flex; flex-direction:column; gap:6px;
+      margin-top:10px;
+    }
+    .label{ font-weight:1000; font-size:12px; color: var(--muted); }
+    .inp{
+      width:100%;
+      padding:12px 12px;
+      border-radius:14px;
+      border:1px solid rgba(15,23,42,.12);
+      background: rgba(255,255,255,.85);
+      font-weight:900;
+      outline:none;
+    }
+    .modalActions{
+      display:flex; gap:10px;
+      padding:0 16px 16px;
+    }
+    .btnFull{ width:100%; }
+    .xBtn{
+      border:0; background:transparent; cursor:pointer;
+      font-weight:1000; color: var(--muted);
+      padding:4px 6px;
+    }
   </style>
 </head>
 
@@ -50,6 +121,39 @@
     </section>
   </main>
 
+  <!-- Modal -->
+  <div id="paidModal" class="modalOverlay" style="display:none;">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modalHead">
+        <div>
+          <div class="modalTitle" id="mTitle">Mark as Paid</div>
+          <div class="modalSub" id="mSub"></div>
+        </div>
+        <button class="xBtn" id="mClose" type="button">✕</button>
+      </div>
+
+      <div class="modalBody">
+        <div class="fRow">
+          <div class="field">
+            <div class="label">Paid date (when Tesco paid)</div>
+            <input id="mPaidDate" class="inp" type="date" />
+          </div>
+          <div class="field">
+            <div class="label">Paid in week #</div>
+            <input id="mPaidWeek" class="inp" type="number" min="1" max="53" placeholder="ex: 5" />
+          </div>
+        </div>
+
+        <div class="mini">Tip: Tesco pays later — use the week you received it on the payslip.</div>
+      </div>
+
+      <div class="modalActions">
+        <button id="mCancel" class="btn btn--pill btn--ghost btnFull" type="button">Cancel</button>
+        <button id="mSave" class="btn btn--pill btn--soft btnFull" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const $ = (id) => document.getElementById(id);
 
@@ -75,13 +179,114 @@
       else location.href = "/";
     }
 
+    function isoWeekNumber(d = new Date()) {
+      const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+      const dayNum = date.getUTCDay() || 7;
+      date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+      return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+    }
+
+    let ITEMS = [];
+    let MODAL_ITEM = null;
+
+    function openPaidModal(item){
+      MODAL_ITEM = item;
+
+      $("mSub").textContent = `${item.name} • ${item.date}`;
+      $("mPaidDate").value = item.paid_date || "";
+      $("mPaidWeek").value = item.paid_week || isoWeekNumber(new Date());
+
+      $("paidModal").style.display = "flex";
+      setTimeout(()=> $("mPaidDate").focus(), 0);
+    }
+
+    function closePaidModal(){
+      $("paidModal").style.display = "none";
+      MODAL_ITEM = null;
+    }
+
+    async function setPaid(item, paid){
+      if(!item) return;
+
+      if(paid){
+        openPaidModal(item);
+        return;
+      }
+
+      // mark NOT paid -> clear details
+      await api(`/api/bank-holidays/${item.id}`, {
+        method:"PATCH",
+        body: JSON.stringify({ paid:false })
+      });
+
+      item.paid = false;
+      item.paid_date = null;
+      item.paid_week = null;
+      render();
+    }
+
+    async function savePaidModal(){
+      if(!MODAL_ITEM) return;
+
+      const paid_date = ($("mPaidDate").value || "").trim();
+      const paid_week = Number(($("mPaidWeek").value || "").trim() || 0) || null;
+
+      await api(`/api/bank-holidays/${MODAL_ITEM.id}`, {
+        method:"PATCH",
+        body: JSON.stringify({
+          paid: true,
+          paid_date: paid_date || null,
+          paid_week: paid_week
+        })
+      });
+
+      MODAL_ITEM.paid = true;
+      MODAL_ITEM.paid_date = paid_date || null;
+      MODAL_ITEM.paid_week = paid_week;
+
+      closePaidModal();
+      render();
+    }
+
+    function render(){
+      const list = $("list");
+      list.innerHTML = "";
+
+      for(const it of ITEMS){
+        const div = document.createElement("div");
+        div.className = "row";
+
+        const paidMeta = it.paid
+          ? `<div class="mini">Paid: ${it.paid_date ? it.paid_date : "—"} • Week: ${it.paid_week ? it.paid_week : "—"}</div>`
+          : `<div class="mini">Not paid yet</div>`;
+
+        div.innerHTML = `
+          <div style="flex:1;">
+            <div class="t1">${it.name}</div>
+            <div class="t2">${it.date}</div>
+            ${paidMeta}
+          </div>
+
+          <div class="pillGrp">
+            <div class="pillBtn ${!it.paid ? "pillBtn--on":""}" data-act="notpaid">Not paid</div>
+            <div class="pillBtn ${it.paid ? "pillBtn--on":""}" data-act="paid">Paid</div>
+          </div>
+        `;
+
+        div.querySelector('[data-act="paid"]').addEventListener("click", ()=> setPaid(it, true));
+        div.querySelector('[data-act="notpaid"]').addEventListener("click", ()=> setPaid(it, false));
+
+        list.appendChild(div);
+      }
+    }
+
     async function load(){
       $("err").textContent = "";
       $("list").innerHTML = "";
       $("msg").textContent = "Loading...";
 
       try{
-        // esse endpoint vai garantir seed de 2026 e devolver a lista
         const items = await api("/api/bank-holidays/2026", { method:"GET", headers:{} });
 
         if(!items || !items.length){
@@ -90,19 +295,9 @@
         }
 
         $("msg").textContent = "";
+        ITEMS = items;
+        render();
 
-        for(const it of items){
-          const div = document.createElement("div");
-          div.className = "row";
-          div.innerHTML = `
-            <div>
-              <div class="t1">${it.name}</div>
-              <div class="t2">${it.date}</div>
-            </div>
-            <div class="pill">${it.paid ? "Paid" : "Not paid"}</div>
-          `;
-          $("list").appendChild(div);
-        }
       }catch(e){
         $("msg").textContent = "";
         $("err").textContent = e.message || "Failed";
@@ -112,6 +307,21 @@
 
     $("btnHome").addEventListener("click", ()=> location.href="/");
     $("btnBack").addEventListener("click", back);
+
+    $("mClose").addEventListener("click", closePaidModal);
+    $("mCancel").addEventListener("click", closePaidModal);
+    $("mSave").addEventListener("click", async ()=>{
+      try{
+        await savePaidModal();
+      }catch(e){
+        alert(e.message || "Failed to save");
+      }
+    });
+
+    // click outside modal closes
+    $("paidModal").addEventListener("click", (ev)=>{
+      if(ev.target === $("paidModal")) closePaidModal();
+    });
 
     load();
   </script>

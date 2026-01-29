@@ -490,11 +490,14 @@ async function refreshAll() {
   if (allHHMM) allHHMM.textContent = dash?.totals?.hhmm || "00:00";
   if (allPay) allPay.textContent = fmtEUR(dash?.totals?.pay_eur || 0);
 
-  const avail = Number(dash?.bank_holidays?.available ?? 0);
+  const allowance = Number(dash?.bank_holidays?.allowance ?? 0);
   const paid = Number(dash?.bank_holidays?.paid ?? 0);
-  if (bhAvail) bhAvail.textContent = String(avail);
+  const remaining = Number(dash?.bank_holidays?.remaining ?? dash?.bank_holidays?.available ?? 0);
+
+  if (bhAvail) bhAvail.textContent = String(allowance);
   if (bhPaid) bhPaid.textContent = String(paid);
-  if (bhRemain) bhRemain.textContent = "0";
+  if (bhRemain) bhRemain.textContent = String(remaining);
+
 
   await refreshClock();
   await refreshTodayPay();

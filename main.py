@@ -190,6 +190,11 @@ def init_db() -> None:
         add_col_if_missing(conn, "entries", "extra_authorized", "INTEGER DEFAULT 0")
         add_col_if_missing(conn, "entries", "extra_checked", "INTEGER DEFAULT 0")
 
+        # bank_holidays paid details
+        add_col_if_missing(conn, "bank_holidays", "paid_date", "TEXT")
+        add_col_if_missing(conn, "bank_holidays", "paid_week", "INTEGER")
+
+
         ensure_clock_tables(conn)
         conn.commit()
 
@@ -345,6 +350,9 @@ class EntryUpsert(BaseModel):
 
 class BhPaidPatch(BaseModel):
     paid: bool
+    paid_date: Optional[str] = None   # yyyy-mm-dd (quando Tesco pagou)
+    paid_week: Optional[int] = None   # week number (ex.: 5)
+
 
 
 class ForgotIn(BaseModel):
@@ -697,7 +705,7 @@ def snap_to_official_if_not_authorized(real_hhmm: str, official_hhmm: Optional[s
 
 
 # ======================================================
-# BANK HOLIDAYS (minimal)
+# BANK HOLIDAYS 
 # ======================================================
 
 
@@ -730,15 +738,61 @@ def list_bh_2026(request: Request):
         ensure_bh_for_year(conn, uid, 2026)
 
         rows = conn.execute(
-            "SELECT id, name, bh_date, paid FROM bank_holidays WHERE user_id=? AND year=? ORDER BY bh_date ASC",
+            "SELECT id, name, bh_date, paid, paid_date, paid_week FROM bank_holidays WHERE user_id=? AND year=? ORDER BY bh_date ASC",
             (uid, 2026),
         ).fetchall()
 
-        # formato que teu holidays.html espera: name/date/paid
         return [
-            {"id": int(r["id"]), "name": r["name"], "date": r["bh_date"], "paid": bool(r["paid"])}
+            {
+                "id": int(r["id"]),
+                "name": r["name"],
+                "date": r["bh_date"],
+                "paid": bool(r["paid"]),
+                "paid_date": r["paid_date"],
+                "paid_week": r["paid_week"],
+            }
             for r in rows
         ]
+@app.patch("/api/bank-holidays/{bh_id}")
+def patch_bh(bh_id: int, p: BhPaidPatch, req: Request):
+    uid = require_user(req)
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT id FROM bank_holidays WHERE id=? AND user_id=?",
+            (bh_id, uid),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Bank holiday not found")
+
+        if p.paid:
+            conn.execute(
+                """
+                UPDATE bank_holidays
+                SET paid=1, paid_date=?, paid_week=?
+                WHERE id=? AND user_id=?
+                """,
+                (
+                    (p.paid_date.strip() if p.paid_date else None),
+                    (int(p.paid_week) if p.paid_week is not None else None),
+                    bh_id,
+                    uid,
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE bank_holidays
+                SET paid=0, paid_date=NULL, paid_week=NULL
+                WHERE id=? AND user_id=?
+                """,
+                (bh_id, uid),
+            )
+
+        conn.commit()
+
+    return {"ok": True}
+
 
 
 
@@ -1217,7 +1271,7 @@ def delete_entry(entry_id: int, req: Request):
 @app.get("/api/dashboard")
 def dashboard(req: Request):
     uid = require_user(req)
-    year = datetime.utcnow().year
+    year = date.today().year  # <- usa local date (melhor que utc aqui)
 
     with db() as conn:
         weeks = conn.execute("SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC", (uid,)).fetchall()
@@ -1253,20 +1307,26 @@ def dashboard(req: Request):
                 this_week_pay += (m / 60.0) * rate * mult
 
         ensure_bh_for_year(conn, uid, year)
-        bhs = conn.execute("SELECT paid FROM bank_holidays WHERE user_id=? AND year=?", (uid, year)).fetchall()
+        bhs = conn.execute(
+            "SELECT paid FROM bank_holidays WHERE user_id=? AND year=?",
+            (uid, year),
+        ).fetchall()
+
         paid = sum(1 for x in bhs if int(x["paid"] or 0) == 1)
-        available = len(bhs) - paid
+        allowance = len(bhs)
+        remaining = allowance - paid
 
         return {
             "this_week": {"hhmm": f"{this_week_min//60:02d}:{this_week_min%60:02d}", "pay_eur": round(this_week_pay, 2)},
             "totals": {"hhmm": f"{total_min_all//60:02d}:{total_min_all%60:02d}", "pay_eur": round(total_pay_all, 2)},
             "bank_holidays": {
-    "allowance": available + paid,
-    "paid": paid,
-    "remaining": available,
-}
-
+                "allowance": allowance,
+                "paid": paid,
+                "remaining": remaining,
+                "available": remaining,  # compat com seu JS antigo
+            },
         }
+
     
 
 
