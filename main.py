@@ -194,6 +194,12 @@ def init_db() -> None:
         add_col_if_missing(conn, "bank_holidays", "paid_date", "TEXT")
         add_col_if_missing(conn, "bank_holidays", "paid_week", "INTEGER")
 
+        conn.execute("""
+CREATE UNIQUE INDEX IF NOT EXISTS ux_bh_unique
+ON bank_holidays(user_id, year, bh_date)
+""")
+
+
 
         ensure_clock_tables(conn)
         conn.commit()
@@ -716,34 +722,17 @@ def irish_bank_holidays(year: int) -> List[tuple[str, str]]:
 
 
 def ensure_bh_for_year(conn: sqlite3.Connection, uid: int, year: int) -> None:
-    # garante que só insere o que estiver faltando (idempotente)
-    holidays = irish_bank_holidays(year)
-    if not holidays:
-        return
-
-    for name, ymd in holidays:
-        exists = conn.execute(
-            """
-            SELECT 1
-            FROM bank_holidays
-            WHERE user_id=? AND year=? AND bh_date=?
-            LIMIT 1
-            """,
-            (uid, year, ymd),
-        ).fetchone()
-
-        if exists:
-            continue
-
+    # garante que qualquer BH faltando será inserido
+    for name, ymd in irish_bank_holidays(year):
         conn.execute(
             """
-            INSERT INTO bank_holidays(user_id, year, name, bh_date, paid)
-            VALUES (?,?,?,?,0)
+            INSERT OR IGNORE INTO bank_holidays(user_id, year, name, bh_date, paid)
+            VALUES (?, ?, ?, ?, 0)
             """,
             (uid, year, name, ymd),
         )
-
     conn.commit()
+
 
 
 
