@@ -33,7 +33,6 @@
     ========================== -->
     <section id="viewLogin" class="loginView hidden">
       <div class="loginCard">
-
         <div class="loginBrand">
           <img src="/static/logo.png" class="loginLogoBig" alt="App logo" />
           <div class="loginTitle">Work Hours Tracker</div>
@@ -56,7 +55,6 @@
           </label>
 
           <button class="btn btn--primary" type="submit">Login</button>
-
           <button id="btnForgot" class="linkBtn" type="button">Forgot password?</button>
 
           <div class="altAction">
@@ -126,7 +124,6 @@
           <h1 class="h1">Add week</h1>
           <div class="subtitle">Create a new week</div>
         </div>
-
         <button id="btnBackAddWeek" class="btn btn--pill btn--ghost" type="button">Back</button>
       </header>
 
@@ -148,7 +145,6 @@
           </label>
 
           <button class="btn btn--primary" type="submit">Create week</button>
-
           <div id="addWeekMsg" class="msg" aria-live="polite"></div>
         </form>
       </section>
@@ -170,18 +166,18 @@
         <button id="btnOpenProfile" class="btn btn--pill btn--ghost" type="button">Profile</button>
       </header>
 
-      <!-- MAIN CARD -->
+      <!-- MAIN CARD (single, no duplicates) -->
       <section class="card card--big cwCard" id="cardCurrentWeek">
 
-        <div class="cwTop">
-          <!-- Today earnings (live) -->
-          <div class="teCard">
+        <!-- Today earnings full width -->
+        <div class="cwTop cwTop--full">
+          <div class="teCard teCard--full">
             <div class="teHead">
               <div class="teTitle">Today earnings</div>
               <div class="teLive" id="todayEarnState">LIVE</div>
             </div>
 
-            <div class="teGrid">
+            <div class="teGrid teGrid--2">
               <div class="teItem">
                 <div class="teLabel">Time</div>
                 <div id="todayEarnHHMM" class="teValue">--:--</div>
@@ -193,25 +189,32 @@
               </div>
             </div>
           </div>
-
-          <button id="btnAddWeek" class="btn btn--soft btnAddWeek" type="button">
-            + Add week
-          </button>
         </div>
 
-        <div class="cwMain">
-          <div class="cwMeta">
-            <div class="cwMetaLabel">Current week</div>
-            <div class="cwMetaNo">Week <span id="cwWeekNo">--</span></div>
-          </div>
+        <!-- Current week same style -->
+        <div class="cwTop cwTop--full" style="margin-top:12px;">
+          <div class="teCard teCard--full">
+            <div class="teHead">
+              <div class="teTitle">Current week</div>
+              <div class="teLive teLive--neutral">Week <span id="cwWeekNo">--</span></div>
+            </div>
 
-          <div class="cwNumbers">
-            <div id="cwHHMM" class="cwTime">00:00</div>
-            <div id="cwPay" class="cwPay">€0.00</div>
+            <div class="teGrid teGrid--2">
+              <div class="teItem">
+                <div class="teLabel">Hours</div>
+                <div id="cwHHMM" class="teValue">00:00</div>
+              </div>
+
+              <div class="teItem">
+                <div class="teLabel">Gross</div>
+                <div id="cwPay" class="teValue">€0.00</div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="cwActions">
+        <!-- Actions -->
+        <div class="cwActions" style="margin-top:14px;">
           <button id="btnIn" class="pill pill--green" type="button">
             <span class="pillIcon">✓</span> IN
           </button>
@@ -246,7 +249,6 @@
           <div class="listTitle">🏁 Bank Holidays</div>
           <div class="chev">›</div>
         </div>
-
         <div class="bhLine"><span class="bhDot bhDot--b"></span> Paid: <strong id="bhPaid">0</strong></div>
         <div class="bhLine"><span class="bhDot bhDot--o"></span> Not Paid: <strong id="bhRemain">0</strong></div>
       </section>

@@ -42,6 +42,57 @@ document.addEventListener("DOMContentLoaded", () => {
 /* =========================
    Utils
 ========================= */
+
+function isoWeekNumber(d = new Date()) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+}
+
+function weekStartMondayISO(d = new Date()) {
+  const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day = date.getDay() || 7; // Sun=0 -> 7
+  date.setDate(date.getDate() - (day - 1)); // back to Monday
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function getSavedRate() {
+  const v = Number(localStorage.getItem("hourly_rate") || 0);
+  return v > 0 ? v : 18.24; // default
+}
+
+function saveRate(rate) {
+  const v = Number(rate || 0);
+  if (v > 0) localStorage.setItem("hourly_rate", String(v));
+}
+
+// cria week se não existir
+async function ensureWeekExistsForClock() {
+  const c = await api("/api/clock/today");
+  if (c?.has_week) return c;
+
+  const payload = {
+    week_number: isoWeekNumber(new Date()),
+    start_date: weekStartMondayISO(new Date()),
+    hourly_rate: getSavedRate(),
+  };
+
+  // endpoint esperado (mesmo usado pelo Add Week page)
+  const created = await api("/api/weeks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  // depois de criar, pega o clock de novo
+  return await api("/api/clock/today");
+}
+
 function fmtEUR(n) {
   const v = Number(n || 0);
   try {
@@ -581,8 +632,8 @@ async function refreshAll() {
 
   // Current week label + totals
   if (cwWeekNo) cwWeekNo.textContent = dash?.this_week?.week_number ? String(dash.this_week.week_number) : "--";
-  if (cwHHMM) cwHHMM.textContent = dash?.this_week?.hhmm || "--:--";
-  if (cwPay)  cwPay.textContent  = fmtEUR(dash?.this_week?.pay_eur || 0);
+  //if (cwHHMM) cwHHMM.textContent = dash?.this_week?.hhmm || "--:--";//
+  //if (cwPay)  cwPay.textContent  = fmtEUR(dash?.this_week?.pay_eur || 0);//
 
   // Bank Holidays (Paid / Not Paid)
   const paid = Number(dash?.bank_holidays?.paid ?? 0);
@@ -593,6 +644,12 @@ async function refreshAll() {
 
   // 2) Clock state (in/out/break)
   await refreshClock();
+await refreshCurrentWeekTotals();
+
+// hoje earnings
+updateTodayEarningsUI();
+
+
 
   // 3) Atualiza UI do Today earnings + inicia ticker se necessário
   updateTodayEarningsUI();
@@ -641,6 +698,43 @@ async function refreshClock() {
   }
 }
 
+async function refreshCurrentWeekTotals() {
+  if (!CURRENT_WEEK_ID) {
+    if (cwHHMM) cwHHMM.textContent = "--:--";
+    if (cwPay)  cwPay.textContent  = "€-.--";
+    return;
+  }
+
+  try {
+    const week = await api(`/api/weeks/${CURRENT_WEEK_ID}`);
+
+    // week number (se quiser garantir aqui também)
+    if (cwWeekNo) cwWeekNo.textContent = week?.week_number ? String(week.week_number) : "--";
+
+    const rate = Number(week?.hourly_rate || 0);
+    const entries = Array.isArray(week?.entries) ? week.entries : [];
+
+    let totalMin = 0;
+    let totalPay = 0;
+
+    for (const e of entries) {
+      const mins = hhmmToMinutes(e.worked_hhmm);
+      const mult = Number(e.multiplier || 1.0);
+      totalMin += mins;
+      totalPay += (mins / 60) * rate * mult;
+    }
+
+    const hh = String(Math.floor(totalMin / 60)).padStart(2, "0");
+    const mm = String(totalMin % 60).padStart(2, "0");
+
+    if (cwHHMM) cwHHMM.textContent = `${hh}:${mm}`;
+    if (cwPay)  cwPay.textContent  = fmtEUR(totalPay);
+  } catch (e) {
+    // fallback: não quebra a UI
+    if (cwHHMM) cwHHMM.textContent = "--:--";
+    if (cwPay)  cwPay.textContent  = "€-.--";
+  }
+}
 
 
 /* =========================

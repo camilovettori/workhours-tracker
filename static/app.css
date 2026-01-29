@@ -832,3 +832,47 @@ body{
 
 /* prevent buttons from pushing layout sideways */
 .pill{ white-space: nowrap; }
+
+.cwTop--full { display:block; }
+.teCard--full { width:100%; }
+
+.teGrid--2{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.teLive--neutral{
+  background: rgba(148,163,184,.18);
+  border: 1px solid rgba(148,163,184,.25);
+  color: #334155;
+}
+/* =========================
+   Dashboard full-width cards
+========================= */
+
+/* garante que o container do topo use tudo */
+.cwTop,
+.cwTop--full {
+  width: 100%;
+  display: block;
+}
+
+/* força o card branco interno a esticar */
+.teCard,
+.teCard--full {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+/* garante que o grid interno não limite */
+.teGrid,
+.teGrid--2 {
+  width: 100%;
+}
+
+/* remove qualquer limite herdado */
+.card.cwCard {
+  overflow: hidden;
+}
