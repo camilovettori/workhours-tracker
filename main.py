@@ -715,23 +715,27 @@ def irish_bank_holidays(year: int) -> List[tuple[str, str]]:
     return []
 
 
-def ensure_bh_for_year(conn: sqlite3.Connection, uid: int, year: int) -> None:
-    c = conn.execute(
-        "SELECT COUNT(*) c FROM bank_holidays WHERE user_id=? AND year=?",
-        (uid, year),
-    ).fetchone()["c"]
-    if int(c or 0) > 0:
-        return
+def ensure_bh_for_year(conn, uid, year):
+    existing = {
+        r["bh_date"]
+        for r in conn.execute(
+            "SELECT bh_date FROM bank_holidays WHERE user_id=? AND year=?",
+            (uid, year),
+        )
+    }
 
     for name, ymd in irish_bank_holidays(year):
-        conn.execute(
-            "INSERT INTO bank_holidays(user_id,year,name,bh_date,paid) VALUES (?,?,?,?,0)",
-            (uid, year, name, ymd),
-        )
+        if ymd not in existing:
+            conn.execute(
+                """
+                INSERT INTO bank_holidays(user_id,year,name,bh_date,paid)
+                VALUES (?,?,?,?,0)
+                """,
+                (uid, year, name, ymd),
+            )
+
     conn.commit()
 
-
-from datetime import date
 
 @app.get("/api/bank-holidays/2026")
 def list_bh_2026(request: Request):
