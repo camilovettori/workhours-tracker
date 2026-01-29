@@ -1590,11 +1590,11 @@ def dashboard(req: Request):
             },
             "bank_holidays_years": bh_years,
             "bank_holidays": {
-                "allowance": total_allowance,
-                "paid": total_paid,
-                "remaining": total_remaining,
-                "available": total_remaining,
-            },
+  "allowance": total_allowance,
+  "paid": total_paid,
+  "remaining": total_remaining,
+},
+
         }
 
 
