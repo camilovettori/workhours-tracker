@@ -45,7 +45,6 @@
       line-height: 1.25;
     }
 
-    /* ===== Modal (IDÊNTICO ao card do Add week) ===== */
     .hidden{ display:none !important; }
 
     .modalBackdrop{
@@ -59,7 +58,6 @@
       z-index: 9999;
     }
 
-    /* card igual Add week */
     .modalCard{
       width: min(520px, 100%);
       border-radius: 26px;
@@ -194,7 +192,7 @@
     </section>
   </main>
 
-  <!-- Modal (Add-week style) -->
+  <!-- Modal -->
   <div id="paidModal" class="modalBackdrop hidden" aria-hidden="true">
     <div class="modalCard" role="dialog" aria-modal="true" aria-labelledby="mTitle">
       <div class="modalTop">
@@ -235,8 +233,10 @@
         headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
         ...opts,
       });
+
       const ct = res.headers.get("content-type") || "";
       const data = ct.includes("application/json") ? await res.json() : await res.text();
+
       if (!res.ok) {
         const msg = (data && data.detail) ? data.detail : (typeof data === "string" ? data : "Request failed");
         const e = new Error(msg);
@@ -257,6 +257,38 @@
       date.setUTCDate(date.getUTCDate() + 4 - dayNum);
       const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
       return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+    }
+
+    function parseYMD(s){
+      const m = String(s || "").trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      if(!m) return null;
+      const y = +m[1], mo = +m[2], d = +m[3];
+      const t = new Date(y, mo-1, d).getTime();
+      return Number.isFinite(t) ? t : null;
+    }
+
+    function bhId(it){
+      const v = (it && (it.id ?? it.bh_id ?? it.bhId)) ?? null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    // ✅ ONLY NECESSARY CHANGE: try PATCH, if backend returns 404 "Not Found", retry with PUT
+    async function bhUpdate(id, payload){
+      try{
+        return await api(`/api/bank-holidays/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload)
+        });
+      }catch(e){
+        if(e && e.status === 404){
+          return await api(`/api/bank-holidays/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(payload)
+          });
+        }
+        throw e;
+      }
     }
 
     let ITEMS = [];
@@ -288,10 +320,10 @@
         return;
       }
 
-      await api(`/api/bank-holidays/${item.id}`, {
-        method:"PATCH",
-        body: JSON.stringify({ paid:false })
-      });
+      const id = bhId(item);
+      if(!id) throw new Error("BH id missing (backend data issue).");
+
+      await bhUpdate(id, { paid:false });
 
       item.paid = false;
       item.paid_date = null;
@@ -302,21 +334,22 @@
     async function savePaidModal(){
       if(!MODAL_ITEM) return;
 
-      const paid_date = ($("mPaidDate").value || "").trim();
-      const paid_week = Number(($("mPaidWeek").value || "").trim() || 0) || null;
+      const id = bhId(MODAL_ITEM);
+      if(!id) throw new Error("BH id missing (backend data issue).");
 
-      await api(`/api/bank-holidays/${MODAL_ITEM.id}`, {
-        method:"PATCH",
-        body: JSON.stringify({
-          paid: true,
-          paid_date: paid_date || null,
-          paid_week: paid_week
-        })
+      const paid_date = ($("mPaidDate").value || "").trim();
+      const paid_week_raw = ($("mPaidWeek").value || "").trim();
+      const paid_week = paid_week_raw ? Number(paid_week_raw) : null;
+
+      await bhUpdate(id, {
+        paid: true,
+        paid_date: paid_date || null,
+        paid_week: (Number.isFinite(paid_week) ? paid_week : null)
       });
 
       MODAL_ITEM.paid = true;
       MODAL_ITEM.paid_date = paid_date || null;
-      MODAL_ITEM.paid_week = paid_week;
+      MODAL_ITEM.paid_week = (Number.isFinite(paid_week) ? paid_week : null);
 
       closePaidModal();
       render();
@@ -347,72 +380,47 @@
           </div>
         `;
 
-        div.querySelector('[data-act="paid"]').addEventListener("click", ()=> setPaid(it, true));
-        div.querySelector('[data-act="notpaid"]').addEventListener("click", ()=> setPaid(it, false));
+        div.querySelector('[data-act="paid"]').addEventListener("click", ()=> {
+          try{ setPaid(it, true); }catch(e){ alert(e.message || "Failed"); }
+        });
+
+        div.querySelector('[data-act="notpaid"]').addEventListener("click", async ()=> {
+          try{ await setPaid(it, false); }catch(e){ alert(e.message || "Failed"); }
+        });
 
         list.appendChild(div);
       }
     }
 
-    // ===== CHANGE ONLY WHAT'S NEEDED: ORDER ASC BY DATE =====
-   function dateKey(it){
-  const s = String(it.date || it.date_ymd || it.work_date || it.ymd || "").trim();
-  if(!s) return Number.POSITIVE_INFINITY;
+    async function load(){
+      $("err").textContent = "";
+      $("list").innerHTML = "";
+      $("msg").textContent = "Loading...";
 
-  // YYYY-M-D or YYYY-MM-DD
-  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (m){
-    const y = +m[1], mo = +m[2], d = +m[3];
-    const t = new Date(y, mo-1, d).getTime();
-    return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
-  }
+      try{
+        const items = await api("/api/bank-holidays/2026", { method:"GET", headers:{} });
 
-  // DD/M/YYYY or DD/MM/YYYY
-  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (m){
-    const d = +m[1], mo = +m[2], y = +m[3];
-    const t = new Date(y, mo-1, d).getTime();
-    return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
-  }
+        if(!items || !items.length){
+          $("msg").textContent = "No bank holidays found.";
+          return;
+        }
 
-  // last fallback: try Date.parse
-  const t = Date.parse(s);
-  return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
-}
-async function load(){
-  $("err").textContent = "";
-  $("list").innerHTML = "";
-  $("msg").textContent = "Loading...";
+        $("msg").textContent = "";
 
-  try{
-    const items = await api("/api/bank-holidays/2026", { method:"GET", headers:{} });
+        ITEMS = [...items].sort((a, b) => {
+          const ta = parseYMD(a.date) ?? Number.POSITIVE_INFINITY;
+          const tb = parseYMD(b.date) ?? Number.POSITIVE_INFINITY;
+          return ta - tb;
+        });
 
-    if(!items || !items.length){
-      $("msg").textContent = "No bank holidays found.";
-      return;
+        render();
+      }catch(e){
+        $("msg").textContent = "";
+        $("err").textContent = e.message || "Failed";
+        if(e.status === 401) location.href = "/";
+      }
     }
 
-    $("msg").textContent = "";
-
-  
-
-
-
-   ITEMS = [...items].sort((a, b) => {
-  return new Date(a.date) - new Date(b.date);
-});
-
-render();
-
-
-  }catch(e){
-    $("msg").textContent = "";
-    $("err").textContent = e.message || "Failed";
-    if(e.status === 401) location.href = "/";
-  }
-}
-
-    
     $("btnHome").addEventListener("click", ()=> location.href="/");
     $("btnBack").addEventListener("click", back);
 
@@ -426,7 +434,6 @@ render();
       }
     });
 
-    // click outside closes
     $("paidModal").addEventListener("click", (ev)=>{
       if(ev.target === $("paidModal")) closePaidModal();
     });

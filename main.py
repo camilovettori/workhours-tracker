@@ -829,6 +829,51 @@ def list_bh_2026(request: Request):
             for r in rows
         ]
 
+@app.patch("/api/bank-holidays/{bh_id}")
+def patch_bh(bh_id: int, p: BhPaidPatch, req: Request):
+    uid = require_user(req)
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT id FROM bank_holidays WHERE id=? AND user_id=?",
+            (bh_id, uid),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Bank holiday not found")
+
+        if p.paid:
+            conn.execute(
+                """
+                UPDATE bank_holidays
+                SET paid=1, paid_date=?, paid_week=?
+                WHERE id=? AND user_id=?
+                """,
+                (
+                    (p.paid_date.strip() if p.paid_date else None),
+                    (int(p.paid_week) if p.paid_week is not None else None),
+                    bh_id,
+                    uid,
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE bank_holidays
+                SET paid=0, paid_date=NULL, paid_week=NULL
+                WHERE id=? AND user_id=?
+                """,
+                (bh_id, uid),
+            )
+
+        conn.commit()
+
+    return {"ok": True}
+
+
+# opcional (mas útil): se algum front usar PUT em vez de PATCH
+@app.put("/api/bank-holidays/{bh_id}")
+def put_bh(bh_id: int, p: BhPaidPatch, req: Request):
+    return patch_bh(bh_id, p, req)
 
 
 
