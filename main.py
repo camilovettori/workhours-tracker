@@ -56,7 +56,6 @@ async def no_cache_static_dev(request: Request, call_next):
         resp.headers["Expires"] = "0"
     return resp
 
-
 # ======================================================
 # DB
 # ======================================================
@@ -100,8 +99,19 @@ def ensure_clock_tables(conn: sqlite3.Connection) -> None:
     )
 
 
+def ensure_bh_indexes(conn: sqlite3.Connection) -> None:
+    # anti-duplicate index
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_bh_unique
+        ON bank_holidays(user_id, year, bh_date)
+        """
+    )
+
+
 def init_db() -> None:
     with db() as conn:
+        # --- base tables ---
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS users(
@@ -136,6 +146,8 @@ def init_db() -> None:
                 note TEXT,
                 bh_paid INTEGER,
                 multiplier REAL DEFAULT 1.0,
+                extra_authorized INTEGER DEFAULT 0,
+                extra_checked INTEGER DEFAULT 0,
                 created_at TEXT,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY(week_id) REFERENCES weeks(id) ON DELETE CASCADE
@@ -148,6 +160,9 @@ def init_db() -> None:
                 name TEXT,
                 bh_date TEXT,
                 paid INTEGER DEFAULT 0,
+                paid_date TEXT,
+                paid_week INTEGER,
+                applicable INTEGER NOT NULL DEFAULT 1,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             );
 
@@ -174,9 +189,8 @@ def init_db() -> None:
             );
             """
         )
-        
 
-        # migrations
+        # --- migrations (safe / idempotent) ---
         add_col_if_missing(conn, "users", "salt_hex", "TEXT")
         add_col_if_missing(conn, "users", "pass_hash", "TEXT")
         add_col_if_missing(conn, "users", "avatar_path", "TEXT")
@@ -184,29 +198,27 @@ def init_db() -> None:
 
         add_col_if_missing(conn, "entries", "note", "TEXT")
         add_col_if_missing(conn, "entries", "bh_paid", "INTEGER")
-        add_col_if_missing(conn, "entries", "multiplier", "REAL")
-
-        # Roster extra-hours confirmation flags
+        add_col_if_missing(conn, "entries", "multiplier", "REAL DEFAULT 1.0")
         add_col_if_missing(conn, "entries", "extra_authorized", "INTEGER DEFAULT 0")
         add_col_if_missing(conn, "entries", "extra_checked", "INTEGER DEFAULT 0")
 
-        # bank_holidays paid details
         add_col_if_missing(conn, "bank_holidays", "paid_date", "TEXT")
         add_col_if_missing(conn, "bank_holidays", "paid_week", "INTEGER")
+        add_col_if_missing(conn, "bank_holidays", "applicable", "INTEGER NOT NULL DEFAULT 1")
 
-        conn.execute("""
-CREATE UNIQUE INDEX IF NOT EXISTS ux_bh_unique
-ON bank_holidays(user_id, year, bh_date)
-""")
-
-
-
+        ensure_bh_indexes(conn)
         ensure_clock_tables(conn)
+
         conn.commit()
 
 
 init_db()
-BANK_HOLIDAYS_2026 = [
+
+
+# ======================================================
+# BANK HOLIDAYS (constants + helpers)
+# ======================================================
+BANK_HOLIDAYS_2026: list[tuple[str, str]] = [
     ("2026-01-01", "New Year's Day"),
     ("2026-02-02", "St Brigid's Day"),
     ("2026-03-17", "St Patrick's Day"),
@@ -219,101 +231,60 @@ BANK_HOLIDAYS_2026 = [
     ("2026-12-26", "St Stephen's Day"),
 ]
 
+BANK_HOLIDAYS_2025: list[tuple[str, str]] = [
+    ("2025-01-01", "New Year's Day"),
+    ("2025-02-03", "St Brigid's Day"),
+    ("2025-03-17", "St Patrick's Day"),
+    ("2025-04-21", "Easter Monday"),
+    ("2025-05-05", "May Bank Holiday"),
+    ("2025-06-02", "June Bank Holiday"),
+    ("2025-08-04", "August Bank Holiday"),
+    ("2025-10-27", "October Bank Holiday"),
+    ("2025-12-25", "Christmas Day"),
+    ("2025-12-26", "St Stephen's Day"),
+]
+
+
+def irish_bank_holidays(year: int) -> list[tuple[str, str]]:
+    if year == 2026:
+        return BANK_HOLIDAYS_2026
+    if year == 2025:
+        return BANK_HOLIDAYS_2025
+    return []
+
+
 def seed_bank_holidays(conn: sqlite3.Connection, user_id: int, year: int) -> None:
-    if year != 2026:
+    items = irish_bank_holidays(year)
+    if not items:
         return
 
-    cur = conn.cursor()
-
-    cur.execute(
-        "SELECT 1 FROM bank_holidays WHERE user_id=? AND year=? LIMIT 1",
-        (user_id, year),
-    )
-    if cur.fetchone():
-        return
-
-    cur.executemany(
+    conn.executemany(
         """
-        INSERT OR IGNORE INTO bank_holidays (user_id, year, name, bh_date, paid)
-        VALUES (?, ?, ?, ?, 0)
+        INSERT OR IGNORE INTO bank_holidays (user_id, year, name, bh_date, paid, applicable)
+        VALUES (?, ?, ?, date(?), 0, 1)
         """,
-        [(user_id, year, n, d) for (d, n) in BANK_HOLIDAYS_2026],
+        [(user_id, year, name, ymd) for (ymd, name) in items],
     )
     conn.commit()
-
 
 
 def get_bank_holidays(conn: sqlite3.Connection, user_id: int, year: int) -> list[dict]:
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT bh_date, name, paid
+        SELECT bh_date, name, paid, applicable
         FROM bank_holidays
         WHERE user_id=? AND year=?
-        ORDER BY bh_date ASC
+        ORDER BY date(bh_date) ASC
         """,
         (user_id, year),
     )
     rows = cur.fetchall()
-    return [{"date": r[0], "name": r[1], "paid": bool(r[2])} for r in rows]
+    return [
+        {"date": r[0], "name": r[1], "paid": bool(r[2]), "applicable": bool(r[3])}
+        for r in rows
+    ]
 
-
-
-
-# ======================================================
-# AUTH (cookie session)
-# ======================================================
-def hash_pw(pw: str, salt_hex: str) -> str:
-    return hashlib.pbkdf2_hmac(
-        "sha256",
-        pw.encode("utf-8"),
-        bytes.fromhex(salt_hex),
-        120_000,
-    ).hex()
-
-
-def sign(data: str) -> str:
-    return hmac.new(APP_SECRET, data.encode("utf-8"), hashlib.sha256).hexdigest()
-
-
-def make_token(uid: int) -> str:
-    ts = str(int(datetime.utcnow().timestamp()))
-    rnd = secrets.token_hex(8)
-    payload = f"{uid}.{ts}.{rnd}"
-    return f"{payload}.{sign(payload)}"
-
-
-def verify_token(tok: str) -> Optional[int]:
-    try:
-        uid, ts, rnd, sig = tok.split(".")
-        payload = f"{uid}.{ts}.{rnd}"
-        if not hmac.compare_digest(sig, sign(payload)):
-            return None
-        if datetime.utcnow().timestamp() - int(ts) > COOKIE_AGE:
-            return None
-        return int(uid)
-    except Exception:
-        return None
-
-
-def require_user(req: Request) -> int:
-    tok = req.cookies.get("wh_session")
-    uid = verify_token(tok) if tok else None
-    if not uid:
-        raise HTTPException(401, "Unauthorized")
-    return uid
-
-
-def set_cookie(resp: Response, tok: str, remember: bool) -> None:
-    resp.set_cookie(
-        key="wh_session",
-        value=tok,
-        max_age=COOKIE_AGE if remember else None,
-        httponly=True,
-        secure=COOKIE_SECURE,
-        samesite="lax",
-        path="/",
-    )
 
 
 # ======================================================
@@ -355,9 +326,11 @@ class EntryUpsert(BaseModel):
 
 
 class BhPaidPatch(BaseModel):
-    paid: bool
-    paid_date: Optional[str] = None   # yyyy-mm-dd (quando Tesco pagou)
-    paid_week: Optional[int] = None   # week number (ex.: 5)
+    paid: Optional[bool] = None
+    paid_date: Optional[str] = None
+    paid_week: Optional[int] = None
+    applicable: Optional[bool] = None
+
 
 
 
@@ -440,6 +413,62 @@ def roster_page():
 # ======================================================
 # AUTH API
 # ======================================================
+
+# ======================================================
+# AUTH (cookie session)
+# ======================================================
+def hash_pw(pw: str, salt_hex: str) -> str:
+    return hashlib.pbkdf2_hmac(
+        "sha256",
+        pw.encode("utf-8"),
+        bytes.fromhex(salt_hex),
+        120_000,
+    ).hex()
+
+
+def sign(data: str) -> str:
+    return hmac.new(APP_SECRET, data.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def make_token(uid: int) -> str:
+    ts = str(int(datetime.utcnow().timestamp()))
+    rnd = secrets.token_hex(8)
+    payload = f"{uid}.{ts}.{rnd}"
+    return f"{payload}.{sign(payload)}"
+
+
+def verify_token(tok: str) -> Optional[int]:
+    try:
+        uid, ts, rnd, sig = tok.split(".")
+        payload = f"{uid}.{ts}.{rnd}"
+        if not hmac.compare_digest(sig, sign(payload)):
+            return None
+        if datetime.utcnow().timestamp() - int(ts) > COOKIE_AGE:
+            return None
+        return int(uid)
+    except Exception:
+        return None
+
+
+def require_user(req: Request) -> int:
+    tok = req.cookies.get("wh_session")
+    uid = verify_token(tok) if tok else None
+    if not uid:
+        raise HTTPException(401, "Unauthorized")
+    return uid
+
+
+def set_cookie(resp: Response, tok: str, remember: bool) -> None:
+    resp.set_cookie(
+        key="wh_session",
+        value=tok,
+        max_age=COOKIE_AGE if remember else None,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        path="/",
+    )
+
 @app.post("/api/signup")
 def signup(p: SignupIn):
     salt_hex = secrets.token_hex(16)
@@ -715,9 +744,12 @@ def snap_to_official_if_not_authorized(real_hhmm: str, official_hhmm: Optional[s
 
 def irish_bank_holidays(year: int) -> List[tuple[str, str]]:
     # returns list of (date_ymd, name)
+    if year == 2025:
+        return BANK_HOLIDAYS_2025
     if year == 2026:
         return BANK_HOLIDAYS_2026
     return []
+
 
 
 def bh_repair(conn: sqlite3.Connection, uid: int, year: int) -> None:
@@ -809,7 +841,8 @@ def list_bh_2026(request: Request):
 
         rows = conn.execute(
             """
-            SELECT id, name, bh_date, paid, paid_date, paid_week
+           SELECT id, name, bh_date, paid, paid_date, paid_week, applicable
+
             FROM bank_holidays
             WHERE user_id=? AND year=?
             ORDER BY date(bh_date) ASC, id ASC
@@ -818,16 +851,75 @@ def list_bh_2026(request: Request):
         ).fetchall()
 
         return [
-            {
-                "id": int(r["id"]),
-                "name": r["name"],
-                "date": r["bh_date"],
-                "paid": bool(r["paid"]),
-                "paid_date": r["paid_date"],
-                "paid_week": r["paid_week"],
-            }
-            for r in rows
-        ]
+  {
+    "id": int(r["id"]),
+    "name": r["name"],
+    "date": r["bh_date"],
+    "paid": bool(r["paid"]),
+    "paid_date": r["paid_date"],
+    "paid_week": r["paid_week"],
+    "applicable": bool(r["applicable"]),
+  }
+  for r in rows
+]
+
+        
+    
+@app.get("/api/bank-holidays/years")
+def bh_years(req: Request):
+    uid = require_user(req)
+    with db() as conn:
+        # anos já existentes no DB para esse usuário
+        rows = conn.execute(
+            "SELECT DISTINCT year FROM bank_holidays WHERE user_id=? ORDER BY year ASC",
+            (uid,),
+        ).fetchall()
+
+        years = [int(r["year"]) for r in rows if r["year"] is not None]
+
+        # também inclui anos definidos no código (ex: 2026) mesmo se DB ainda vazio
+        # (evita dropdown vazio em conta nova)
+        for y in (2025, 2026):
+           if y not in years and irish_bank_holidays(y):
+              years.append(y)
+
+
+        years = sorted(set(years))
+        return {"years": years}
+
+
+@app.get("/api/bank-holidays/year/{year}")
+def list_bh_year(year: int, req: Request):
+    uid = require_user(req)
+
+    with db() as conn:
+        ensure_bh_for_year(conn, uid, year)
+
+        rows = conn.execute(
+            """
+            SELECT id, name, bh_date, paid, paid_date, paid_week, applicable
+
+            FROM bank_holidays
+            WHERE user_id=? AND year=?
+            ORDER BY date(bh_date) ASC, id ASC
+            """,
+            (uid, year),
+        ).fetchall()
+
+        return [
+  {
+    "id": int(r["id"]),
+    "name": r["name"],
+    "date": r["bh_date"],
+    "paid": bool(r["paid"]),
+    "paid_date": r["paid_date"],
+    "paid_week": r["paid_week"],
+    "applicable": bool(r["applicable"]),
+  }
+  for r in rows
+]
+
+
 
 @app.patch("/api/bank-holidays/{bh_id}")
 def patch_bh(bh_id: int, p: BhPaidPatch, req: Request):
@@ -841,39 +933,54 @@ def patch_bh(bh_id: int, p: BhPaidPatch, req: Request):
         if not row:
             raise HTTPException(404, "Bank holiday not found")
 
-        if p.paid:
+        # --- N/A toggle (applicable) ---
+        if p.applicable is not None:
             conn.execute(
-                """
-                UPDATE bank_holidays
-                SET paid=1, paid_date=?, paid_week=?
-                WHERE id=? AND user_id=?
-                """,
-                (
-                    (p.paid_date.strip() if p.paid_date else None),
-                    (int(p.paid_week) if p.paid_week is not None else None),
-                    bh_id,
-                    uid,
-                ),
+                "UPDATE bank_holidays SET applicable=? WHERE id=? AND user_id=?",
+                (1 if p.applicable else 0, bh_id, uid),
             )
-        else:
-            conn.execute(
-                """
-                UPDATE bank_holidays
-                SET paid=0, paid_date=NULL, paid_week=NULL
-                WHERE id=? AND user_id=?
-                """,
-                (bh_id, uid),
-            )
+
+            # if set to N/A, clear paid fields to avoid counting confusion
+            if p.applicable is False:
+                conn.execute(
+                    """
+                    UPDATE bank_holidays
+                    SET paid=0, paid_date=NULL, paid_week=NULL
+                    WHERE id=? AND user_id=?
+                    """,
+                    (bh_id, uid),
+                )
+
+        # --- Paid toggle ---
+        if p.paid is not None:
+            if p.paid:
+                conn.execute(
+                    """
+                    UPDATE bank_holidays
+                    SET paid=1, paid_date=?, paid_week=?
+                    WHERE id=? AND user_id=?
+                    """,
+                    (
+                        (p.paid_date.strip() if p.paid_date else None),
+                        (int(p.paid_week) if p.paid_week is not None else None),
+                        bh_id,
+                        uid,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE bank_holidays
+                    SET paid=0, paid_date=NULL, paid_week=NULL
+                    WHERE id=? AND user_id=?
+                    """,
+                    (bh_id, uid),
+                )
 
         conn.commit()
 
     return {"ok": True}
 
-
-# opcional (mas útil): se algum front usar PUT em vez de PATCH
-@app.put("/api/bank-holidays/{bh_id}")
-def put_bh(bh_id: int, p: BhPaidPatch, req: Request):
-    return patch_bh(bh_id, p, req)
 
 
 
@@ -1388,10 +1495,16 @@ def delete_entry(entry_id: int, req: Request):
 @app.get("/api/dashboard")
 def dashboard(req: Request):
     uid = require_user(req)
-    year = date.today().year  # <- usa local date (melhor que utc aqui)
+    year = date.today().year  # ano atual local
 
     with db() as conn:
-        weeks = conn.execute("SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC", (uid,)).fetchall()
+        # =========================
+        # Weeks totals (como você já tinha)
+        # =========================
+        weeks = conn.execute(
+            "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC",
+            (uid,),
+        ).fetchall()
         most_recent = weeks[0] if weeks else None
 
         total_min_all = 0
@@ -1423,24 +1536,64 @@ def dashboard(req: Request):
                 this_week_min += m
                 this_week_pay += (m / 60.0) * rate * mult
 
-        ensure_bh_for_year(conn, uid, year)
-        bhs = conn.execute(
-            "SELECT paid FROM bank_holidays WHERE user_id=? AND year=?",
-            (uid, year),
-        ).fetchall()
+        # =========================
+        # Bank Holidays: summary + years_due
+        # =========================
+                # =========================
+        # Bank Holidays: summary + years (2025 / 2026)
+        # =========================
+        supported_years = [y for y in (2025, 2026) if irish_bank_holidays(y)]
 
-        paid = sum(1 for x in bhs if int(x["paid"] or 0) == 1)
-        allowance = len(bhs)
-        remaining = allowance - paid
+        bh_years = []
+        total_allowance = 0
+        total_paid = 0
 
-        return {
-            "this_week": {"hhmm": f"{this_week_min//60:02d}:{this_week_min%60:02d}", "pay_eur": round(this_week_pay, 2)},
-            "totals": {"hhmm": f"{total_min_all//60:02d}:{total_min_all%60:02d}", "pay_eur": round(total_pay_all, 2)},
-            "bank_holidays": {
+        for y in supported_years:
+            ensure_bh_for_year(conn, uid, y)
+
+            rows = conn.execute(
+    """
+     SELECT paid
+    FROM bank_holidays
+    WHERE user_id=? AND year=?
+      AND applicable=1
+      AND date(bh_date) <= date('now')
+    """,
+    (uid, y),
+).fetchall()
+
+
+            allowance = len(rows)
+            paid = sum(1 for r in rows if int(r["paid"] or 0) == 1)
+            not_paid = allowance - paid
+
+            bh_years.append({
+                "year": y,
                 "allowance": allowance,
                 "paid": paid,
-                "remaining": remaining,
-                "available": remaining,  # compat com JS antigo
+                "not_paid": not_paid,
+            })
+
+            total_allowance += allowance
+            total_paid += paid
+
+        total_remaining = total_allowance - total_paid
+
+        return {
+            "this_week": {
+                "hhmm": f"{this_week_min//60:02d}:{this_week_min%60:02d}",
+                "pay_eur": round(this_week_pay, 2),
+            },
+            "totals": {
+                "hhmm": f"{total_min_all//60:02d}:{total_min_all%60:02d}",
+                "pay_eur": round(total_pay_all, 2),
+            },
+            "bank_holidays_years": bh_years,
+            "bank_holidays": {
+                "allowance": total_allowance,
+                "paid": total_paid,
+                "remaining": total_remaining,
+                "available": total_remaining,
             },
         }
 

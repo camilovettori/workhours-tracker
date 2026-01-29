@@ -21,7 +21,18 @@
     .t1{ font-weight:1000; }
     .t2{ color: var(--muted); font-weight:900; font-size:13px; margin-top:2px; }
     .err{ color:#b91c1c; font-weight:1000; margin-top:10px; }
-    .actions{ display:flex; gap:10px; }
+
+    .actions{ display:flex; gap:10px; align-items:center; }
+
+    .yearSel{
+      padding: 10px 12px;
+      border-radius: 999px;
+      font-weight: 1000;
+      border: 1px solid rgba(15,23,42,.12);
+      background: rgba(255,255,255,.85);
+      outline: none;
+      cursor: pointer;
+    }
 
     .pillGrp{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
     .pillBtn{
@@ -175,11 +186,12 @@
         <img src="/static/logo.png" alt="logo" />
         <div>
           <div style="font-size:34px; font-weight:1000; letter-spacing:-.03em; line-height:1;">Bank Holidays</div>
-          <div class="muted">Ireland • 2026</div>
+          <div class="muted" id="subTitle">Ireland • —</div>
         </div>
       </div>
 
       <div class="actions">
+        <select id="yearSel" class="yearSel" aria-label="Select year"></select>
         <button id="btnHome" class="btn btn--pill btn--soft" type="button">Home</button>
         <button id="btnBack" class="btn btn--pill btn--ghost" type="button">Back</button>
       </div>
@@ -273,34 +285,27 @@
       return Number.isFinite(n) ? n : null;
     }
 
-    // ✅ ONLY NECESSARY CHANGE: try PATCH, if backend returns 404 "Not Found", retry with PUT
     async function bhUpdate(id, payload){
-      try{
-        return await api(`/api/bank-holidays/${id}`, {
-          method: "PATCH",
-          body: JSON.stringify(payload)
-        });
-      }catch(e){
-        if(e && e.status === 404){
-          return await api(`/api/bank-holidays/${id}`, {
-            method: "PUT",
-            body: JSON.stringify(payload)
-          });
-        }
-        throw e;
-      }
+      // backend tem PATCH e PUT, mas PATCH é o padrão
+      return await api(`/api/bank-holidays/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      });
     }
 
     let ITEMS = [];
     let MODAL_ITEM = null;
+    let CURRENT_YEAR = null;
+
+    function setSubTitle(){
+      $("subTitle").textContent = `Ireland • ${CURRENT_YEAR ?? "—"}`;
+    }
 
     function openPaidModal(item){
       MODAL_ITEM = item;
-
       $("mSub").textContent = `${item.name} • ${item.date}`;
       $("mPaidDate").value = item.paid_date || "";
       $("mPaidWeek").value = item.paid_week || isoWeekNumber(new Date());
-
       $("paidModal").classList.remove("hidden");
       $("paidModal").setAttribute("aria-hidden","false");
       setTimeout(()=> $("mPaidDate").focus(), 0);
@@ -313,6 +318,12 @@
     }
 
     async function setPaid(item, paid){
+      if(item.applicable === false){
+  // re-enable automatically if user tries to mark paid/not paid
+  await bhUpdate(bhId(item), { applicable: true });
+  item.applicable = true;
+}
+
       if(!item) return;
 
       if(paid){
@@ -363,9 +374,15 @@
         const div = document.createElement("div");
         div.className = "row";
 
-        const paidMeta = it.paid
-          ? `<div class="mini">Paid: ${it.paid_date ? it.paid_date : "—"} • Week: ${it.paid_week ? it.paid_week : "—"}</div>`
-          : `<div class="mini">Not paid yet</div>`;
+        let paidMeta = "";
+if(it.applicable === false){
+  paidMeta = `<div class="mini">Not applicable</div>`;
+}else{
+  paidMeta = it.paid
+    ? `<div class="mini">Paid: ${it.paid_date ? it.paid_date : "—"} • Week: ${it.paid_week ? it.paid_week : "—"}</div>`
+    : `<div class="mini">Not paid yet</div>`;
+}
+
 
         div.innerHTML = `
           <div style="flex:1;">
@@ -375,9 +392,11 @@
           </div>
 
           <div class="pillGrp">
-            <div class="pillBtn ${!it.paid ? "pillBtn--on":""}" data-act="notpaid">Not paid</div>
-            <div class="pillBtn ${it.paid ? "pillBtn--on":""}" data-act="paid">Paid</div>
-          </div>
+  <div class="pillBtn ${it.applicable === false ? "pillBtn--on":""}" data-act="na">N/A</div>
+  <div class="pillBtn ${it.applicable !== false && !it.paid ? "pillBtn--on":""}" data-act="notpaid">Not paid</div>
+  <div class="pillBtn ${it.applicable !== false && it.paid ? "pillBtn--on":""}" data-act="paid">Paid</div>
+</div>
+
         `;
 
         div.querySelector('[data-act="paid"]').addEventListener("click", ()=> {
@@ -388,20 +407,39 @@
           try{ await setPaid(it, false); }catch(e){ alert(e.message || "Failed"); }
         });
 
+        div.querySelector('[data-act="na"]').addEventListener("click", async ()=> {
+  try{
+    const id = bhId(it);
+    await bhUpdate(id, { applicable: false });
+    it.applicable = false;
+    it.paid = false;
+    it.paid_date = null;
+    it.paid_week = null;
+    render();
+  }catch(e){
+    alert(e.message || "Failed");
+  }
+});
+
+
         list.appendChild(div);
       }
+
+      setSubTitle();
     }
 
-    async function load(){
+    async function loadYear(year){
       $("err").textContent = "";
       $("list").innerHTML = "";
       $("msg").textContent = "Loading...";
 
       try{
-        const items = await api("/api/bank-holidays/2026", { method:"GET", headers:{} });
+        const items = await api(`/api/bank-holidays/year/${year}`, { method:"GET" });
 
         if(!items || !items.length){
           $("msg").textContent = "No bank holidays found.";
+          ITEMS = [];
+          render();
           return;
         }
 
@@ -421,6 +459,34 @@
       }
     }
 
+    async function loadYearsAndInit(){
+      const sel = $("yearSel");
+      sel.innerHTML = "";
+
+      const data = await api("/api/bank-holidays/years", { method:"GET" });
+      const years = (data && Array.isArray(data.years) && data.years.length) ? data.years : [2026];
+
+      for(const y of years){
+        const opt = document.createElement("option");
+        opt.value = String(y);
+        opt.textContent = String(y);
+        sel.appendChild(opt);
+      }
+
+      // default: maior ano disponível (mais recente)
+      CURRENT_YEAR = Number(years[years.length - 1] || 2026);
+      sel.value = String(CURRENT_YEAR);
+      setSubTitle();
+
+      sel.addEventListener("change", async ()=>{
+        CURRENT_YEAR = Number(sel.value);
+        setSubTitle();
+        await loadYear(CURRENT_YEAR);
+      });
+
+      await loadYear(CURRENT_YEAR);
+    }
+
     $("btnHome").addEventListener("click", ()=> location.href="/");
     $("btnBack").addEventListener("click", back);
 
@@ -438,7 +504,7 @@
       if(ev.target === $("paidModal")) closePaidModal();
     });
 
-    load();
+    loadYearsAndInit();
   </script>
 </body>
 </html>
