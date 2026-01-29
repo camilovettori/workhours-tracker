@@ -709,32 +709,34 @@ def snap_to_official_if_not_authorized(real_hhmm: str, official_hhmm: Optional[s
         return real_hhmm
     return official_hhmm
 
-
 # ======================================================
-# BANK HOLIDAYS 
+# BANK HOLIDAYS
 # ======================================================
-
 
 def irish_bank_holidays(year: int) -> List[tuple[str, str]]:
+    # returns list of (date_ymd, name)
     if year == 2026:
         return BANK_HOLIDAYS_2026
     return []
 
 
-def ensure_bh_for_year(conn: sqlite3.Connection, uid: int, year: int) -> None:
-    for name, ymd in irish_bank_holidays(year):
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO bank_holidays
-            (user_id, year, name, bh_date, paid)
-            VALUES (?, ?, ?, date(?), 0)
-            """,
-            (uid, year, name, ymd),
-        )
-    conn.commit()
-
-
 def bh_repair(conn: sqlite3.Connection, uid: int, year: int) -> None:
+    # 0) Remove registros quebrados (sem nome / nome vazio / nome que virou data)
+    conn.execute(
+        """
+        DELETE FROM bank_holidays
+        WHERE user_id=? AND year=?
+          AND (
+            name IS NULL
+            OR trim(name) = ''
+            OR name GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+            OR bh_date IS NULL
+            OR bh_date NOT LIKE '____-__-__'
+          )
+        """,
+        (uid, year),
+    )
+
     # 1) Normaliza datas (vira YYYY-MM-DD)
     conn.execute(
         """
@@ -746,7 +748,6 @@ def bh_repair(conn: sqlite3.Connection, uid: int, year: int) -> None:
     )
 
     # 2) Remove duplicados, mantendo o "melhor" registro:
-    # prioridade: paid=1 > paid_date preenchida > menor id
     conn.execute(
         """
         DELETE FROM bank_holidays
@@ -769,7 +770,7 @@ def bh_repair(conn: sqlite3.Connection, uid: int, year: int) -> None:
         (uid, year),
     )
 
-    # 3) Cria trava pra NUNCA duplicar de novo
+    # 3) Trava anti-duplicação
     conn.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_bh_unique
@@ -779,12 +780,31 @@ def bh_repair(conn: sqlite3.Connection, uid: int, year: int) -> None:
     conn.commit()
 
 
+def ensure_bh_for_year(conn: sqlite3.Connection, uid: int, year: int) -> None:
+    # SEMPRE limpa antes
+    bh_repair(conn, uid, year)
+
+    items = irish_bank_holidays(year)
+    if not items:
+        return
+
+    # ✅ ordem correta: (ymd, name)
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO bank_holidays
+        (user_id, year, name, bh_date, paid)
+        VALUES (?, ?, ?, date(?), 0)
+        """,
+        [(uid, year, name, ymd) for (ymd, name) in items],
+    )
+    conn.commit()
+
 
 @app.get("/api/bank-holidays/2026")
 def list_bh_2026(request: Request):
     uid = require_user(request)
     with db() as conn:
-        bh_repair(conn, uid, 2026)          # <<< ADICIONA ESTA LINHA
+        # ✅ limpa e garante seed correto
         ensure_bh_for_year(conn, uid, 2026)
 
         rows = conn.execute(
@@ -797,16 +817,6 @@ def list_bh_2026(request: Request):
             (uid, 2026),
         ).fetchall()
 
-
-        # força ordem crescente (YYYY-MM-DD)
-        def key(r: sqlite3.Row):
-            try:
-                return date.fromisoformat((r["bh_date"] or "").strip())
-            except Exception:
-                return date.max
-
-        rows = sorted(rows, key=key)
-
         return [
             {
                 "id": int(r["id"]),
@@ -818,47 +828,6 @@ def list_bh_2026(request: Request):
             }
             for r in rows
         ]
-
-@app.patch("/api/bank-holidays/{bh_id}")
-def patch_bh(bh_id: int, p: BhPaidPatch, req: Request):
-    uid = require_user(req)
-
-    with db() as conn:
-        row = conn.execute(
-            "SELECT id FROM bank_holidays WHERE id=? AND user_id=?",
-            (bh_id, uid),
-        ).fetchone()
-        if not row:
-            raise HTTPException(404, "Bank holiday not found")
-
-        if p.paid:
-            conn.execute(
-                """
-                UPDATE bank_holidays
-                SET paid=1, paid_date=?, paid_week=?
-                WHERE id=? AND user_id=?
-                """,
-                (
-                    (p.paid_date.strip() if p.paid_date else None),
-                    (int(p.paid_week) if p.paid_week is not None else None),
-                    bh_id,
-                    uid,
-                ),
-            )
-        else:
-            conn.execute(
-                """
-                UPDATE bank_holidays
-                SET paid=0, paid_date=NULL, paid_week=NULL
-                WHERE id=? AND user_id=?
-                """,
-                (bh_id, uid),
-            )
-
-        conn.commit()
-
-    return {"ok": True}
-
 
 
 
