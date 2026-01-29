@@ -722,17 +722,61 @@ def irish_bank_holidays(year: int) -> List[tuple[str, str]]:
 
 
 def ensure_bh_for_year(conn: sqlite3.Connection, uid: int, year: int) -> None:
-    # garante que qualquer BH faltando será inserido
     for name, ymd in irish_bank_holidays(year):
         conn.execute(
             """
-            INSERT OR IGNORE INTO bank_holidays(user_id, year, name, bh_date, paid)
-            VALUES (?, ?, ?, ?, 0)
+            INSERT OR IGNORE INTO bank_holidays
+            (user_id, year, name, bh_date, paid)
+            VALUES (?, ?, ?, date(?), 0)
             """,
             (uid, year, name, ymd),
         )
     conn.commit()
 
+
+def bh_repair(conn: sqlite3.Connection, uid: int, year: int) -> None:
+    # 1) Normaliza datas (vira YYYY-MM-DD)
+    conn.execute(
+        """
+        UPDATE bank_holidays
+        SET bh_date = date(bh_date)
+        WHERE user_id=? AND year=? AND bh_date IS NOT NULL
+        """,
+        (uid, year),
+    )
+
+    # 2) Remove duplicados, mantendo o "melhor" registro:
+    # prioridade: paid=1 > paid_date preenchida > menor id
+    conn.execute(
+        """
+        DELETE FROM bank_holidays
+        WHERE id IN (
+          SELECT id FROM (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY user_id, year, bh_date
+                     ORDER BY
+                       paid DESC,
+                       CASE WHEN paid_date IS NOT NULL THEN 1 ELSE 0 END DESC,
+                       id ASC
+                   ) AS rn
+            FROM bank_holidays
+            WHERE user_id=? AND year=?
+          )
+          WHERE rn > 1
+        )
+        """,
+        (uid, year),
+    )
+
+    # 3) Cria trava pra NUNCA duplicar de novo
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_bh_unique
+        ON bank_holidays (user_id, year, bh_date)
+        """
+    )
+    conn.commit()
 
 
 
@@ -740,13 +784,19 @@ def ensure_bh_for_year(conn: sqlite3.Connection, uid: int, year: int) -> None:
 def list_bh_2026(request: Request):
     uid = require_user(request)
     with db() as conn:
+        bh_repair(conn, uid, 2026)          # <<< ADICIONA ESTA LINHA
         ensure_bh_for_year(conn, uid, 2026)
 
         rows = conn.execute(
-            "SELECT id, name, bh_date, paid, paid_date, paid_week "
-            "FROM bank_holidays WHERE user_id=? AND year=?",
+            """
+            SELECT id, name, bh_date, paid, paid_date, paid_week
+            FROM bank_holidays
+            WHERE user_id=? AND year=?
+            ORDER BY date(bh_date) ASC, id ASC
+            """,
             (uid, 2026),
         ).fetchall()
+
 
         # força ordem crescente (YYYY-MM-DD)
         def key(r: sqlite3.Row):
