@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>Bank Holidays</title>
+
+  <link rel="icon" href="/static/logo.png" />
+  <link rel="stylesheet" href="/static/app.css?v=12" />
+
+  <style>
+    .wrap{ width:min(820px,100%); margin:0 auto; padding:22px 16px 120px; }
+    .top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
+    .brand{ display:flex; align-items:center; gap:12px; }
+    .brand img{ width:44px; height:44px; border-radius:12px; object-fit:cover; }
+    .muted{ color: var(--muted); font-weight:900; }
+    .cardPad{ padding:16px; }
+    .row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 12px; border-radius:14px; border:1px solid rgba(15,23,42,.08); background: rgba(255,255,255,.60); }
+    .row + .row{ margin-top:10px; }
+    .t1{ font-weight:1000; }
+    .t2{ color: var(--muted); font-weight:900; font-size:13px; margin-top:2px; }
+    .pill{ padding:8px 12px; border-radius:999px; font-weight:1000; border:1px solid rgba(15,23,42,.10); background: rgba(255,255,255,.70); }
+    .err{ color:#b91c1c; font-weight:1000; margin-top:10px; }
+    .actions{ display:flex; gap:10px; }
+  </style>
+</head>
+
+<body>
+  <main class="wrap">
+    <div class="top">
+      <div class="brand">
+        <img src="/static/logo.png" alt="logo" />
+        <div>
+          <div style="font-size:34px; font-weight:1000; letter-spacing:-.03em; line-height:1;">Bank Holidays</div>
+          <div class="muted">Ireland • 2026</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="btnHome" class="btn btn--pill btn--soft" type="button">Home</button>
+        <button id="btnBack" class="btn btn--pill btn--ghost" type="button">Back</button>
+      </div>
+    </div>
+
+    <section class="card cardPad">
+      <div class="muted" id="msg">Loading...</div>
+      <div id="err" class="err"></div>
+      <div id="list" style="margin-top:12px;"></div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    async function api(path, opts = {}) {
+      const res = await fetch(path, {
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+        ...opts,
+      });
+      const ct = res.headers.get("content-type") || "";
+      const data = ct.includes("application/json") ? await res.json() : await res.text();
+      if (!res.ok) {
+        const msg = (data && data.detail) ? data.detail : (typeof data === "string" ? data : "Request failed");
+        const e = new Error(msg);
+        e.status = res.status;
+        throw e;
+      }
+      return data;
+    }
+
+    function back(){
+      if (history.length > 1) history.back();
+      else location.href = "/";
+    }
+
+    async function load(){
+      $("err").textContent = "";
+      $("list").innerHTML = "";
+      $("msg").textContent = "Loading...";
+
+      try{
+        // esse endpoint vai garantir seed de 2026 e devolver a lista
+        const items = await api("/api/bank-holidays/2026", { method:"GET", headers:{} });
+
+        if(!items || !items.length){
+          $("msg").textContent = "No bank holidays found.";
+          return;
+        }
+
+        $("msg").textContent = "";
+
+        for(const it of items){
+          const div = document.createElement("div");
+          div.className = "row";
+          div.innerHTML = `
+            <div>
+              <div class="t1">${it.name}</div>
+              <div class="t2">${it.date}</div>
+            </div>
+            <div class="pill">${it.paid ? "Paid" : "Not paid"}</div>
+          `;
+          $("list").appendChild(div);
+        }
+      }catch(e){
+        $("msg").textContent = "";
+        $("err").textContent = e.message || "Failed";
+        if(e.status === 401) location.href = "/";
+      }
+    }
+
+    $("btnHome").addEventListener("click", ()=> location.href="/");
+    $("btnBack").addEventListener("click", back);
+
+    load();
+  </script>
+</body>
+</html>

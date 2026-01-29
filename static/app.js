@@ -14,6 +14,31 @@ const $ = (id) => document.getElementById(id);
 const show = (el) => el && el.classList.remove("hidden");
 const hide = (el) => el && el.classList.add("hidden");
 
+/* =====================================================
+   Navigation – Home cards / buttons
+   Bank Holidays
+===================================================== */
+
+document.addEventListener("DOMContentLoaded", () => {
+  // Procura qualquer elemento que tenha data-route
+  document.querySelectorAll("[data-route]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const route = el.getAttribute("data-route");
+      if (route) {
+        window.location.href = route;
+      }
+    });
+  });
+
+  // Botão direto (caso exista)
+  const btnHolidays = document.getElementById("btnHolidays");
+  if (btnHolidays) {
+    btnHolidays.addEventListener("click", () => {
+      window.location.href = "/holidays";
+    });
+  }
+});
+
 /* =========================
    Utils
 ========================= */
@@ -1091,3 +1116,12 @@ let dayWatcherStarted = false;
     await enterLogin();
   }
 })();
+// Enable click on any element with data-route="/somewhere"
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("[data-route]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const r = el.getAttribute("data-route");
+      if (r) window.location.href = r;
+    });
+  });
+});
