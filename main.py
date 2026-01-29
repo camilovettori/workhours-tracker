@@ -1536,10 +1536,8 @@ def dashboard(req: Request):
                 this_week_min += m
                 this_week_pay += (m / 60.0) * rate * mult
 
-        # =========================
-        # Bank Holidays: summary + years_due
-        # =========================
-                # =========================
+       
+      # =========================
         # Bank Holidays: summary + years (2025 / 2026)
         # =========================
         supported_years = [y for y in (2025, 2026) if irish_bank_holidays(y)]
@@ -1581,13 +1579,12 @@ def dashboard(req: Request):
 
         return {
             "this_week": {
-                "hhmm": f"{this_week_min//60:02d}:{this_week_min%60:02d}",
-                "pay_eur": round(this_week_pay, 2),
-            },
-            "totals": {
-                "hhmm": f"{total_min_all//60:02d}:{total_min_all%60:02d}",
-                "pay_eur": round(total_pay_all, 2),
-            },
+    "week_number": (int(most_recent["week_number"]) if most_recent else None),
+    "hourly_rate": (float(most_recent["hourly_rate"] or 0) if most_recent else 0),
+    "hhmm": f"{this_week_min//60:02d}:{this_week_min%60:02d}",
+    "pay_eur": round(this_week_pay, 2),
+},
+
             "bank_holidays_years": bh_years,
             "bank_holidays": {
   "allowance": total_allowance,

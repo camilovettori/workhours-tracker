@@ -10,11 +10,12 @@
   <link rel="icon" href="/static/logo.png" />
   <link rel="stylesheet" href="/static/app.css?v=12" />
 </head>
+
 <script>
   (async () => {
     try {
       if ("serviceWorker" in navigator) {
-        //const regs = await navigator.serviceWorker.getRegistrations();//
+        const regs = await navigator.serviceWorker.getRegistrations();
         for (const r of regs) await r.unregister();
       }
       if (window.caches) {
@@ -28,7 +29,6 @@
   })();
 </script>
 
-
 <body>
   <main class="app">
 
@@ -38,13 +38,11 @@
     <section id="viewLogin" class="loginView hidden">
       <div class="loginCard">
 
-        <!-- Logo centered + bigger -->
         <div class="loginBrand">
           <img src="/static/logo.png" class="loginLogoBig" alt="App logo" />
           <div class="loginTitle">Work Hours Tracker</div>
         </div>
 
-        <!-- LOGIN FORM (only one login button: the blue one below) -->
         <form id="loginForm" class="form">
           <label class="field">
             <span>Email</span>
@@ -65,7 +63,6 @@
 
           <button id="btnForgot" class="linkBtn" type="button">Forgot password?</button>
 
-          <!-- Sign up moved BELOW the original login button -->
           <div class="altAction">
             <span>Don’t have an account?</span>
             <button id="btnShowSignup" class="linkBtn linkBtn--strong" type="button">Sign up</button>
@@ -74,7 +71,6 @@
           <div id="loginMsg" class="msg" aria-live="polite"></div>
         </form>
 
-        <!-- SIGNUP (hidden by default, opens from the Sign up below) -->
         <form id="signupForm" class="form hidden">
           <div class="row2">
             <label class="field">
@@ -108,7 +104,6 @@
           <div id="signupMsg" class="msg" aria-live="polite"></div>
         </form>
 
-        <!-- Forgot panel -->
         <div id="forgotPanel" class="forgot hidden">
           <div class="forgotTitle">Reset password</div>
           <div class="forgotSub">Type your email and we’ll generate a reset link (dev mode).</div>
@@ -122,51 +117,51 @@
         </div>
 
         <div class="credit">Developed by Camilo Vettori</div>
-        
-                                              Version 1.0 
+        <div class="credit">Version 1.0</div>
       </div>
     </section>
-<!-- =========================
-     ADD WEEK VIEW (full page)
-========================== -->
-<section id="viewAddWeek" class="homeView hidden">
-  <header class="topbar">
-    <div>
-      <h1 class="h1">Add week</h1>
-      <div class="subtitle">Create a new week</div>
-    </div>
-
-    <button id="btnBackAddWeek" class="btn btn--pill btn--ghost" type="button">Back</button>
-  </header>
-
-  <section class="card card--big">
-    <form id="addWeekForm" class="form">
-      <label class="field">
-        <span>Week number</span>
-        <input id="awWeekNumber" type="number" min="1" max="53" required />
-      </label>
-
-      <label class="field">
-        <span>Start date</span>
-        <input id="awStartDate" type="date" required />
-      </label>
-
-      <label class="field">
-        <span>Hourly rate (€)</span>
-        <input id="awHourlyRate" type="number" step="0.01" min="0" required />
-      </label>
-
-      <button class="btn btn--primary" type="submit">Create week</button>
-
-      <div id="addWeekMsg" class="msg" aria-live="polite"></div>
-    </form>
-  </section>
-
-  <div class="safeSpace"></div>
-</section>
 
     <!-- =========================
-         HOME VIEW (unchanged)
+         ADD WEEK VIEW (full page)
+    ========================== -->
+    <section id="viewAddWeek" class="homeView hidden">
+      <header class="topbar">
+        <div>
+          <h1 class="h1">Add week</h1>
+          <div class="subtitle">Create a new week</div>
+        </div>
+
+        <button id="btnBackAddWeek" class="btn btn--pill btn--ghost" type="button">Back</button>
+      </header>
+
+      <section class="card card--big">
+        <form id="addWeekForm" class="form">
+          <label class="field">
+            <span>Week number</span>
+            <input id="awWeekNumber" type="number" min="1" max="53" required />
+          </label>
+
+          <label class="field">
+            <span>Start date</span>
+            <input id="awStartDate" type="date" required />
+          </label>
+
+          <label class="field">
+            <span>Hourly rate (€)</span>
+            <input id="awHourlyRate" type="number" step="0.01" min="0" required />
+          </label>
+
+          <button class="btn btn--primary" type="submit">Create week</button>
+
+          <div id="addWeekMsg" class="msg" aria-live="polite"></div>
+        </form>
+      </section>
+
+      <div class="safeSpace"></div>
+    </section>
+
+    <!-- =========================
+         HOME VIEW
     ========================== -->
     <section id="viewHome" class="homeView hidden">
 
@@ -179,18 +174,27 @@
         <button id="btnLogout" class="btn btn--pill btn--ghost" type="button">Logout</button>
       </header>
 
-      <!-- CURRENT WEEK CARD -->
-     <section class="card card--big">
-  <div class="cwHeader">
-    <div class="cwLabel">Current week</div>
+      <!-- CURRENT WEEK / TODAY EARNINGS CARD -->
+      <section class="card card--big">
+        <div class="cardTop">
+          <div class="cardTitle">
+            Today earnings
+          </div>
 
-    <!-- ADD WEEK button -->
-    <button id="btnAddWeek" class="btn btn--soft btnAddWeek" type="button">
-      + Add week
-    </button>
-  </div>
+          <button id="btnAddWeek" class="btn btn--soft btnAddWeek" type="button">
+            + Add week
+          </button>
+        </div>
 
+        <!-- Live today earnings (fills via JS) -->
+        <div id="todayEarnHHMM" class="cwTime">  </div>
+        <div id="todayEarnPay" class="cwPay">€ </div>
 
+        <div class="dividerLine"></div>
+
+        <div class="muted" style="font-weight:900; margin-bottom:6px;">
+          Week <span id="cwWeekNo">--</span>
+        </div>
         <div class="cwTime" id="cwHHMM">00:00</div>
         <div class="cwPay" id="cwPay">€0.00</div>
 
@@ -216,49 +220,9 @@
 
         <div class="cwStatus">
           <span class="statusIcon">✓</span>
-          <span id="cwStatusText">You're on track this week!</span>
+          <span id="cwStatusText">Clock In and Out to start tracking.</span>
           <span class="flex1"></span>
           <span>💪</span>
-        </div>
-      </section>
-
-      <!-- Bank Holidays card -->
-
-
-
-      <!-- ALL TIME / TODAY CARD -->
-      <section class="card card--split" id="cardAllTime">
-        <div class="split">
-          <div class="splitLeft">
-            <div class="splitTitle">
-              <span class="miniIcon">🕒</span>
-              <span>All Time</span>
-            </div>
-
-            <div class="splitMain">
-              <div class="splitHHMM" id="allHHMM">00:00</div>
-              <div class="splitEUR" id="allPay">€0.00</div>
-            </div>
-
-            <div class="splitMiniLine">
-              <span><strong>IN:</strong> <span id="allIn">00:00</span></span>
-              <span class="dot">•</span>
-              <span><strong>OUT:</strong> <span id="allOut">00:00</span></span>
-              <span class="dot">•</span>
-              <span><strong>⏱</strong> <span id="allBreak">0m</span></span>
-            </div>
-          </div>
-
-          <div class="splitDivider"></div>
-
-          <div class="splitRight">
-            <div class="splitTitleRight">
-              <span class="miniIcon">💼</span>
-              <span>Today</span>
-            </div>
-
-            <div class="todayEUR" id="todayPay">€0.00</div>
-          </div>
         </div>
       </section>
 
@@ -269,7 +233,6 @@
           <div class="chev">›</div>
         </div>
 
-        
         <div class="bhLine"><span class="bhDot bhDot--b"></span> Paid: <strong id="bhPaid">0</strong></div>
         <div class="bhLine"><span class="bhDot bhDot--o"></span> Not Paid: <strong id="bhRemain">0</strong></div>
       </section>
@@ -278,8 +241,7 @@
       <section class="card card--reports" id="cardReports">
         <div class="listRowTop">
           <div class="listTitle">📅 Week Summary</div>
-<div class="reportsSub">Weeks • Edit • Print</div>
-
+          <div class="reportsSub">Weeks • Edit • Print</div>
           <div class="chev">›</div>
         </div>
         <div class="reportsSub">View your work summaries</div>
@@ -293,9 +255,6 @@
         <button id="navReports" class="navItem" type="button">Week</button>
         <button id="navProfile" class="navItem" type="button">Profile</button>
       </nav>
-      
-</div>
-
 
       <div class="safeSpace"></div>
     </section>

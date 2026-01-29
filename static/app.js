@@ -226,13 +226,6 @@ const cwOut = $("cwOut");
 const cwBreak = $("cwBreak");
 const cwStatusText = $("cwStatusText");
 
-// All time / Today
-const allHHMM = $("allHHMM");
-const allPay = $("allPay");
-const allIn = $("allIn");
-const allOut = $("allOut");
-const allBreak = $("allBreak");
-const todayPay = $("todayPay");
 
 // Bank holidays
 
@@ -481,26 +474,153 @@ async function sendReset() {
 /* =========================
    Dashboard / Clock
 ========================= */
+
+let DASH = null;
+
+// NÃO redeclara: já existe em outro lugar
+// let CLOCK = null;
+// let CURRENT_WEEK_ID = null;
+
+let CURRENT_RATE = 0;
+let todayTicker = null;
+
+
+function stopTodayTicker() {
+  if (todayTicker) clearInterval(todayTicker);
+  todayTicker = null;
+}
+
+async function ensureCurrentRate() {
+  // Prefer: rate from dashboard if you add it later
+  const rDash = Number(DASH?.this_week?.hourly_rate ?? 0);
+  if (rDash > 0) {
+    CURRENT_RATE = rDash;
+    return CURRENT_RATE;
+  }
+
+  // Fallback: fetch current week (safe)
+  if (!CURRENT_WEEK_ID) {
+    CURRENT_RATE = 0;
+    return 0;
+  }
+
+  try {
+    const week = await api(`/api/weeks/${CURRENT_WEEK_ID}`);
+    CURRENT_RATE = Number(week?.hourly_rate ?? 0);
+    return CURRENT_RATE;
+  } catch {
+    CURRENT_RATE = 0;
+    return 0;
+  }
+}
+
+function parseHHMM(hhmm) {
+  if (!hhmm || !String(hhmm).includes(":")) return null;
+  const [h, m] = String(hhmm).split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return { h, m };
+}
+
+function minutesBetweenToday(inHHMM, outHHMM) {
+  const now = new Date();
+  const i = parseHHMM(inHHMM);
+  if (!i) return 0;
+
+  const inDt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), i.h, i.m, 0);
+
+  let outDt;
+  if (outHHMM) {
+    const o = parseHHMM(outHHMM);
+    outDt = o
+      ? new Date(now.getFullYear(), now.getMonth(), now.getDate(), o.h, o.m, 0)
+      : now;
+  } else {
+    outDt = now;
+  }
+
+  let mins = Math.round((outDt - inDt) / 60000);
+  if (mins < 0) mins = 0;
+  return mins;
+}
+
+function renderTodayEarnings(workedMin, rate) {
+  const tHHMM = document.getElementById("todayEarnHHMM");
+  const tPAY  = document.getElementById("todayEarnPay");
+
+  const hh = String(Math.floor(workedMin / 60)).padStart(2, "0");
+  const mm = String(workedMin % 60).padStart(2, "0");
+
+  if (tHHMM) tHHMM.textContent = `${hh}:${mm}`;
+  if (tPAY)  tPAY.textContent = fmtEUR((workedMin / 60) * rate);
+}
+
+function resetTodayEarningsUI() {
+  const tHHMM = document.getElementById("todayEarnHHMM");
+  const tPAY  = document.getElementById("todayEarnPay");
+  if (tHHMM) tHHMM.textContent = "--:--";
+  if (tPAY)  tPAY.textContent = "€-.--";
+}
+
+async function updateTodayEarningsOnce() {
+  // Needs: has_week + in_time + rate
+  if (!CLOCK?.has_week || !CLOCK?.in_time) {
+    resetTodayEarningsUI();
+    return;
+  }
+
+  const rate = await ensureCurrentRate();
+  if (!(rate > 0)) {
+    resetTodayEarningsUI();
+    return;
+  }
+
+  // worked minutes since IN (stops at OUT)
+  let workedMin = minutesBetweenToday(CLOCK.in_time, CLOCK.out_time);
+
+  // subtract accumulated break minutes
+  const br = Number(CLOCK.break_minutes || 0);
+  workedMin = Math.max(0, workedMin - br);
+
+  renderTodayEarnings(workedMin, rate);
+}
+
+function startTodayTickerIfNeeded() {
+  stopTodayTicker();
+
+  // only run live if: has IN and no OUT
+  if (!CLOCK?.has_week || !CLOCK?.in_time || CLOCK?.out_time) return;
+
+  // If on break: freeze (don’t tick)
+  if (CLOCK?.break_running) return;
+
+  todayTicker = setInterval(() => {
+    // keep freezing if break starts
+    if (CLOCK?.break_running) return;
+    updateTodayEarningsOnce();
+  }, 5000); // update every 5s
+}
+
 async function refreshAll() {
   const dash = await api("/api/dashboard");
+  DASH = dash;
 
+  // Current week card
+  if (cwWeekNo) cwWeekNo.textContent = dash?.this_week?.week_number ? String(dash.this_week.week_number) : "--";
   if (cwHHMM) cwHHMM.textContent = dash?.this_week?.hhmm || "--:--";
-  if (cwPay) cwPay.textContent = fmtEUR(dash?.this_week?.pay_eur || 0);
+  if (cwPay)  cwPay.textContent  = fmtEUR(dash?.this_week?.pay_eur || 0);
 
-  if (allHHMM) allHHMM.textContent = dash?.totals?.hhmm || "--:--";
-  if (allPay) allPay.textContent = fmtEUR(dash?.totals?.pay_eur || 0);
-
-  const allowance = Number(dash?.bank_holidays?.allowance ?? 0);
+  // Bank Holidays summary
   const paid = Number(dash?.bank_holidays?.paid ?? 0);
-  const remaining = Number(dash?.bank_holidays?.remaining ?? dash?.bank_holidays?.available ?? 0);
+  const remaining = Number(dash?.bank_holidays?.remaining ?? 0); // you renamed UI to "Not Paid"
 
-  
-  if (bhPaid) bhPaid.textContent = String(paid);
+  if (bhPaid)   bhPaid.textContent = String(paid);
   if (bhRemain) bhRemain.textContent = String(remaining);
 
-
   await refreshClock();
-  await refreshTodayPay();
+
+  // After clock is known, update today earnings and start/stop ticker
+  await updateTodayEarningsOnce();
+  startTodayTickerIfNeeded();
 }
 
 async function refreshClock() {
@@ -510,16 +630,16 @@ async function refreshClock() {
 
     if (!c.has_week) {
       CURRENT_WEEK_ID = null;
+      CURRENT_RATE = 0;
 
       if (cwIn) cwIn.textContent = "--:--";
       if (cwOut) cwOut.textContent = "--:--";
       if (cwBreak) cwBreak.textContent = "-m";
-      if (cwStatusText) cwStatusText.textContent = "Clock In and Out to start tracking.";
-      setBreakButtonRunning(false);
+      if (cwStatusText) cwStatusText.textContent = "Create a week to start tracking.";
+      if (!breakRunningUI) setBreakButtonRunning(false);
 
-      if (allIn) allIn.textContent = "--:--";
-      if (allOut) allOut.textContent = "--:--";
-      if (allBreak) allBreak.textContent = "-m";
+      resetTodayEarningsUI();
+      stopTodayTicker();
       return;
     }
 
@@ -531,56 +651,22 @@ async function refreshClock() {
 
     if (cwIn) cwIn.textContent = inT;
     if (cwOut) cwOut.textContent = outT;
-
-    if (!breakRunningUI) {
-      if (cwBreak) cwBreak.textContent = brM;
-    }
-
-    if (allIn) allIn.textContent = inT;
-    if (allOut) allOut.textContent = outT;
-    if (allBreak) allBreak.textContent = brM;
+    if (!breakRunningUI && cwBreak) cwBreak.textContent = brM;
 
     if (!breakRunningUI) setBreakButtonRunning(!!c.break_running);
 
-    const hhmm =
-      (cwHHMM?.textContent || "--:--").includes(":") ? cwHHMM.textContent : "--:--";
+    // status text
     if (cwStatusText) {
-      cwStatusText.textContent =
-        hhmm !== "--:--" ? "You're on track this week!" : "Add time to start this week.";
+      cwStatusText.textContent = (c.in_time && !c.out_time)
+        ? (c.break_running ? "On break…" : "Tracking live…")
+        : "You're on track this week!";
     }
   } catch (e) {
+    stopTodayTicker();
     if (e.status === 401) await enterLogin();
   }
 }
 
-async function refreshTodayPay() {
-  if (!todayPay) return;
-
-  if (!CURRENT_WEEK_ID) {
-    todayPay.textContent = "€-.--";
-    return;
-  }
-
-  try {
-    const week = await api(`/api/weeks/${CURRENT_WEEK_ID}`);
-    const rate = Number(week?.hourly_rate || 0);
-    const ymd = todayYMD();
-
-    const entry = (week?.entries || []).find((e) => e.work_date === ymd);
-    if (!entry) {
-      todayPay.textContent = "€-.--";
-      return;
-    }
-
-    const mins = hhmmToMinutes(entry.worked_hhmm);
-    const mult = Number(entry.multiplier || 1.0);
-    const pay = (mins / 60) * rate * mult;
-
-    todayPay.textContent = fmtEUR(pay);
-  } catch {
-    todayPay.textContent = "€-.--";
-  }
-}
 
 /* =========================
    Overtime prompt (Yes/No)
