@@ -1962,7 +1962,6 @@ def clock_out(req: Request):
         real_now = hhmm_now()
 
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
-
         ro = roster_for_date(conn, uid, work_date)
 
         # --- DAY OFF: ask overtime instead of 400
@@ -2000,6 +1999,7 @@ def clock_out(req: Request):
         authorized = bool(int(e["extra_authorized"] or 0) == 1)
         store_out = snap_to_official_if_not_authorized(real_now, official_out, authorized)
 
+        # if break is running, close it and add minutes
         st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
         if st and int(st["break_running"] or 0) == 1 and st["break_start"]:
             bs = datetime.fromisoformat(st["break_start"])
@@ -2014,15 +2014,16 @@ def clock_out(req: Request):
                 "UPDATE entries SET break_minutes=? WHERE id=? AND user_id=?",
                 (new_break, int(e["id"]), uid),
             )
+            # refresh entry row for correct break_minutes below
+            e = conn.execute("SELECT * FROM entries WHERE id=? AND user_id=?", (int(e["id"]), uid)).fetchone()
 
-            mult = multiplier_for_date(conn, uid, work_date)
+        # ALWAYS save out time
+        mult = multiplier_for_date(conn, uid, work_date)
 
-
-            conn.execute(
+        conn.execute(
             "UPDATE entries SET time_out=?, multiplier=? WHERE id=? AND user_id=?",
             (store_out, float(mult), int(e["id"]), uid),
         )
-
 
         conn.execute(
             """
@@ -2037,12 +2038,23 @@ def clock_out(req: Request):
               break_minutes=excluded.break_minutes,
               updated_at=excluded.updated_at
             """,
-            (uid, int(w["id"]), work_date, None, store_out, 0, None, int(e["break_minutes"] or 0), now()),
+            (
+                uid,
+                int(w["id"]),
+                work_date,
+                None,
+                store_out,
+                0,
+                None,
+                int(e["break_minutes"] or 0),
+                now(),
+            ),
         )
 
         conn.commit()
 
     return {"ok": True, "work_date": work_date}
+
 
 
 

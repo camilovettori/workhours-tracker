@@ -14,17 +14,13 @@
 <script>
   (async () => {
     try {
-      if ("serviceWorker" in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        for (const r of regs) await r.unregister();
-      }
       if (window.caches) {
         const keys = await caches.keys();
         for (const k of keys) await caches.delete(k);
       }
-      console.log("SW + caches nuked ✅");
+      console.log("Caches cleared ✅");
     } catch (e) {
-      console.log("SW nuke failed", e);
+      console.log("Cache clear failed", e);
     }
   })();
 </script>
@@ -117,12 +113,12 @@
         </div>
 
         <div class="credit">Developed by Camilo Vettori</div>
-        <div class="credit">Version 1.0</div>
+        <div style="text-align:center;opacity:.6;font-weight:700;margin-top:6px;">Version 1.0</div>
       </div>
     </section>
 
     <!-- =========================
-         ADD WEEK VIEW (full page)
+         ADD WEEK VIEW
     ========================== -->
     <section id="viewAddWeek" class="homeView hidden">
       <header class="topbar">
@@ -171,14 +167,31 @@
           <div class="subtitle">Welcome, <strong id="welcomeName">Camilo Vettori</strong></div>
         </div>
 
-        <button id="btnLogout" class="btn btn--pill btn--ghost" type="button">Logout</button>
+        <button id="btnOpenProfile" class="btn btn--pill btn--ghost" type="button">Profile</button>
       </header>
 
-      <!-- CURRENT WEEK / TODAY EARNINGS CARD -->
-      <section class="card card--big">
-        <div class="cardTop">
-          <div class="cardTitle">
-            Today earnings
+      <!-- MAIN CARD -->
+      <section class="card card--big cwCard" id="cardCurrentWeek">
+
+        <div class="cwTop">
+          <!-- Today earnings (live) -->
+          <div class="teCard">
+            <div class="teHead">
+              <div class="teTitle">Today earnings</div>
+              <div class="teLive" id="todayEarnState">LIVE</div>
+            </div>
+
+            <div class="teGrid">
+              <div class="teItem">
+                <div class="teLabel">Time</div>
+                <div id="todayEarnHHMM" class="teValue">--:--</div>
+              </div>
+
+              <div class="teItem">
+                <div class="teLabel">Gross</div>
+                <div id="todayEarnPay" class="teValue">€-.--</div>
+              </div>
+            </div>
           </div>
 
           <button id="btnAddWeek" class="btn btn--soft btnAddWeek" type="button">
@@ -186,17 +199,17 @@
           </button>
         </div>
 
-        <!-- Live today earnings (fills via JS) -->
-        <div id="todayEarnHHMM" class="cwTime">  </div>
-        <div id="todayEarnPay" class="cwPay">€ </div>
+        <div class="cwMain">
+          <div class="cwMeta">
+            <div class="cwMetaLabel">Current week</div>
+            <div class="cwMetaNo">Week <span id="cwWeekNo">--</span></div>
+          </div>
 
-        <div class="dividerLine"></div>
-
-        <div class="muted" style="font-weight:900; margin-bottom:6px;">
-          Week <span id="cwWeekNo">--</span>
+          <div class="cwNumbers">
+            <div id="cwHHMM" class="cwTime">00:00</div>
+            <div id="cwPay" class="cwPay">€0.00</div>
+          </div>
         </div>
-        <div class="cwTime" id="cwHHMM">00:00</div>
-        <div class="cwPay" id="cwPay">€0.00</div>
 
         <div class="cwActions">
           <button id="btnIn" class="pill pill--green" type="button">
@@ -211,9 +224,9 @@
         </div>
 
         <div class="cwLine">
-          <span><strong>IN:</strong> <span id="cwIn">00:00</span></span>
+          <span><strong>IN:</strong> <span id="cwIn">--:--</span></span>
           <span class="dot">•</span>
-          <span><strong>OUT:</strong> <span id="cwOut">00:00</span></span>
+          <span><strong>OUT:</strong> <span id="cwOut">--:--</span></span>
           <span class="dot">•</span>
           <span><strong>BREAK:</strong> <span id="cwBreak">0m</span></span>
         </div>
@@ -224,6 +237,7 @@
           <span class="flex1"></span>
           <span>💪</span>
         </div>
+
       </section>
 
       <!-- BANK HOLIDAYS CARD -->

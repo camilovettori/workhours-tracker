@@ -212,6 +212,9 @@ function toggleForgot() {
 ========================= */
 const welcomeName = $("welcomeName");
 const btnLogout = $("btnLogout");
+const btnOpenProfile = $("btnOpenProfile");
+
+
 
 const btnAddWeek = $("btnAddWeek");
 
@@ -371,7 +374,7 @@ function watchDayChange() {
   if (now !== UI_DAY) {
     UI_DAY = now;
     resetTodayVisual();
-    refreshClock().catch(() => {});
+    refreshAll().catch(() => {});
     refreshTodayPay().catch(() => {});
   }
 }
@@ -475,7 +478,6 @@ async function sendReset() {
    Dashboard / Clock
 ========================= */
 
-let DASH = null;
 
 // NÃO redeclara: já existe em outro lugar
 // let CLOCK = null;
@@ -483,144 +485,121 @@ let DASH = null;
 
 let CURRENT_RATE = 0;
 let todayTicker = null;
+let LAST_DASH = null;
+
+let LIVE_TIMER = null;     // interval do “today earnings”
+let LIVE_LAST_TS = 0;      // evita recalcular 1000x
 
 
-function stopTodayTicker() {
-  if (todayTicker) clearInterval(todayTicker);
-  todayTicker = null;
+
+function stopLiveTicker() {
+  if (LIVE_TIMER) clearInterval(LIVE_TIMER);
+  LIVE_TIMER = null;
 }
 
-async function ensureCurrentRate() {
-  // Prefer: rate from dashboard if you add it later
-  const rDash = Number(DASH?.this_week?.hourly_rate ?? 0);
-  if (rDash > 0) {
-    CURRENT_RATE = rDash;
-    return CURRENT_RATE;
-  }
-
-  // Fallback: fetch current week (safe)
-  if (!CURRENT_WEEK_ID) {
-    CURRENT_RATE = 0;
-    return 0;
-  }
-
-  try {
-    const week = await api(`/api/weeks/${CURRENT_WEEK_ID}`);
-    CURRENT_RATE = Number(week?.hourly_rate ?? 0);
-    return CURRENT_RATE;
-  } catch {
-    CURRENT_RATE = 0;
-    return 0;
-  }
+function startLiveTicker() {
+  stopLiveTicker();
+  LIVE_TIMER = setInterval(() => {
+    // só recalcula se faz sentido
+    if (!CLOCK?.has_week) return;
+    updateTodayEarningsUI();
+  }, 1000);
 }
 
-function parseHHMM(hhmm) {
-  if (!hhmm || !String(hhmm).includes(":")) return null;
+function hhmmToMinutes(hhmm) {
+  if (!hhmm || !String(hhmm).includes(":")) return 0;
   const [h, m] = String(hhmm).split(":").map(Number);
-  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
-  return { h, m };
+  return (Number(h) || 0) * 60 + (Number(m) || 0);
 }
 
-function minutesBetweenToday(inHHMM, outHHMM) {
-  const now = new Date();
-  const i = parseHHMM(inHHMM);
-  if (!i) return 0;
-
-  const inDt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), i.h, i.m, 0);
-
-  let outDt;
-  if (outHHMM) {
-    const o = parseHHMM(outHHMM);
-    outDt = o
-      ? new Date(now.getFullYear(), now.getMonth(), now.getDate(), o.h, o.m, 0)
-      : now;
-  } else {
-    outDt = now;
-  }
-
-  let mins = Math.round((outDt - inDt) / 60000);
-  if (mins < 0) mins = 0;
-  return mins;
-}
-
-function renderTodayEarnings(workedMin, rate) {
+function updateTodayEarningsUI() {
   const tHHMM = document.getElementById("todayEarnHHMM");
   const tPAY  = document.getElementById("todayEarnPay");
+  const tSTATE = document.getElementById("todayEarnState");
 
-  const hh = String(Math.floor(workedMin / 60)).padStart(2, "0");
-  const mm = String(workedMin % 60).padStart(2, "0");
+  if (!tHHMM || !tPAY) return;
 
-  if (tHHMM) tHHMM.textContent = `${hh}:${mm}`;
-  if (tPAY)  tPAY.textContent = fmtEUR((workedMin / 60) * rate);
-}
-
-function resetTodayEarningsUI() {
-  const tHHMM = document.getElementById("todayEarnHHMM");
-  const tPAY  = document.getElementById("todayEarnPay");
-  if (tHHMM) tHHMM.textContent = "--:--";
-  if (tPAY)  tPAY.textContent = "€-.--";
-}
-
-async function updateTodayEarningsOnce() {
-  // Needs: has_week + in_time + rate
+  // se não tem week ou não deu IN ainda
   if (!CLOCK?.has_week || !CLOCK?.in_time) {
-    resetTodayEarningsUI();
+    tHHMM.textContent = "--:--";
+    tPAY.textContent  = "€-.--";
+    if (tSTATE) tSTATE.textContent = "OFF";
+    stopLiveTicker();
     return;
   }
 
-  const rate = await ensureCurrentRate();
-  if (!(rate > 0)) {
-    resetTodayEarningsUI();
+  const rate = Number(LAST_DASH?.this_week?.hourly_rate ?? 0);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    tHHMM.textContent = "--:--";
+    tPAY.textContent  = "€-.--";
+    if (tSTATE) tSTATE.textContent = "RATE?";
+    stopLiveTicker();
     return;
   }
 
-  // worked minutes since IN (stops at OUT)
-  let workedMin = minutesBetweenToday(CLOCK.in_time, CLOCK.out_time);
+  // se está em break, congela (não sobe)
+  if (CLOCK.break_running) {
+    if (tSTATE) tSTATE.textContent = "BREAK";
+    return;
+  }
 
-  // subtract accumulated break minutes
+  // se já deu OUT, congela no valor final e para interval
+  if (CLOCK.out_time) {
+    if (tSTATE) tSTATE.textContent = "DONE";
+    stopLiveTicker();
+  } else {
+    if (tSTATE) tSTATE.textContent = "LIVE";
+  }
+
+  // calcula minutos trabalhados (in -> now/out) - break_minutes acumulado
+  const now = new Date();
+  const [ih, im] = String(CLOCK.in_time).split(":").map(Number);
+  const inDt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), ih || 0, im || 0, 0);
+
+  let endDt = now;
+  if (CLOCK.out_time) {
+    const [oh, om] = String(CLOCK.out_time).split(":").map(Number);
+    endDt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), oh || 0, om || 0, 0);
+  }
+
+  let workedMin = Math.max(0, Math.floor((endDt - inDt) / 60000));
   const br = Number(CLOCK.break_minutes || 0);
   workedMin = Math.max(0, workedMin - br);
 
-  renderTodayEarnings(workedMin, rate);
-}
+  const hh = String(Math.floor(workedMin / 60)).padStart(2, "0");
+  const mm = String(workedMin % 60).padStart(2, "0");
+  const eur = (workedMin / 60) * rate;
 
-function startTodayTickerIfNeeded() {
-  stopTodayTicker();
-
-  // only run live if: has IN and no OUT
-  if (!CLOCK?.has_week || !CLOCK?.in_time || CLOCK?.out_time) return;
-
-  // If on break: freeze (don’t tick)
-  if (CLOCK?.break_running) return;
-
-  todayTicker = setInterval(() => {
-    // keep freezing if break starts
-    if (CLOCK?.break_running) return;
-    updateTodayEarningsOnce();
-  }, 5000); // update every 5s
+  tHHMM.textContent = `${hh}:${mm}`;
+  tPAY.textContent  = fmtEUR(eur);
 }
 
 async function refreshAll() {
+  // 1) Dashboard (week totals + BH totals)
   const dash = await api("/api/dashboard");
-  DASH = dash;
+  LAST_DASH = dash;
 
-  // Current week card
+  // Current week label + totals
   if (cwWeekNo) cwWeekNo.textContent = dash?.this_week?.week_number ? String(dash.this_week.week_number) : "--";
   if (cwHHMM) cwHHMM.textContent = dash?.this_week?.hhmm || "--:--";
   if (cwPay)  cwPay.textContent  = fmtEUR(dash?.this_week?.pay_eur || 0);
 
-  // Bank Holidays summary
+  // Bank Holidays (Paid / Not Paid)
   const paid = Number(dash?.bank_holidays?.paid ?? 0);
-  const remaining = Number(dash?.bank_holidays?.remaining ?? 0); // you renamed UI to "Not Paid"
+  const remaining = Number(dash?.bank_holidays?.remaining ?? 0);
 
-  if (bhPaid)   bhPaid.textContent = String(paid);
+  if (bhPaid)   bhPaid.textContent   = String(paid);
   if (bhRemain) bhRemain.textContent = String(remaining);
 
+  // 2) Clock state (in/out/break)
   await refreshClock();
 
-  // After clock is known, update today earnings and start/stop ticker
-  await updateTodayEarningsOnce();
-  startTodayTickerIfNeeded();
+  // 3) Atualiza UI do Today earnings + inicia ticker se necessário
+  updateTodayEarningsUI();
+
+  // ticker só roda quando: tem IN, não tem OUT, e não está em break
+  if (CLOCK?.has_week && CLOCK?.in_time && !CLOCK?.out_time) startLiveTicker();
+  else stopLiveTicker();
 }
 
 async function refreshClock() {
@@ -630,42 +609,38 @@ async function refreshClock() {
 
     if (!c.has_week) {
       CURRENT_WEEK_ID = null;
-      CURRENT_RATE = 0;
 
       if (cwIn) cwIn.textContent = "--:--";
       if (cwOut) cwOut.textContent = "--:--";
-      if (cwBreak) cwBreak.textContent = "-m";
-      if (cwStatusText) cwStatusText.textContent = "Create a week to start tracking.";
-      if (!breakRunningUI) setBreakButtonRunning(false);
+      if (cwBreak) cwBreak.textContent = "0m";
+      if (cwStatusText) cwStatusText.textContent = "Create a week first.";
 
-      resetTodayEarningsUI();
-      stopTodayTicker();
+      setBreakButtonRunning(false);
+      stopLiveTicker();
       return;
     }
 
     CURRENT_WEEK_ID = c.week_id;
 
-    const inT = c.in_time || "--:--";
-    const outT = c.out_time || "--:--";
-    const brM = `${Number(c.break_minutes || 0)}m`;
+    if (cwIn) cwIn.textContent = c.in_time || "--:--";
+    if (cwOut) cwOut.textContent = c.out_time || "--:--";
+    if (cwBreak) cwBreak.textContent = `${Number(c.break_minutes || 0)}m`;
 
-    if (cwIn) cwIn.textContent = inT;
-    if (cwOut) cwOut.textContent = outT;
-    if (!breakRunningUI && cwBreak) cwBreak.textContent = brM;
+    setBreakButtonRunning(!!c.break_running);
 
-    if (!breakRunningUI) setBreakButtonRunning(!!c.break_running);
-
-    // status text
     if (cwStatusText) {
-      cwStatusText.textContent = (c.in_time && !c.out_time)
-        ? (c.break_running ? "On break…" : "Tracking live…")
-        : "You're on track this week!";
+      if (!c.in_time) cwStatusText.textContent = "Tap IN to start.";
+      else if (c.break_running) cwStatusText.textContent = "Break running…";
+      else if (!c.out_time) cwStatusText.textContent = "Tracking live…";
+      else cwStatusText.textContent = "Done for today ✅";
     }
+
   } catch (e) {
-    stopTodayTicker();
     if (e.status === 401) await enterLogin();
+    stopLiveTicker();
   }
 }
+
 
 
 /* =========================
@@ -756,7 +731,7 @@ async function doClockBreak() {
     } else {
       // Stop local countdown, show minutes
       stopBreakCountdown(false);
-      await refreshClock();
+      await refreshAll();
     }
 
     await refreshAll();
@@ -1165,6 +1140,14 @@ function bind() {
   btnSendReset?.addEventListener("click", sendReset);
 
   btnLogout?.addEventListener("click", doLogout);
+  if (btnOpenProfile) btnOpenProfile.addEventListener("click", () => goto("profile"));
+function openProfile() {
+  goto("profile"); // usa teu router atual
+}
+
+if (btnOpenProfile) btnOpenProfile.addEventListener("click", openProfile);
+if (navProfile) navProfile.addEventListener("click", openProfile);
+
 
   btnIn?.addEventListener("click", doClockIn);
   btnOut?.addEventListener("click", doClockOut);
@@ -1179,6 +1162,13 @@ function bind() {
   addWeekForm?.addEventListener("submit", createWeekFromPage);
 
   navHome?.addEventListener("click", () => go("/"));
+  function openProfile() {
+  goto("profile");
+}
+
+btnOpenProfile?.addEventListener("click", openProfile);
+navProfile?.addEventListener("click", openProfile);
+
   navHistory?.addEventListener("click", () => go("/roster"));
   navHolidays?.addEventListener("click", () => go("/holidays"));
   navReports?.addEventListener("click", () => go("/report"));

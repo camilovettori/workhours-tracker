@@ -658,3 +658,177 @@ body{
 .rpRow .d1{ font-weight:1000; }
 .rpRow .d2{ font-size:12px; color:var(--muted); font-weight:1000; }
 .rpRow .right{ font-weight:1000; }
+.todayBox{
+  background: rgba(255,255,255,.7);
+  border: 1px solid rgba(15,23,42,.08);
+  border-radius: 16px;
+  padding: 12px 14px;
+  box-shadow: 0 10px 24px rgba(2, 6, 23, .06);
+  min-width: 220px;
+}
+
+.todayTop{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:10px;
+}
+
+.todayTitle{
+  font-weight: 900;
+  color: var(--text, #0f172a);
+  letter-spacing: .2px;
+}
+
+.todayPill{
+  font-size: 12px;
+  font-weight: 900;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(34,197,94,.12);
+  color: rgba(22,163,74,1);
+  border: 1px solid rgba(34,197,94,.18);
+}
+
+.todayVals{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+.todayLabel{
+  font-size: 12px;
+  font-weight: 800;
+  opacity: .6;
+  margin-bottom: 2px;
+}
+
+.todayValue{
+  font-size: 20px;
+  font-weight: 1000;
+  line-height: 1.1;
+}
+
+.todayDivider{
+  width: 1px;
+  height: 34px;
+  background: rgba(15,23,42,.12);
+  border-radius: 2px;
+}
+/* =========================
+   Current Week Card Layout (Fix UX)
+========================= */
+.cwCard { overflow: hidden; }
+
+.cwTop{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:14px;
+}
+
+.teCard{
+  flex:1;
+  max-width: 320px;
+  background: rgba(255,255,255,.65);
+  border: 1px solid rgba(15, 23, 42, .08);
+  border-radius: 16px;
+  padding: 12px 14px;
+  box-shadow: 0 10px 30px rgba(2,6,23,.08);
+  backdrop-filter: blur(8px);
+}
+
+.teHead{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:10px;
+}
+
+.teTitle{
+  font-weight: 800;
+  color: var(--text, #0f172a);
+}
+
+.teLive{
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(34,197,94,.12);
+  border: 1px solid rgba(34,197,94,.25);
+  color: rgba(22,163,74,1);
+}
+
+.teGrid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+
+.teLabel{
+  font-size: 12px;
+  color: rgba(100,116,139,1);
+  font-weight: 700;
+}
+
+.teValue{
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: .2px;
+}
+
+.cwMain{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.cwMeta{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
+.cwMetaLabel{
+  font-size: 12px;
+  color: rgba(100,116,139,1);
+  font-weight: 800;
+}
+
+.cwMetaNo{
+  font-size: 14px;
+  font-weight: 900;
+  color: rgba(15,23,42,.85);
+}
+
+.cwNumbers{
+  display:flex;
+  align-items:baseline;
+  gap: 14px;
+}
+
+.cwTime{
+  font-size: 64px;
+  line-height: 1;
+  font-weight: 950;
+}
+
+.cwPay{
+  font-size: 22px;
+  font-weight: 900;
+  color: rgba(15,23,42,.6);
+}
+
+.cwActions{
+  display:flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+/* prevent buttons from pushing layout sideways */
+.pill{ white-space: nowrap; }
