@@ -1055,16 +1055,83 @@ def day_details(entry_id: int, req: Request):
 # ======================================================
 # ROSTER API
 # ======================================================
+
+def ensure_week_from_roster(conn: sqlite3.Connection, uid: int, week_number: int, start_date: str) -> int:
+    """
+    Ensures a 'weeks' row exists for (user_id, week_number). If missing, creates it.
+    Returns week_id.
+    This is schema-safe: it checks which columns exist in 'weeks' and only inserts those.
+    """
+    # 1) already exists?
+    row = conn.execute(
+        "SELECT id FROM weeks WHERE user_id=? AND week_number=? LIMIT 1",
+        (uid, int(week_number)),
+    ).fetchone()
+    if row:
+        return int(row["id"])
+
+    # 2) discover weeks columns
+    cols = conn.execute("PRAGMA table_info(weeks)").fetchall()
+    colnames = {c["name"] for c in cols}  # uses row_factory already in your db()
+
+    # 3) pick an hourly_rate default (best effort)
+    hourly_rate = 0.0
+    if "hourly_rate" in colnames:
+        last = conn.execute(
+            "SELECT hourly_rate FROM weeks WHERE user_id=? ORDER BY start_date DESC LIMIT 1",
+            (uid,),
+        ).fetchone()
+        if last and last["hourly_rate"] is not None:
+            try:
+                hourly_rate = float(last["hourly_rate"])
+            except Exception:
+                hourly_rate = 0.0
+
+    # 4) build INSERT dynamically
+    insert_cols = []
+    insert_vals = []
+
+    if "user_id" in colnames:
+        insert_cols.append("user_id")
+        insert_vals.append(uid)
+
+    if "week_number" in colnames:
+        insert_cols.append("week_number")
+        insert_vals.append(int(week_number))
+
+    if "start_date" in colnames:
+        insert_cols.append("start_date")
+        insert_vals.append(start_date)
+
+    if "hourly_rate" in colnames:
+        insert_cols.append("hourly_rate")
+        insert_vals.append(hourly_rate)
+
+    if "created_at" in colnames:
+        insert_cols.append("created_at")
+        insert_vals.append(now())
+
+    if not insert_cols:
+        raise HTTPException(500, "weeks table schema not supported")
+
+    placeholders = ",".join(["?"] * len(insert_cols))
+    sql = f"INSERT INTO weeks({','.join(insert_cols)}) VALUES ({placeholders})"
+    conn.execute(sql, tuple(insert_vals))
+
+    week_id = conn.execute("SELECT last_insert_rowid() id").fetchone()["id"]
+    return int(week_id)
+
+
 @app.get("/api/roster")
 def roster_list(req: Request):
     uid = require_user(req)
     with db() as conn:
         rows = conn.execute(
-            "SELECT * FROM rosters WHERE user_id=? ORDER BY start_date DESC",
+            "SELECT id, week_number, start_date FROM rosters WHERE user_id=? ORDER BY start_date DESC",
             (uid,),
         ).fetchall()
         return [
-            {"id": r["id"], "week_number": r["week_number"], "start_date": r["start_date"]}
+            {"id": int(r["id"]), "week_number": int(r["week_number"]), "start_date": r["start_date"]}
             for r in rows
         ]
 
@@ -1086,8 +1153,8 @@ def roster_get(roster_id: int, req: Request):
         ).fetchall()
 
         return {
-            "id": r["id"],
-            "week_number": r["week_number"],
+            "id": int(r["id"]),
+            "week_number": int(r["week_number"]),
             "start_date": r["start_date"],
             "days": [
                 {
@@ -1111,17 +1178,37 @@ def roster_create(p: RosterCreate, req: Request):
     start = parse_ymd(p.start_date)
 
     with db() as conn:
+        # (opcional, mas recomendado) evita criar roster duplicado
+        dup = conn.execute(
+            "SELECT id FROM rosters WHERE user_id=? AND week_number=? AND start_date=? LIMIT 1",
+            (uid, int(p.week_number), p.start_date),
+        ).fetchone()
+        if dup:
+            return {"ok": True, "id": int(dup["id"]), "week_id": int(
+                conn.execute(
+                    "SELECT id FROM weeks WHERE user_id=? AND week_number=? LIMIT 1",
+                    (uid, int(p.week_number)),
+                ).fetchone()["id"]
+            )}
+
+        # 1) cria/garante a week correspondente (weeks)
+        week_id = ensure_week_from_roster(conn, uid, int(p.week_number), p.start_date)
+
+        # 2) cria o roster
         conn.execute(
             "INSERT INTO rosters(user_id,week_number,start_date,created_at) VALUES (?,?,?,?)",
             (uid, int(p.week_number), p.start_date, now()),
         )
         roster_id = conn.execute("SELECT last_insert_rowid() id").fetchone()["id"]
 
+        # 3) cria os 7 dias
         for i, code in enumerate(p.days):
             d = start + timedelta(days=i)
             ymd = d.isoformat()
 
-            if code == "OFF":
+            code_up = (code or "").strip().upper()
+
+            if code_up == "OFF":
                 conn.execute(
                     """
                     INSERT INTO roster_days(user_id,roster_id,work_date,shift_in,shift_out,day_off,created_at)
@@ -1129,7 +1216,7 @@ def roster_create(p: RosterCreate, req: Request):
                     """,
                     (uid, roster_id, ymd, None, None, 1, now()),
                 )
-            elif code == "A":
+            elif code_up == "A":
                 conn.execute(
                     """
                     INSERT INTO roster_days(user_id,roster_id,work_date,shift_in,shift_out,day_off,created_at)
@@ -1137,7 +1224,7 @@ def roster_create(p: RosterCreate, req: Request):
                     """,
                     (uid, roster_id, ymd, SHIFT_A_IN, SHIFT_A_OUT, 0, now()),
                 )
-            elif code == "B":
+            elif code_up == "B":
                 conn.execute(
                     """
                     INSERT INTO roster_days(user_id,roster_id,work_date,shift_in,shift_out,day_off,created_at)
@@ -1150,7 +1237,8 @@ def roster_create(p: RosterCreate, req: Request):
 
         conn.commit()
 
-    return {"ok": True, "id": int(roster_id)}
+    return {"ok": True, "id": int(roster_id), "week_id": int(week_id)}
+
 
 @app.patch("/api/roster/{roster_id}/day")
 def roster_day_patch(roster_id: int, p: RosterDayPatch, req: Request):
@@ -1199,6 +1287,7 @@ def roster_day_patch(roster_id: int, p: RosterDayPatch, req: Request):
         conn.commit()
 
     return {"ok": True}
+
 
 @app.get("/api/bank-holidays/lookup")
 def bh_lookup(req: Request, date_ymd: str):

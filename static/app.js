@@ -783,6 +783,9 @@ async function handleOvertimePrompt(resObj) {
 ========================= */
 async function doClockIn() {
   try {
+    // ✅ garante week criada automaticamente
+    await ensureWeekExistsForClock();
+
     const r = await api("/api/clock/in", { method: "POST" });
 
     if (r?.needs_extra_confirm) {
@@ -796,6 +799,7 @@ async function doClockIn() {
     alert(e.message || "IN failed");
   }
 }
+
 
 async function doClockOut() {
   try {
