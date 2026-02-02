@@ -91,6 +91,7 @@
       border:1px solid rgba(15,23,42,.10);
       background: rgba(15,23,42,.06);
     }
+
     .phoneRow{
       display:flex; gap:10px; align-items:center; justify-content:space-between;
       padding:10px 12px;
@@ -218,7 +219,7 @@
         • Set your Hourly Rate here once.<br/>
         • Add weeks in Roster (Sun → Sat).<br/>
         • Bank Holidays are detected automatically from your BH tracker.<br/>
-        • Premium rules (Sunday / BH) will be applied consistently after we centralize pay calc in one function.
+        • Premium rules (Sunday / BH) will be applied consistently (app.js + report).
       </div>
     </section>
 
@@ -302,27 +303,25 @@
       return data;
     }
 
-    function fmtEUR(n){
-      const v = Number(n || 0);
-      try { return v.toLocaleString(undefined,{style:"currency",currency:"EUR"}); }
-      catch { return "€" + v.toFixed(2); }
-    }
+    // Save avatar URL so dashboard/app.js can use it without extra calls
+    const LS_AVATAR_URL  = "wh_avatar_url";
+    const LS_USER_NAME   = "wh_user_name";
 
-    // -----------------------------
-    // LOAD ME
-    // -----------------------------
     let ME = null;
 
     function renderAvatar(url, firstName, lastName){
       const box = $("avatar");
+      if (!box) return;
       box.innerHTML = "";
-      if(url){
+
+      if (url) {
         const img = document.createElement("img");
         img.src = url + (url.includes("?") ? "&" : "?") + "v=" + Date.now(); // bust cache
         img.alt = "avatar";
         box.appendChild(img);
         return;
       }
+
       const initials = ((firstName||"").slice(0,1) + (lastName||"").slice(0,1)).toUpperCase() || "—";
       box.textContent = initials;
     }
@@ -333,7 +332,15 @@
       $("firstName").value = ME.first_name || "";
       $("lastName").value = ME.last_name || "";
       $("hourlyRate").value = (ME.hourly_rate ?? "").toString();
+
+      const fullName = `${ME.first_name || ""} ${ME.last_name || ""}`.trim();
+      try {
+        localStorage.setItem(LS_AVATAR_URL, ME.avatar_url || "");
+        localStorage.setItem(LS_USER_NAME, fullName || "");
+      } catch {}
+
       renderAvatar(ME.avatar_url || "", ME.first_name || "", ME.last_name || "");
+      return ME;
     }
 
     // -----------------------------
@@ -355,11 +362,16 @@
         const res = await api("/api/me/avatar", {
           method: "POST",
           body: fd,
-          headers: {} // IMPORTANT: do not set Content-Type for FormData
+          headers: {} // do not set Content-Type for FormData
         });
 
+        // keep local ME in sync
+        if (res?.avatar_url) ME.avatar_url = res.avatar_url;
+
         $("avatarMsg").textContent = "Avatar updated.";
-        renderAvatar(res.avatar_url || "", ME?.first_name || "", ME?.last_name || "");
+
+        try { localStorage.setItem(LS_AVATAR_URL, ME.avatar_url || ""); } catch {}
+        renderAvatar(ME.avatar_url || "", ME?.first_name || "", ME?.last_name || "");
       }catch(e){
         $("avatarErr").textContent = e.message || "Failed to upload";
         if(e.status === 401) location.href = "/";
@@ -492,7 +504,7 @@
           body: JSON.stringify({ hourly_rate })
         });
 
-        $("payMsg").textContent = "Hourly Rate saved. All pages should use this value now.";
+        $("payMsg").textContent = "Hourly Rate saved.";
         await loadMe();
       }catch(e){
         $("payErr").textContent = e.message || "Failed to save";
@@ -501,9 +513,13 @@
     });
 
     // -----------------------------
-    // USEFUL PHONES (localStorage for now)
+    // USEFUL PHONES (localStorage)
     // -----------------------------
     const PH_KEY = "wht_useful_phones";
+
+    function esc(s){
+      return String(s || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+    }
 
     function loadPhones(){
       try{
@@ -533,8 +549,8 @@
         row.className = "phoneRow";
         row.innerHTML = `
           <div>
-            <div class="l1">${(it.label||"").replaceAll("<","&lt;")}</div>
-            <div class="l2">${(it.phone||"").replaceAll("<","&lt;")}</div>
+            <div class="l1">${esc(it.label)}</div>
+            <div class="l2">${esc(it.phone)}</div>
           </div>
           <div class="actions">
             <a class="btn btn--pill btn--soft" href="tel:${encodeURIComponent(it.phone||"")}" style="text-decoration:none;">Call</a>
@@ -583,10 +599,9 @@
     // init
     (async function init(){
       try{
-        await api("/api/me");
         await loadMe();
         renderPhones();
-      }catch{
+      }catch(e){
         location.href = "/";
       }
     })();

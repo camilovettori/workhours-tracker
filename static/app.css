@@ -876,3 +876,31 @@ body{
 .card.cwCard {
   overflow: hidden;
 }
+/* Top profile avatar button */
+.topAvatarBtn{
+  width:44px;
+  height:44px;
+  border-radius:999px;
+  border:1px solid rgba(15,23,42,.12);
+  background: rgba(255,255,255,.65);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0;
+  cursor:pointer;
+  box-shadow: 0 10px 25px rgba(2,6,23,.08);
+  transition: transform .08s ease, background .12s ease;
+}
+
+.topAvatarBtn:hover{
+  transform: translateY(-1px);
+  background: rgba(255,255,255,.78);
+}
+
+.topAvatarImg{
+  width:38px;
+  height:38px;
+  border-radius:999px;
+  object-fit:cover;
+  display:block;
+}

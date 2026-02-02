@@ -1299,5 +1299,26 @@ let dayWatcherStarted = false;
   } catch (e) {
     // If index views exist -> show login
     if (hasIndexViews()) await enterLogin();
+    function setTopAvatar(me){
+  const img = document.getElementById("topAvatarImg");
+  const btn = document.getElementById("btnProfileAvatar");
+  if(!img || !btn) return;
+
+  // tenta pegar do backend (adapte se seu campo tiver outro nome)
+  const url =
+    me?.avatar_url ||
+    me?.photo_url ||
+    me?.profile_photo ||
+    me?.avatar ||
+    "";
+
+  img.src = url ? url : "/static/avatars/default.png";
+
+  // ao clicar, vai pro profile (ajusta a rota se for outra)
+  btn.addEventListener("click", () => {
+    location.href = "/profile";
+  });
+}
+
   }
 })();
