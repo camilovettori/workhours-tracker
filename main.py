@@ -69,6 +69,25 @@ def db() -> sqlite3.Connection:
 def now() -> str:
     return datetime.utcnow().isoformat(timespec="seconds")
 
+def ensure_user_columns(conn: sqlite3.Connection):
+    cols = conn.execute("PRAGMA table_info(users)").fetchall()
+    names = {c["name"] for c in cols}
+
+    # strings
+    if "first_name" not in names:
+        conn.execute("ALTER TABLE users ADD COLUMN first_name TEXT")
+    if "last_name" not in names:
+        conn.execute("ALTER TABLE users ADD COLUMN last_name TEXT")
+
+    # number
+    if "hourly_rate" not in names:
+        conn.execute("ALTER TABLE users ADD COLUMN hourly_rate REAL DEFAULT 0")
+
+    # avatar file path
+    if "avatar_path" not in names:
+        conn.execute("ALTER TABLE users ADD COLUMN avatar_path TEXT")
+
+
 
 def col_exists(conn: sqlite3.Connection, table: str, col: str) -> bool:
     cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
@@ -189,6 +208,12 @@ def init_db() -> None:
             );
             """
         )
+
+        with db() as conn:
+          ensure_user_columns(conn)
+          conn.commit()
+
+        
 
         # --- migrations (safe / idempotent) ---
         add_col_if_missing(conn, "users", "salt_hex", "TEXT")
@@ -400,8 +425,10 @@ def reports_page():
 
 
 @app.get("/profile", response_class=HTMLResponse)
-def profile_page():
-    return serve_index()
+def profile_page(req: Request):
+    require_user(req)
+    return (STATIC_DIR / "profile.html").read_text(encoding="utf-8")
+
 
 
 @app.get("/roster", response_class=HTMLResponse)
@@ -538,16 +565,21 @@ def logout():
 def me(req: Request):
     uid = require_user(req)
     with db() as conn:
-        u = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        u = conn.execute("SELECT id,email,first_name,last_name,hourly_rate,avatar_path FROM users WHERE id=?", (uid,)).fetchone()
         if not u:
-            raise HTTPException(401, "Unauthorized")
+            raise HTTPException(401, "Not logged")
+
+        avatar_url = u["avatar_path"] or ""
         return {
-            "id": u["id"],
+            "ok": True,
+            "id": int(u["id"]),
+            "email": u["email"],
             "first_name": u["first_name"] or "",
             "last_name": u["last_name"] or "",
-            "email": u["email"] or "",
-            "avatar_url": u["avatar_path"],
+            "hourly_rate": float(u["hourly_rate"] or 0),
+            "avatar_url": avatar_url,
         }
+
 
 
 # ======================================================
@@ -981,7 +1013,65 @@ def patch_bh(bh_id: int, p: BhPaidPatch, req: Request):
 
     return {"ok": True}
 
+class MeUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    hourly_rate: Optional[float] = None
 
+@app.patch("/api/me")
+def me_patch(p: MeUpdate, req: Request):
+    uid = require_user(req)
+    with db() as conn:
+        u = conn.execute("SELECT id FROM users WHERE id=?", (uid,)).fetchone()
+        if not u:
+            raise HTTPException(401, "Not logged")
+
+        if p.first_name is not None:
+            conn.execute("UPDATE users SET first_name=? WHERE id=?", (p.first_name.strip(), uid))
+        if p.last_name is not None:
+            conn.execute("UPDATE users SET last_name=? WHERE id=?", (p.last_name.strip(), uid))
+        if p.hourly_rate is not None:
+            hr = float(p.hourly_rate)
+            if hr < 0 or hr > 200:
+                raise HTTPException(400, "Invalid hourly_rate")
+            conn.execute("UPDATE users SET hourly_rate=? WHERE id=?", (hr, uid))
+
+        conn.commit()
+
+    return {"ok": True}
+
+AVATAR_DIR = STATIC_DIR / "avatars"
+AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+
+@app.post("/api/me/avatar")
+async def me_avatar(file: UploadFile = File(...), req: Request = None):
+    uid = require_user(req)
+
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "File must be an image")
+
+    ext = ".jpg"
+    if file.filename and "." in file.filename:
+        ext = "." + file.filename.split(".")[-1].lower()
+        if ext not in [".jpg", ".jpeg", ".png", ".webp"]:
+            ext = ".jpg"
+
+    filename = f"user_{uid}{ext}"
+    path = AVATAR_DIR / filename
+
+    content = await file.read()
+    if len(content) > 5_000_000:
+        raise HTTPException(400, "Image too large (max 5MB)")
+
+    path.write_bytes(content)
+
+    avatar_url = f"/static/avatars/{filename}"
+
+    with db() as conn:
+        conn.execute("UPDATE users SET avatar_path=? WHERE id=?", (avatar_url, uid))
+        conn.commit()
+
+    return {"ok": True, "avatar_url": avatar_url}
 
 
 # ======================================================

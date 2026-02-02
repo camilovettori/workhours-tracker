@@ -43,6 +43,17 @@ document.addEventListener("DOMContentLoaded", () => {
    Utils
 ========================= */
 
+const BH_MULTIPLIER = 1.5;
+
+function calcDayPay({ day, hourlyRate, isBH }) {
+  if (day.day_off) return 0;
+
+  const hours = SHIFT_PAID_MIN / 60;
+
+  return hours * hourlyRate * (isBH ? BH_MULTIPLIER : 1);
+}
+
+
 function isoWeekNumber(d = new Date()) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   const dayNum = date.getUTCDay() || 7;

@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>Profile</title>
+
+  <link rel="icon" href="/static/logo.png" />
+  <link rel="stylesheet" href="/static/app.css?v=12" />
+
+  <style>
+    .wrap{ width:min(980px,100%); margin:0 auto; padding:22px 16px 120px; }
+    .top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
+    .brand{ display:flex; align-items:center; gap:12px; }
+    .brand img{ width:44px; height:44px; border-radius:12px; object-fit:cover; }
+    .muted{ color: var(--muted); font-weight:900; }
+
+    .cardPad{ padding:16px; }
+    .row{ display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; }
+    .hidden{ display:none !important; }
+    .err{ color:#b91c1c; font-weight:1000; margin-top:8px; }
+    .ok{ color:rgba(21,128,61,1); font-weight:1000; margin-top:8px; }
+
+    .sectionTitle{ font-weight:1000; font-size:16px; }
+    .sectionSub{ font-weight:900; font-size:12px; color:var(--muted); margin-top:4px; }
+
+    .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    @media (max-width: 520px){ .grid2{ grid-template-columns:1fr; } }
+
+    .field{ display:flex; flex-direction:column; gap:6px; }
+    .field span{ font-weight:900; color: var(--muted); font-size:13px; }
+    .field input{
+      padding:12px 12px;
+      border-radius:14px;
+      border:1px solid rgba(15,23,42,.12);
+      background: rgba(255,255,255,.75);
+      font-weight:900;
+      outline:none;
+    }
+    .field input[readonly]{ opacity:.85; }
+
+    /* avatar */
+    .avatarBox{
+      display:flex; gap:14px; align-items:center; flex-wrap:wrap;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.60);
+      border-radius:18px;
+      padding:14px;
+    }
+    .avatar{
+      width:86px; height:86px; border-radius:22px;
+      background: rgba(15,23,42,.06);
+      border:1px solid rgba(15,23,42,.10);
+      overflow:hidden;
+      display:flex; align-items:center; justify-content:center;
+      font-weight:1000;
+      color: var(--muted);
+    }
+    .avatar img{ width:100%; height:100%; object-fit:cover; }
+    .btnRow{ display:flex; gap:10px; flex-wrap:wrap; }
+    .smallHint{ font-size:12px; font-weight:900; color:var(--muted); margin-top:6px; }
+
+    /* camera modal */
+    .modalBackdrop{
+      position: fixed; inset: 0;
+      background: rgba(15,23,42,.45);
+      display: flex; align-items: center; justify-content: center;
+      padding: 18px;
+      z-index: 50;
+    }
+    .modal{
+      width: min(720px, 100%);
+      border-radius: 22px;
+      border: 1px solid rgba(15,23,42,.10);
+      background: rgba(255,255,255,.92);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 20px 70px rgba(2,6,23,.28);
+      padding: 16px;
+    }
+    .modalHead{
+      display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
+      margin-bottom: 10px;
+    }
+    .modalTitle{ font-weight:1000; font-size:16px; line-height:1.15; }
+    .modalSub{ margin-top:4px; font-weight:900; font-size:12px; color: var(--muted); }
+    .modalBody{ display:flex; flex-direction:column; gap:12px; }
+    video{
+      width:100%;
+      border-radius:18px;
+      border:1px solid rgba(15,23,42,.10);
+      background: rgba(15,23,42,.06);
+    }
+    .phoneRow{
+      display:flex; gap:10px; align-items:center; justify-content:space-between;
+      padding:10px 12px;
+      border-radius:14px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.70);
+      margin-top:8px;
+    }
+    .phoneRow .l1{ font-weight:1000; font-size:13px; }
+    .phoneRow .l2{ font-weight:900; font-size:12px; color:var(--muted); margin-top:2px; }
+    .phoneRow .actions{ display:flex; gap:8px; }
+  </style>
+</head>
+
+<body>
+  <main class="wrap">
+    <div class="top">
+      <div class="brand">
+        <img src="/static/logo.png" alt="logo" />
+        <div>
+          <div style="font-size:34px; font-weight:1000; letter-spacing:-.03em; line-height:1;">Profile</div>
+          <div class="muted">Personal & pay settings</div>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:10px; align-items:center;">
+        <button id="btnHome" class="btn btn--pill btn--soft" type="button">Home</button>
+        <button id="btnBack" class="btn btn--pill btn--ghost" type="button">Back</button>
+      </div>
+    </div>
+
+    <!-- AVATAR -->
+    <section class="card cardPad">
+      <div class="row">
+        <div>
+          <div class="sectionTitle">Photo</div>
+          <div class="sectionSub">Upload an avatar or take a selfie</div>
+        </div>
+      </div>
+
+      <div class="avatarBox" style="margin-top:12px;">
+        <div id="avatar" class="avatar">—</div>
+
+        <div style="min-width:260px; flex:1;">
+          <div class="btnRow">
+            <input id="fileAvatar" type="file" accept="image/*" class="hidden" />
+            <button id="btnUpload" class="btn btn--soft" type="button">Upload photo</button>
+            <button id="btnCamera" class="btn btn--ghost" type="button">Use camera</button>
+          </div>
+          <div class="smallHint">Tip: Camera works on HTTPS or localhost. On mobile, allow permission.</div>
+
+          <div id="avatarMsg" class="ok"></div>
+          <div id="avatarErr" class="err"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ACCOUNT -->
+    <section class="card cardPad" style="margin-top:12px;">
+      <div class="row">
+        <div>
+          <div class="sectionTitle">Account settings</div>
+          <div class="sectionSub">Edit your basic info</div>
+        </div>
+        <button id="btnSaveAccount" class="btn btn--primary" type="button">Save</button>
+      </div>
+
+      <div class="grid2" style="margin-top:12px;">
+        <label class="field">
+          <span>First name</span>
+          <input id="firstName" type="text" />
+        </label>
+        <label class="field">
+          <span>Last name</span>
+          <input id="lastName" type="text" />
+        </label>
+      </div>
+
+      <div class="grid2" style="margin-top:10px;">
+        <label class="field">
+          <span>Email (read-only)</span>
+          <input id="email" type="email" readonly />
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input id="password" type="password" placeholder="(next step)" readonly />
+        </label>
+      </div>
+
+      <div id="accMsg" class="ok"></div>
+      <div id="accErr" class="err"></div>
+    </section>
+
+    <!-- PAY -->
+    <section class="card cardPad" style="margin-top:12px;">
+      <div class="row">
+        <div>
+          <div class="sectionTitle">Pay settings</div>
+          <div class="sectionSub">Single source of truth for Hourly Rate</div>
+        </div>
+        <button id="btnSavePay" class="btn btn--primary" type="button">Save</button>
+      </div>
+
+      <div class="grid2" style="margin-top:12px;">
+        <label class="field">
+          <span>Hourly rate (€)</span>
+          <input id="hourlyRate" type="number" step="0.01" min="0" placeholder="e.g. 18.24" />
+        </label>
+        <div class="field">
+          <span>Used by</span>
+          <input type="text" value="Dashboard • Roster • Reports" readonly />
+        </div>
+      </div>
+
+      <div id="payMsg" class="ok"></div>
+      <div id="payErr" class="err"></div>
+    </section>
+
+    <!-- HELP -->
+    <section class="card cardPad" style="margin-top:12px;">
+      <div class="sectionTitle">Help</div>
+      <div class="sectionSub">Quick guide</div>
+
+      <div style="margin-top:10px; font-weight:900; color:var(--muted); line-height:1.45;">
+        • Set your Hourly Rate here once.<br/>
+        • Add weeks in Roster (Sun → Sat).<br/>
+        • Bank Holidays are detected automatically from your BH tracker.<br/>
+        • Premium rules (Sunday / BH) will be applied consistently after we centralize pay calc in one function.
+      </div>
+    </section>
+
+    <!-- USEFUL PHONES -->
+    <section class="card cardPad" style="margin-top:12px;">
+      <div class="row">
+        <div>
+          <div class="sectionTitle">Useful phones</div>
+          <div class="sectionSub">Mechanic, customer service, etc.</div>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:12px;">
+        <label class="field">
+          <span>Label</span>
+          <input id="phLabel" type="text" placeholder="e.g. Mechanic" />
+        </label>
+        <label class="field">
+          <span>Phone</span>
+          <input id="phNumber" type="tel" placeholder="e.g. +353..." />
+        </label>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+        <button id="btnAddPhone" class="btn btn--soft" type="button">Add</button>
+      </div>
+
+      <div id="phones"></div>
+      <div id="phMsg" class="ok"></div>
+      <div id="phErr" class="err"></div>
+    </section>
+  </main>
+
+  <!-- CAMERA MODAL -->
+  <div id="camBackdrop" class="modalBackdrop hidden" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modalHead">
+        <div>
+          <div class="modalTitle">Take a selfie</div>
+          <div class="modalSub">Click “Capture” then “Save”</div>
+        </div>
+        <button id="btnCloseCam" class="btn btn--pill btn--ghost" type="button">Close</button>
+      </div>
+
+      <div class="modalBody">
+        <video id="camVideo" autoplay playsinline></video>
+
+        <div class="btnRow">
+          <button id="btnCapture" class="btn btn--soft" type="button">Capture</button>
+          <button id="btnSaveCapture" class="btn btn--primary" type="button" disabled>Save</button>
+        </div>
+
+        <div id="camErr" class="err"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const show = (el) => el && el.classList.remove("hidden");
+    const hide = (el) => el && el.classList.add("hidden");
+
+    async function api(path, opts = {}) {
+      const res = await fetch(path, {
+        credentials: "include",
+        headers: { ...(opts.headers || {}) },
+        ...opts,
+      });
+
+      const ct = res.headers.get("content-type") || "";
+      const data = ct.includes("application/json") ? await res.json() : await res.text();
+
+      if (!res.ok) {
+        const msg =
+          (data && data.detail) ? data.detail :
+          (typeof data === "string" ? data : "Request failed");
+        const e = new Error(msg);
+        e.status = res.status;
+        throw e;
+      }
+      return data;
+    }
+
+    function fmtEUR(n){
+      const v = Number(n || 0);
+      try { return v.toLocaleString(undefined,{style:"currency",currency:"EUR"}); }
+      catch { return "€" + v.toFixed(2); }
+    }
+
+    // -----------------------------
+    // LOAD ME
+    // -----------------------------
+    let ME = null;
+
+    function renderAvatar(url, firstName, lastName){
+      const box = $("avatar");
+      box.innerHTML = "";
+      if(url){
+        const img = document.createElement("img");
+        img.src = url + (url.includes("?") ? "&" : "?") + "v=" + Date.now(); // bust cache
+        img.alt = "avatar";
+        box.appendChild(img);
+        return;
+      }
+      const initials = ((firstName||"").slice(0,1) + (lastName||"").slice(0,1)).toUpperCase() || "—";
+      box.textContent = initials;
+    }
+
+    async function loadMe(){
+      ME = await api("/api/me");
+      $("email").value = ME.email || "";
+      $("firstName").value = ME.first_name || "";
+      $("lastName").value = ME.last_name || "";
+      $("hourlyRate").value = (ME.hourly_rate ?? "").toString();
+      renderAvatar(ME.avatar_url || "", ME.first_name || "", ME.last_name || "");
+    }
+
+    // -----------------------------
+    // AVATAR UPLOAD
+    // -----------------------------
+    async function uploadAvatarFile(file){
+      $("avatarErr").textContent = "";
+      $("avatarMsg").textContent = "";
+
+      if(!file){
+        $("avatarErr").textContent = "No file selected.";
+        return;
+      }
+
+      const fd = new FormData();
+      fd.append("file", file);
+
+      try{
+        const res = await api("/api/me/avatar", {
+          method: "POST",
+          body: fd,
+          headers: {} // IMPORTANT: do not set Content-Type for FormData
+        });
+
+        $("avatarMsg").textContent = "Avatar updated.";
+        renderAvatar(res.avatar_url || "", ME?.first_name || "", ME?.last_name || "");
+      }catch(e){
+        $("avatarErr").textContent = e.message || "Failed to upload";
+        if(e.status === 401) location.href = "/";
+      }
+    }
+
+    $("btnUpload").addEventListener("click", () => $("fileAvatar").click());
+    $("fileAvatar").addEventListener("change", async () => {
+      const f = $("fileAvatar").files && $("fileAvatar").files[0];
+      await uploadAvatarFile(f);
+      $("fileAvatar").value = "";
+    });
+
+    // -----------------------------
+    // CAMERA CAPTURE
+    // -----------------------------
+    let camStream = null;
+    let capturedBlob = null;
+
+    async function openCamera(){
+      $("camErr").textContent = "";
+      capturedBlob = null;
+      $("btnSaveCapture").disabled = true;
+
+      show($("camBackdrop"));
+      $("camBackdrop").setAttribute("aria-hidden","false");
+
+      try{
+        camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+        $("camVideo").srcObject = camStream;
+      }catch(e){
+        $("camErr").textContent = "Camera permission denied or unavailable.";
+      }
+    }
+
+    function closeCamera(){
+      hide($("camBackdrop"));
+      $("camBackdrop").setAttribute("aria-hidden","true");
+      if(camStream){
+        camStream.getTracks().forEach(t => t.stop());
+        camStream = null;
+      }
+      $("camVideo").srcObject = null;
+    }
+
+    $("btnCamera").addEventListener("click", openCamera);
+    $("btnCloseCam").addEventListener("click", closeCamera);
+    $("camBackdrop").addEventListener("click", (e) => {
+      if(e.target === $("camBackdrop")) closeCamera();
+    });
+
+    $("btnCapture").addEventListener("click", () => {
+      $("camErr").textContent = "";
+      const v = $("camVideo");
+      if(!v || !v.videoWidth){
+        $("camErr").textContent = "Camera not ready yet.";
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = v.videoWidth;
+      canvas.height = v.videoHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(v, 0, 0);
+
+      canvas.toBlob((blob) => {
+        if(!blob){
+          $("camErr").textContent = "Capture failed.";
+          return;
+        }
+        capturedBlob = blob;
+        $("btnSaveCapture").disabled = false;
+      }, "image/jpeg", 0.92);
+    });
+
+    $("btnSaveCapture").addEventListener("click", async () => {
+      $("camErr").textContent = "";
+      if(!capturedBlob){
+        $("camErr").textContent = "No captured photo.";
+        return;
+      }
+
+      const file = new File([capturedBlob], "selfie.jpg", { type: "image/jpeg" });
+      await uploadAvatarFile(file);
+      closeCamera();
+    });
+
+    // -----------------------------
+    // ACCOUNT SAVE
+    // -----------------------------
+    $("btnSaveAccount").addEventListener("click", async () => {
+      $("accErr").textContent = "";
+      $("accMsg").textContent = "";
+
+      const first_name = ($("firstName").value || "").trim();
+      const last_name = ($("lastName").value || "").trim();
+
+      try{
+        await api("/api/me", {
+          method: "PATCH",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify({ first_name, last_name })
+        });
+
+        $("accMsg").textContent = "Saved.";
+        await loadMe();
+      }catch(e){
+        $("accErr").textContent = e.message || "Failed to save";
+        if(e.status === 401) location.href = "/";
+      }
+    });
+
+    // -----------------------------
+    // PAY SAVE
+    // -----------------------------
+    $("btnSavePay").addEventListener("click", async () => {
+      $("payErr").textContent = "";
+      $("payMsg").textContent = "";
+
+      const hourly_rate = Number($("hourlyRate").value || 0);
+      if(!hourly_rate || hourly_rate <= 0){
+        $("payErr").textContent = "Hourly Rate must be > 0.";
+        return;
+      }
+
+      try{
+        await api("/api/me", {
+          method: "PATCH",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify({ hourly_rate })
+        });
+
+        $("payMsg").textContent = "Hourly Rate saved. All pages should use this value now.";
+        await loadMe();
+      }catch(e){
+        $("payErr").textContent = e.message || "Failed to save";
+        if(e.status === 401) location.href = "/";
+      }
+    });
+
+    // -----------------------------
+    // USEFUL PHONES (localStorage for now)
+    // -----------------------------
+    const PH_KEY = "wht_useful_phones";
+
+    function loadPhones(){
+      try{
+        const raw = localStorage.getItem(PH_KEY);
+        return raw ? JSON.parse(raw) : [];
+      }catch{
+        return [];
+      }
+    }
+    function savePhones(items){
+      localStorage.setItem(PH_KEY, JSON.stringify(items || []));
+    }
+    function renderPhones(){
+      $("phErr").textContent = "";
+      $("phMsg").textContent = "";
+      const list = $("phones");
+      list.innerHTML = "";
+
+      const items = loadPhones();
+      if(!items.length){
+        list.innerHTML = `<div class="muted" style="margin-top:10px;">No contacts yet.</div>`;
+        return;
+      }
+
+      for(const it of items){
+        const row = document.createElement("div");
+        row.className = "phoneRow";
+        row.innerHTML = `
+          <div>
+            <div class="l1">${(it.label||"").replaceAll("<","&lt;")}</div>
+            <div class="l2">${(it.phone||"").replaceAll("<","&lt;")}</div>
+          </div>
+          <div class="actions">
+            <a class="btn btn--pill btn--soft" href="tel:${encodeURIComponent(it.phone||"")}" style="text-decoration:none;">Call</a>
+            <button class="btn btn--pill btn--ghost" type="button">Delete</button>
+          </div>
+        `;
+
+        row.querySelector("button").addEventListener("click", () => {
+          const next = loadPhones().filter(x => x.id !== it.id);
+          savePhones(next);
+          renderPhones();
+        });
+
+        list.appendChild(row);
+      }
+    }
+
+    $("btnAddPhone").addEventListener("click", () => {
+      $("phErr").textContent = "";
+      $("phMsg").textContent = "";
+
+      const label = ($("phLabel").value || "").trim();
+      const phone = ($("phNumber").value || "").trim();
+
+      if(!label || !phone){
+        $("phErr").textContent = "Fill label and phone.";
+        return;
+      }
+
+      const items = loadPhones();
+      items.unshift({ id: Date.now(), label, phone });
+      savePhones(items);
+
+      $("phLabel").value = "";
+      $("phNumber").value = "";
+      $("phMsg").textContent = "Added.";
+      renderPhones();
+    });
+
+    // -----------------------------
+    // NAV
+    // -----------------------------
+    $("btnHome").addEventListener("click", () => location.href = "/");
+    $("btnBack").addEventListener("click", () => history.length > 1 ? history.back() : (location.href = "/"));
+
+    // init
+    (async function init(){
+      try{
+        await api("/api/me");
+        await loadMe();
+        renderPhones();
+      }catch{
+        location.href = "/";
+      }
+    })();
+  </script>
+</body>
+</html>

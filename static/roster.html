@@ -76,6 +76,7 @@
     .dayCard .w{ font-weight:1000; font-size:14px; }
     .dayCard .d{ font-weight:900; font-size:12px; color:var(--muted); margin-top:2px; }
     .dayCard .s{ font-weight:1000; font-size:13px; margin-top:10px; }
+
     .badgeOff{
       display:inline-block;
       margin-left:8px;
@@ -95,6 +96,18 @@
       border-radius:999px;
       border:1px solid rgba(245,158,11,.25);
       background: rgba(245,158,11,.12);
+      font-size:11px;
+      font-weight:1000;
+      color: rgba(180,83,9,1);
+      vertical-align:middle;
+    }
+    .badgePremium{
+      display:inline-block;
+      margin-left:6px;
+      padding:3px 8px;
+      border-radius:999px;
+      border:1px solid rgba(245,158,11,.25);
+      background: rgba(245,158,11,.10);
       font-size:11px;
       font-weight:1000;
       color: rgba(180,83,9,1);
@@ -370,7 +383,7 @@
         </label>
 
         <label class="field">
-          <span>Start date</span>
+          <span>Start date (Sunday)</span>
           <input id="startDate" type="date" required />
         </label>
       </div>
@@ -485,7 +498,7 @@
       catch { return "€" + v.toFixed(2); }
     }
 
-    // ===== SINGLE BH LOOKUP (NO DUPLICATION)
+    // ===== BH LOOKUP (cached)
     const bhCache = new Map();
     async function bhLookup(dateYmd){
       if (bhCache.has(dateYmd)) return bhCache.get(dateYmd);
@@ -494,25 +507,14 @@
       return r;
     }
 
-    function isoWeekNumber(d = new Date()) {
-      const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-      const dayNum = date.getUTCDay() || 7;
-      date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-      const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-      return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+    // ===== Date helpers
+    function ymdToDateObj(ymd){
+      const [y,m,d] = ymd.split("-").map(Number);
+      return new Date(y, (m||1)-1, d||1);
     }
-
-    function mondayOfThisWeek(d = new Date()) {
-      const x = new Date(d);
-      const day = x.getDay();
-      const diff = (day === 0 ? -6 : 1 - day);
-      x.setDate(x.getDate() + diff);
-      const y = x.getFullYear();
-      const m = String(x.getMonth() + 1).padStart(2, "0");
-      const dd = String(x.getDate()).padStart(2, "0");
-      return `${y}-${m}-${dd}`;
+    function weekdayShort(dt){
+      return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dt.getDay()];
     }
-
     function ymdAddDays(ymd, add){
       const [y,m,d] = ymd.split("-").map(Number);
       const dt = new Date(y, (m||1)-1, d||1);
@@ -522,34 +524,78 @@
       const dd = String(dt.getDate()).padStart(2,"0");
       return `${yy}-${mm}-${dd}`;
     }
-    function ymdToDateObj(ymd){
-      const [y,m,d] = ymd.split("-").map(Number);
-      return new Date(y, (m||1)-1, d||1);
+    function sundayOfThisWeek(d = new Date()){
+      const x = new Date(d);
+      x.setDate(x.getDate() - x.getDay()); // back to Sunday
+      const y = x.getFullYear();
+      const m = String(x.getMonth()+1).padStart(2,"0");
+      const dd = String(x.getDate()).padStart(2,"0");
+      return `${y}-${m}-${dd}`;
     }
-    function weekdayShort(dt){
-      return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dt.getDay()];
+    function isoWeekNumber(d = new Date()) {
+      const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+      const dayNum = date.getUTCDay() || 7;
+      date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+      return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
     }
 
-    // business rule: paid minutes per worked day
-    const SHIFT_PAID_MIN = 495; // 8h15
-    function expectedMinutesFromDays(days){
-      return (days||[]).reduce((acc, x)=> (x && !x.day_off ? acc + SHIFT_PAID_MIN : acc), 0);
-    }
+    // ===== Business rules
+    const SHIFT_PAID_MIN = 495; // 8h15 fixed
+    const SUNDAY_MULTIPLIER = 1.5;
+    const BH_MULTIPLIER = 1.5;
+
     function fmtHHMMFromMinutes(mins){
       const m = Math.max(0, Math.floor(Number(mins||0)));
       const hh = Math.floor(m/60);
       const mm = m%60;
       return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
     }
+    function expectedMinutesFromDays(days){
+      return (days||[]).reduce((acc, x)=> (x && !x.day_off ? acc + SHIFT_PAID_MIN : acc), 0);
+    }
 
-    // ===== VIEWS
+    function isBhTrue(bh){
+      if(!bh) return false;
+      // suporte a variações do backend
+      return bh.is_bh === true || bh.is_bank_holiday === true || bh.isBH === true;
+    }
+
+    // premium multiplier only if worked; if both apply, do NOT stack -> use max(1.5, 1.5)=1.5
+    async function dayMultiplierIfWorked(work_date_ymd){
+      const dt = ymdToDateObj(work_date_ymd);
+      const isSunday = dt.getDay() === 0;
+
+      let bh = null;
+      try { bh = await bhLookup(work_date_ymd); } catch { bh = null; }
+      const isBH = isBhTrue(bh);
+
+      const mSun = isSunday ? SUNDAY_MULTIPLIER : 1;
+      const mBh  = isBH ? BH_MULTIPLIER : 1;
+      return Math.max(1, mSun, mBh);
+    }
+
+    async function expectedPayFromDays(days, hourlyRate){
+      const rate = Number(hourlyRate || 0);
+      if(!rate) return 0;
+
+      let total = 0;
+      for(const day of (days || [])){
+        if(!day || day.day_off) continue;
+
+        const base = (SHIFT_PAID_MIN / 60) * rate;
+        const mult = await dayMultiplierIfWorked(day.work_date);
+        total += base * mult;
+      }
+      return total;
+    }
+
+    // ===== Views
     const viewList = $("viewList");
     const viewDetail = $("viewDetail");
     const viewWizard = $("viewWizard");
 
-    function hideAll(){
-      hide(viewList); hide(viewDetail); hide(viewWizard);
-    }
+    function hideAll(){ hide(viewList); hide(viewDetail); hide(viewWizard); }
     function enterList(){
       hideAll(); show(viewList);
       $("subTitle").textContent = "Weekly schedule";
@@ -564,20 +610,19 @@
       $("subTitle").textContent = "Weekly schedule";
       history.replaceState({}, "", `/roster?id=${encodeURIComponent(rosterId)}`);
     }
-
     function getQueryRosterId(){
       const p = new URLSearchParams(location.search);
       const id = p.get("id");
       return id ? Number(id) : null;
     }
 
-    // ===== STATE
+    // ===== State
     const dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
     let wizardIndex = 0;
     let wizardDays = ["", "", "", "", "", "", ""];
     let hourlyRate = 0;
 
-    const rosterCache = new Map(); // id -> detail
+    const rosterCache = new Map();
     let currentRosterId = null;
 
     function codeToLabel(code){
@@ -585,22 +630,21 @@
       if(code==="B") return "10:45 → 20:00";
       return "OFF";
     }
-    function expectedMinutesFromCodes(codes){
-      return (codes||[]).reduce((acc,c)=> (c==="A"||c==="B") ? (acc+SHIFT_PAID_MIN) : acc, 0);
-    }
 
-    // ===== WIZARD
-    function resetWizard() {
+    // ===== Wizard
+    function resetWizard(){
       wizardIndex = 0;
       wizardDays = ["", "", "", "", "", "", ""];
+
       $("wkNumber").value = String(isoWeekNumber(new Date()));
-      $("startDate").value = mondayOfThisWeek(new Date());
+      $("startDate").value = sundayOfThisWeek(new Date());
+
       $("wizardErr").textContent = "";
       renderWizardDay();
-      renderPreview();
+      renderPreview(); // async
     }
 
-    function renderWizardDay() {
+    function renderWizardDay(){
       $("dayTitle").textContent = dayNames[wizardIndex];
       const start = ($("startDate").value || "").trim();
       $("dayDate").textContent = start ? ymdAddDays(start, wizardIndex) : "";
@@ -615,7 +659,7 @@
       if(c==="OFF") $("btnOFF").classList.add("active");
     }
 
-    function renderPreview(){
+    async function renderPreview(){
       const start = ($("startDate").value || "").trim();
       const preview = $("rosterPreview");
       const list = $("rpList");
@@ -633,36 +677,45 @@
       show(preview);
       list.innerHTML = "";
 
-      const mins = expectedMinutesFromCodes(picked.map(x=>x.c));
-      const hhmm = fmtHHMMFromMinutes(mins);
-      const pay = (mins/60) * Number(hourlyRate||0);
-      totals.textContent = `So far: ${hhmm} • ${fmtEUR(pay)}`;
+      let totalMinutes = 0;
+      let totalPay = 0;
 
       for(const item of picked){
-        const ymd = ymdAddDays(start, item.i);
-        const dt = ymdToDateObj(ymd);
+        const workYmd = ymdAddDays(start, item.i);
+        const dt = ymdToDateObj(workYmd);
+        const isOff = item.c === "OFF";
+
+        let mult = 1;
+        if(!isOff){
+          totalMinutes += SHIFT_PAID_MIN;
+          mult = await dayMultiplierIfWorked(workYmd);
+          const base = (SHIFT_PAID_MIN/60) * Number(hourlyRate||0);
+          totalPay += base * mult;
+        }
 
         const row = document.createElement("div");
         row.className = "rpRow";
         row.innerHTML = `
           <div class="left">
-            <div class="d1">${weekdayShort(dt)} • ${ymd}</div>
-            <div class="d2">${item.c==="OFF" ? "Day off" : "Shift selected"}</div>
+            <div class="d1">${weekdayShort(dt)} • ${workYmd}</div>
+            <div class="d2">${isOff ? "Day off" : (mult>1 ? `Shift (x${mult.toFixed(1)})` : "Shift")}</div>
           </div>
           <div class="right">${codeToLabel(item.c)}</div>
         `;
         list.appendChild(row);
       }
+
+      totals.textContent = `So far: ${fmtHHMMFromMinutes(totalMinutes)} • ${fmtEUR(totalPay)}`;
     }
 
-    function pick(code) {
+    function pick(code){
       $("wizardErr").textContent = "";
       wizardDays[wizardIndex] = code;
 
       renderWizardDay();
-      renderPreview();
+      renderPreview(); // async (fire and forget ok)
 
-      if (wizardIndex < 6) {
+      if(wizardIndex < 6){
         wizardIndex += 1;
         renderWizardDay();
         return;
@@ -670,22 +723,22 @@
       $("wizardErr").textContent = "All days selected. Click “Save week”.";
     }
 
-    async function saveWizard() {
+    async function saveWizard(){
       $("wizardErr").textContent = "";
 
       const week_number = Number($("wkNumber").value || 0);
       const start_date = ($("startDate").value || "").trim();
 
-      if (!week_number || !start_date) {
+      if(!week_number || !start_date){
         $("wizardErr").textContent = "Fill week number and start date.";
         return;
       }
-      if (wizardDays.some(x => !x)) {
+      if(wizardDays.some(x => !x)){
         $("wizardErr").textContent = "You must pick all days (Sun..Sat).";
         return;
       }
 
-      try {
+      try{
         await api("/api/roster", {
           method: "POST",
           body: JSON.stringify({ week_number, start_date, days: wizardDays })
@@ -693,21 +746,23 @@
 
         enterList();
         await loadList();
-      } catch (e) {
+      }catch(e){
         $("wizardErr").textContent = e.message || "Failed to save";
-        if (e.status === 401) location.href = "/";
+        if(e.status === 401) location.href = "/";
       }
     }
 
-    // ===== LIST
-    async function loadHourlyRate(){
-      hourlyRate = 0;
-      try{
-        const weeks = await api("/api/weeks");
-        hourlyRate = (weeks && weeks.length) ? Number(weeks[0].hourly_rate || 0) : 0;
-      }catch{}
-      $("rateHint").textContent = `Hourly rate: ${hourlyRate ? fmtEUR(hourlyRate) + " / hour" : "—"}`;
-    }
+    // ===== List
+   async function loadHourlyRate(){
+  hourlyRate = 0;
+  try{
+    const me = await api("/api/me");
+    hourlyRate = Number(me.hourly_rate || 0);
+  }catch{}
+  $("rateHint").textContent = `Hourly rate: ${hourlyRate ? fmtEUR(hourlyRate) + " / hour" : "—"}`;
+}
+
+
 
     async function fetchRosterDetail(id){
       if(rosterCache.has(id)) return rosterCache.get(id);
@@ -716,21 +771,20 @@
       return d;
     }
 
-    async function loadList() {
+    async function loadList(){
       $("list").innerHTML = "";
       $("listErr").textContent = "";
       $("listMsg").textContent = "Loading...";
 
-      try {
+      try{
         const rows = await api("/api/roster");
-        if (!rows || !rows.length) {
+        if(!rows || !rows.length){
           $("listMsg").textContent = "No roster weeks yet. Click “Add week”.";
           return;
         }
-
         $("listMsg").textContent = "";
 
-        for (const r of rows) {
+        for(const r of rows){
           const item = document.createElement("div");
           item.className = "weekItem";
           item.innerHTML = `
@@ -753,34 +807,32 @@
           $("list").appendChild(item);
 
           (async () => {
-            try {
+            try{
               const d = await fetchRosterDetail(r.id);
               const mins = expectedMinutesFromDays(d.days);
-              const hhmm = fmtHHMMFromMinutes(mins);
-              const pay = (mins/60) * Number(hourlyRate||0);
+              const pay = await expectedPayFromDays(d.days, hourlyRate);
 
-              item.querySelector(".hhmm").textContent = hhmm;
+              item.querySelector(".hhmm").textContent = fmtHHMMFromMinutes(mins);
               item.querySelector(".eur").textContent = fmtEUR(pay);
-            } catch {}
+            }catch{}
           })();
         }
-      } catch (e) {
+      }catch(e){
         $("listMsg").textContent = "";
         $("listErr").textContent = "Error: " + (e.message || "failed");
-        if (e.status === 401) location.href = "/";
+        if(e.status === 401) location.href = "/";
       }
     }
 
-    // ===== DETAIL
-    function setDetailHeader(d){
+    // ===== Detail header (hours unchanged; pay with premium)
+    async function setDetailHeader(d){
       $("detailTitle").textContent = `Week ${d.week_number}`;
       $("detailSub").textContent = `Start: ${d.start_date}`;
 
       const mins = expectedMinutesFromDays(d.days);
-      const hhmm = fmtHHMMFromMinutes(mins);
-      const pay = (mins/60) * Number(hourlyRate||0);
+      const pay = await expectedPayFromDays(d.days, hourlyRate);
 
-      $("pillExpectedHours").textContent = `Expected: ${hhmm}`;
+      $("pillExpectedHours").textContent = `Expected: ${fmtHHMMFromMinutes(mins)}`;
       $("pillExpectedPay").textContent = `Pay: ${fmtEUR(pay)}`;
     }
 
@@ -797,33 +849,37 @@
         const d = await api("/api/roster/" + rosterId);
         rosterCache.set(rosterId, d);
 
-        setDetailHeader(d);
+        await setDetailHeader(d);
 
         const grid = $("detailGrid");
         grid.innerHTML = "";
 
-        for (const x of (d.days || [])){
+        for(const x of (d.days || [])){
           const dt = ymdToDateObj(x.work_date);
           const isOff = !!x.day_off;
           const shift = isOff ? "OFF" : (x.shift_in + " → " + x.shift_out);
 
-          // Bank Holiday lookup (safe)
+          // BH lookup
           let bh = null;
           try { bh = await bhLookup(x.work_date); } catch { bh = null; }
-
-          // endpoint returns: {is_bh: true/false, name: "...", paid: bool}
-          const isBH = !!(bh && (bh.is_bh === true));
+          const isBH = isBhTrue(bh);
           const bhName = isBH ? (bh.name || "") : "";
           const isPaid = isBH ? !!bh.paid : false;
 
+          // premium badge x1.5 only if worked (Sunday OR BH)
+          let premiumMult = 1;
+          if(!isOff){
+            premiumMult = await dayMultiplierIfWorked(x.work_date);
+          }
+
           const card = document.createElement("div");
           card.className = "dayCard";
-
           card.innerHTML = `
             <div class="w">
               ${weekdayShort(dt)}
               ${isOff ? `<span class="badgeOff">OFF</span>` : ""}
               ${isBH ? `<span class="badgeBH" title="${bhName}">BH</span>` : ""}
+              ${(!isOff && premiumMult > 1) ? `<span class="badgePremium">x${premiumMult.toFixed(1)}</span>` : ""}
               ${isBH ? (isPaid ? `<span class="badgePaid">Paid</span>` : `<span class="badgeNotPaid">Not Paid</span>`) : ""}
             </div>
             <div class="d">${x.work_date}${isBH && bhName ? ` • ${bhName}` : ""}</div>
@@ -833,14 +889,13 @@
           card.addEventListener("click", () => openEditDayModal(rosterId, x.work_date, dayToCode(x)));
           grid.appendChild(card);
         }
-
-      } catch(e){
+      }catch(e){
         $("detailErr").textContent = e.message || "Failed to load roster";
-        if (e.status === 401) location.href = "/";
+        if(e.status === 401) location.href = "/";
       }
     }
 
-    // ===== EDIT MODAL
+    // ===== Edit modal
     let editState = { rosterId:null, workDate:null, code:null };
 
     function setEditActive(code){
@@ -897,11 +952,11 @@
         await loadList();
       }catch(e){
         $("modalErr").textContent = e.message || "Failed to save";
-        if (e.status === 401) location.href = "/";
+        if(e.status === 401) location.href = "/";
       }
     }
 
-    // ===== binds
+    // ===== Binds
     $("btnHome").addEventListener("click", () => location.href = "/");
     $("btnBack").addEventListener("click", () => history.length > 1 ? history.back() : (location.href = "/"));
 
@@ -911,7 +966,6 @@
     $("btnA").addEventListener("click", () => pick("A"));
     $("btnB").addEventListener("click", () => pick("B"));
     $("btnOFF").addEventListener("click", () => pick("OFF"));
-
     $("btnSave").addEventListener("click", saveWizard);
 
     $("startDate").addEventListener("change", () => {
@@ -919,26 +973,24 @@
       wizardDays = ["", "", "", "", "", "", ""];
       $("wizardErr").textContent = "";
       renderWizardDay();
-      renderPreview();
+      renderPreview(); // async
     });
 
     $("btnEditBack").addEventListener("click", async () => { enterList(); await loadList(); });
 
-    // modal
+    // modal binds
     $("btnCloseModal").addEventListener("click", closeEditModal);
     $("editModalBackdrop").addEventListener("click", (e) => {
       if(e.target === $("editModalBackdrop")) closeEditModal();
     });
-
     $("editA").addEventListener("click", () => { editState.code = "A"; setEditActive("A"); });
     $("editB").addEventListener("click", () => { editState.code = "B"; setEditActive("B"); });
     $("editOFF").addEventListener("click", () => { editState.code = "OFF"; setEditActive("OFF"); });
-
     $("btnSaveDay").addEventListener("click", saveEditDay);
 
     // ===== init
-    (async function init() {
-      try {
+    (async function init(){
+      try{
         await api("/api/me");
         await loadHourlyRate();
         await loadList();
@@ -951,7 +1003,7 @@
         }else{
           enterList();
         }
-      } catch {
+      }catch{
         location.href = "/";
       }
     })();
