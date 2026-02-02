@@ -1,118 +1,29 @@
 /* =========================
-   Work Hours Tracker - app.js (v14)
-   FIXES:
-   ✅ Removes stray debug PATCH that was breaking /roster
-   ✅ Fixes undefined rosterId reference
-   ✅ Adds missing doClockBreak()
-   ✅ Keeps overtime prompt flow (DAY OFF + tolerance)
-   ✅ Keeps: Login, Home, Add-week, Roster page
+   Work Hours Tracker - app.js (v15)
+   CLEAN + STABLE BUILD (single file)
+   - Single init
+   - No duplicate declarations
+   - Works across pages: /, /add-week, /roster, /holidays, /report, /profile
+   - Premium (Sunday/BH) cached + roster expected pay uses premium per day
+   - Break countdown UI (localStorage) + vibrate when finished
+   - Overtime prompt Yes/No handled (extra-confirm)
 ========================= */
 
 console.log("app.js loaded ✅");
 
+/* =========================
+   Small DOM helpers
+========================= */
 const $ = (id) => document.getElementById(id);
 const show = (el) => el && el.classList.remove("hidden");
 const hide = (el) => el && el.classList.add("hidden");
 
-/* =====================================================
-   Navigation – Home cards / buttons
-   Bank Holidays
-===================================================== */
-
-document.addEventListener("DOMContentLoaded", () => {
-  // Procura qualquer elemento que tenha data-route
-  document.querySelectorAll("[data-route]").forEach((el) => {
-    el.addEventListener("click", () => {
-      const route = el.getAttribute("data-route");
-      if (route) {
-        window.location.href = route;
-      }
-    });
-  });
-
-  // Botão direto (caso exista)
-  const btnHolidays = document.getElementById("btnHolidays");
-  if (btnHolidays) {
-    btnHolidays.addEventListener("click", () => {
-      window.location.href = "/holidays";
-    });
-  }
-});
+function go(path) { window.location.href = path; }
+function pathIs(p) { return window.location.pathname === p; }
 
 /* =========================
-   Utils
+   API + format
 ========================= */
-
-const BH_MULTIPLIER = 1.5;
-
-function calcDayPay({ day, hourlyRate, isBH }) {
-  if (day.day_off) return 0;
-
-  const hours = SHIFT_PAID_MIN / 60;
-
-  return hours * hourlyRate * (isBH ? BH_MULTIPLIER : 1);
-}
-
-
-function isoWeekNumber(d = new Date()) {
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const dayNum = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
-}
-
-function weekStartMondayISO(d = new Date()) {
-  const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const day = date.getDay() || 7; // Sun=0 -> 7
-  date.setDate(date.getDate() - (day - 1)); // back to Monday
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function getSavedRate() {
-  const v = Number(localStorage.getItem("hourly_rate") || 0);
-  return v > 0 ? v : 18.24; // default
-}
-
-function saveRate(rate) {
-  const v = Number(rate || 0);
-  if (v > 0) localStorage.setItem("hourly_rate", String(v));
-}
-
-// cria week se não existir
-async function ensureWeekExistsForClock() {
-  const c = await api("/api/clock/today");
-  if (c?.has_week) return c;
-
-  const payload = {
-    week_number: isoWeekNumber(new Date()),
-    start_date: weekStartMondayISO(new Date()),
-    hourly_rate: getSavedRate(),
-  };
-
-  // endpoint esperado (mesmo usado pelo Add Week page)
-  const created = await api("/api/weeks", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  // depois de criar, pega o clock de novo
-  return await api("/api/clock/today");
-}
-
-function fmtEUR(n) {
-  const v = Number(n || 0);
-  try {
-    return v.toLocaleString(undefined, { style: "currency", currency: "EUR" });
-  } catch {
-    return `€${v.toFixed(2)}`;
-  }
-}
-
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     credentials: "include",
@@ -125,11 +36,9 @@ async function api(path, opts = {}) {
 
   if (!res.ok) {
     const msg =
-      data && data.detail
-        ? data.detail
-        : typeof data === "string"
-        ? data
-        : "Request failed";
+      data && data.detail ? data.detail :
+      typeof data === "string" ? data :
+      "Request failed";
     const err = new Error(msg);
     err.status = res.status;
     throw err;
@@ -137,12 +46,18 @@ async function api(path, opts = {}) {
   return data;
 }
 
-function hhmmToMinutes(hhmm) {
-  if (!hhmm || typeof hhmm !== "string" || !hhmm.includes(":")) return 0;
-  const [h, m] = hhmm.split(":").map((x) => parseInt(x, 10));
-  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+function fmtEUR(n) {
+  const v = Number(n || 0);
+  try {
+    return v.toLocaleString(undefined, { style: "currency", currency: "EUR" });
+  } catch {
+    return `€${v.toFixed(2)}`;
+  }
 }
 
+/* =========================
+   Date helpers
+========================= */
 function todayYMD() {
   const t = new Date();
   const y = t.getFullYear();
@@ -150,6 +65,17 @@ function todayYMD() {
   const d = String(t.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
+function ymdFromDate(dt) {
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const d = String(dt.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+function ymdToDateObj(ymd) {
+  const [y, m, d] = String(ymd || "").split("-").map(Number);
+  return new Date(y || 1970, (m || 1) - 1, d || 1);
+}
+function isSunday(dt) { return dt.getDay() === 0; }
 
 function isoWeekNumber(d = new Date()) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -158,57 +84,153 @@ function isoWeekNumber(d = new Date()) {
   const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
   return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
 }
-
 function mondayOfThisWeek(d = new Date()) {
   const x = new Date(d);
   const day = x.getDay(); // 0 Sun .. 6 Sat
-  const diff = day === 0 ? -6 : 1 - day; // go back to Monday
+  const diff = day === 0 ? -6 : 1 - day; // back to Monday
   x.setDate(x.getDate() + diff);
   const y = x.getFullYear();
   const m = String(x.getMonth() + 1).padStart(2, "0");
   const dd = String(x.getDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
 }
+function weekStartMondayISO(d = new Date()) { return mondayOfThisWeek(d); }
 
-function go(path) {
-  window.location.href = path;
+function hhmmToMinutes(hhmm) {
+  if (!hhmm || typeof hhmm !== "string" || !hhmm.includes(":")) return 0;
+  const [h, m] = hhmm.split(":").map((x) => parseInt(x, 10));
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+}
+function minutesToHHMM(mins) {
+  const m = Math.max(0, Math.floor(Number(mins || 0)));
+  const hh = String(Math.floor(m / 60)).padStart(2, "0");
+  const mm = String(m % 60).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
-function pathIs(p) {
-  return window.location.pathname === p;
-}
-
-/* ===== date helpers for roster ===== */
+/* ===== roster date helpers ===== */
 function ymdAddDays(ymd, add) {
   if (!ymd) return "";
-  const [y, m, d] = ymd.split("-").map(Number);
-  const dt = new Date(y, (m || 1) - 1, d || 1);
+  const [y, m, d] = String(ymd).split("-").map(Number);
+  const dt = new Date(y || 1970, (m || 1) - 1, d || 1);
   dt.setDate(dt.getDate() + Number(add || 0));
   const yy = dt.getFullYear();
   const mm = String(dt.getMonth() + 1).padStart(2, "0");
   const dd = String(dt.getDate()).padStart(2, "0");
   return `${yy}-${mm}-${dd}`;
 }
-
 function weekdayShort(dt) {
   return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dt.getDay()];
 }
-function ymdToDateObj(ymd) {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(y, (m || 1) - 1, d || 1);
+
+/* =========================
+   Bank Holiday lookup (cached)
+========================= */
+const bhCache = new Map();
+async function bhLookup(dateYmd) {
+  if (!dateYmd) return null;
+  if (bhCache.has(dateYmd)) return bhCache.get(dateYmd);
+  const r = await api(`/api/bank-holidays/lookup?date_ymd=${encodeURIComponent(dateYmd)}`);
+  bhCache.set(dateYmd, r);
+  return r;
 }
-function codeToLabel(code) {
-  if (code === "A") return "09:45 → 19:00";
-  if (code === "B") return "10:45 → 20:00";
-  return "OFF";
+function isBhTrue(bh) {
+  if (!bh) return false;
+  return bh.is_bh === true || bh.is_bank_holiday === true || bh.isBH === true;
+}
+
+/* =========================
+   Rate storage + auto-week
+========================= */
+function getSavedRate() {
+  const v = Number(localStorage.getItem("hourly_rate") || 0);
+  return v > 0 ? v : 18.24;
+}
+function saveRate(rate) {
+  const v = Number(rate || 0);
+  if (v > 0) localStorage.setItem("hourly_rate", String(v));
+}
+
+async function ensureWeekExistsForClock() {
+  const c = await api("/api/clock/today");
+  if (c?.has_week) return c;
+
+  const payload = {
+    week_number: isoWeekNumber(new Date()),
+    start_date: weekStartMondayISO(new Date()),
+    hourly_rate: getSavedRate(),
+  };
+
+  await api("/api/weeks", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  return await api("/api/clock/today");
+}
+
+/* =========================
+   Premium rules (Sunday/BH)
+========================= */
+window.SUN_MULTIPLIER = window.SUN_MULTIPLIER ?? 1.5;
+window.BH_MULTIPLIER  = window.BH_MULTIPLIER  ?? 1.5;
+window.TODAY_MULT     = window.TODAY_MULT     ?? 1;
+
+let _todayMultCache = { ymd: null, value: 1 };
+
+async function refreshTodayMultiplier() {
+  const SUN_MULT = Number(window.SUN_MULTIPLIER ?? 1.5);
+  const BH_MULT  = Number(window.BH_MULTIPLIER  ?? 1.5);
+
+  const now = new Date();
+  const ymd = ymdFromDate(now);
+
+  if (_todayMultCache.ymd === ymd) {
+    window.TODAY_MULT = _todayMultCache.value || 1;
+    return window.TODAY_MULT;
+  }
+
+  let mult = 1;
+
+  if (isSunday(now)) mult = Math.max(mult, SUN_MULT);
+
+  try {
+    const bh = await bhLookup(ymd);
+    if (isBhTrue(bh)) mult = Math.max(mult, BH_MULT);
+  } catch {}
+
+  _todayMultCache = { ymd, value: mult };
+  window.TODAY_MULT = mult;
+  return mult;
+}
+
+async function premiumMultiplierForYmd(ymd) {
+  const SUN_MULT = Number(window.SUN_MULTIPLIER ?? 1.5);
+  const BH_MULT  = Number(window.BH_MULTIPLIER  ?? 1.5);
+
+  const dt = ymdToDateObj(ymd);
+  let mult = 1;
+
+  if (dt.getDay() === 0) mult = Math.max(mult, SUN_MULT);
+
+  try {
+    const bh = await bhLookup(ymd);
+    if (isBhTrue(bh)) mult = Math.max(mult, BH_MULT);
+  } catch {}
+
+  return mult;
 }
 
 /* =========================
    Views (index.html only)
 ========================= */
-const viewLogin = $("viewLogin");
-const viewHome = $("viewHome");
+const viewLogin   = $("viewLogin");
+const viewHome    = $("viewHome");
 const viewAddWeek = $("viewAddWeek");
+
+function hasIndexViews() {
+  return !!(viewLogin || viewHome || viewAddWeek);
+}
 
 function hideAllViews() {
   hide(viewLogin);
@@ -219,27 +241,27 @@ function hideAllViews() {
 /* =========================
    Login UI
 ========================= */
-const loginForm = $("loginForm");
-const loginEmail = $("loginEmail");
+const loginForm     = $("loginForm");
+const loginEmail    = $("loginEmail");
 const loginPassword = $("loginPassword");
 const loginRemember = $("loginRemember");
-const loginMsg = $("loginMsg");
+const loginMsg      = $("loginMsg");
 
 const signupForm = $("signupForm");
-const suFirst = $("suFirst");
-const suLast = $("suLast");
-const suEmail = $("suEmail");
+const suFirst    = $("suFirst");
+const suLast     = $("suLast");
+const suEmail    = $("suEmail");
 const suPassword = $("suPassword");
-const signupMsg = $("signupMsg");
+const signupMsg  = $("signupMsg");
 
-const btnForgot = $("btnForgot");
-const forgotPanel = $("forgotPanel");
-const forgotEmail = $("forgotEmail");
-const btnSendReset = $("btnSendReset");
-const forgotMsg = $("forgotMsg");
+const btnForgot     = $("btnForgot");
+const forgotPanel   = $("forgotPanel");
+const forgotEmail   = $("forgotEmail");
+const btnSendReset  = $("btnSendReset");
+const forgotMsg     = $("forgotMsg");
 
 const btnShowSignup = $("btnShowSignup");
-const btnShowLogin = $("btnShowLogin");
+const btnShowLogin  = $("btnShowLogin");
 
 function clearAuthMsgs() {
   if (loginMsg) loginMsg.textContent = "";
@@ -247,21 +269,18 @@ function clearAuthMsgs() {
   if (forgotMsg) forgotMsg.textContent = "";
   if (forgotMsg) forgotMsg.style.color = "";
 }
-
 function showLogin() {
   show(loginForm);
   hide(signupForm);
   hide(forgotPanel);
   clearAuthMsgs();
 }
-
 function showSignup() {
   hide(loginForm);
   show(signupForm);
   hide(forgotPanel);
   clearAuthMsgs();
 }
-
 function toggleForgot() {
   if (!forgotPanel) return;
   forgotPanel.classList.toggle("hidden");
@@ -275,36 +294,30 @@ function toggleForgot() {
 const welcomeName = $("welcomeName");
 const btnLogout = $("btnLogout");
 const btnOpenProfile = $("btnOpenProfile");
-
-
-
 const btnAddWeek = $("btnAddWeek");
 
-// Current week
+const cwWeekNo = $("cwWeekNo");
 const cwHHMM = $("cwHHMM");
-const cwPay = $("cwPay");
-const btnIn = $("btnIn");
-const btnOut = $("btnOut");
+const cwPay  = $("cwPay");
+
+const btnIn    = $("btnIn");
+const btnOut   = $("btnOut");
 const btnBreak = $("btnBreak");
+
 const cwIn = $("cwIn");
 const cwOut = $("cwOut");
 const cwBreak = $("cwBreak");
 const cwStatusText = $("cwStatusText");
 
-
-// Bank holidays
-
 const bhPaid = $("bhPaid");
 const bhRemain = $("bhRemain");
 
-// Cards click
 const cardHolidays = $("cardHolidays");
-const cardReports = $("cardReports");
+const cardReports  = $("cardReports");
 
-// Nav
-const navHome = $("navHome");
+const navHome    = $("navHome");
 const navHistory = $("navHistory");
-const navHolidays = $("navHolidays");
+const navHolidays= $("navHolidays");
 const navReports = $("navReports");
 const navProfile = $("navProfile");
 
@@ -314,7 +327,7 @@ const navProfile = $("navProfile");
 const btnBackAddWeek = $("btnBackAddWeek");
 const addWeekForm = $("addWeekForm");
 const awWeekNumber = $("awWeekNumber");
-const awStartDate = $("awStartDate");
+const awStartDate  = $("awStartDate");
 const awHourlyRate = $("awHourlyRate");
 const addWeekMsg = $("addWeekMsg");
 
@@ -324,6 +337,8 @@ const addWeekMsg = $("addWeekMsg");
 let UI_DAY = todayYMD();
 let CURRENT_WEEK_ID = null;
 let CLOCK = null;
+let LAST_DASH = null;
+let ME = null;
 
 /* =========================
    Break countdown (UI)
@@ -332,13 +347,11 @@ let breakTick = null;
 let breakRemaining = 0;
 let breakRunningUI = false;
 
-const BREAK_DEFAULT_SEC = 60 * 60; // 60 minutes
+const BREAK_DEFAULT_SEC = 60 * 60;
 const LS_BREAK_END = "wh_break_end_epoch";
 const LS_BREAK_DAY = "wh_break_day";
 
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
+function pad2(n) { return String(n).padStart(2, "0"); }
 function fmtMMSS(totalSec) {
   const sec = Math.max(0, Math.floor(totalSec));
   const m = Math.floor(sec / 60);
@@ -362,27 +375,18 @@ function clearBreakStorage() {
 function stopBreakCountdown(vibrate = false) {
   if (breakTick) clearInterval(breakTick);
   breakTick = null;
-
   breakRunningUI = false;
   breakRemaining = 0;
 
   clearBreakStorage();
   setBreakButtonRunning(false);
 
-  if (cwBreak && CLOCK) {
-    cwBreak.textContent = `${Number(CLOCK.break_minutes || 0)}m`;
-  }
-
-  if (vibrate && "vibrate" in navigator) {
-    navigator.vibrate([200, 100, 200]);
-  }
+  if (cwBreak && CLOCK) cwBreak.textContent = `${Number(CLOCK.break_minutes || 0)}m`;
+  if (vibrate && "vibrate" in navigator) navigator.vibrate([200, 100, 200]);
 }
 function tickBreakCountdown() {
   const endEpoch = Number(localStorage.getItem(LS_BREAK_END) || "0");
-  if (!endEpoch) {
-    stopBreakCountdown(false);
-    return;
-  }
+  if (!endEpoch) { stopBreakCountdown(false); return; }
 
   const leftSec = Math.ceil((endEpoch - Date.now()) / 1000);
   breakRemaining = leftSec;
@@ -391,9 +395,7 @@ function tickBreakCountdown() {
 
   if (leftSec <= 0) {
     stopBreakCountdown(true);
-    api("/api/clock/break", { method: "POST" })
-      .then(() => refreshAll())
-      .catch(() => {});
+    api("/api/clock/break", { method: "POST" }).then(() => refreshAll()).catch(() => {});
   }
 }
 function startBreakCountdown(seconds = BREAK_DEFAULT_SEC) {
@@ -436,32 +438,37 @@ function watchDayChange() {
   if (now !== UI_DAY) {
     UI_DAY = now;
     resetTodayVisual();
+    _todayMultCache = { ymd: null, value: 1 };
     refreshAll().catch(() => {});
-    refreshTodayPay().catch(() => {});
   }
 }
 
 /* =========================
-   Auth entry
+   Auth entry / routing (index only)
 ========================= */
 async function enterLogin() {
+  if (!hasIndexViews()) return;
   hideAllViews();
   show(viewLogin);
   showLogin();
 }
-
 async function enterHome() {
+  if (!hasIndexViews()) return;
+
   hideAllViews();
   show(viewHome);
 
-  const me = await api("/api/me");
-  const full = `${me.first_name || ""} ${me.last_name || ""}`.trim() || "User";
+  ME = await api("/api/me");
+  const full = `${ME.first_name || ""} ${ME.last_name || ""}`.trim() || "User";
   if (welcomeName) welcomeName.textContent = full;
 
   await refreshAll();
   resumeBreakCountdownIfAny();
 }
 
+/* =========================
+   Login actions
+========================= */
 async function doLogin(ev) {
   ev.preventDefault();
   clearAuthMsgs();
@@ -480,7 +487,6 @@ async function doLogin(ev) {
     if (loginMsg) loginMsg.textContent = e.message || "Login failed";
   }
 }
-
 async function doSignup(ev) {
   ev.preventDefault();
   clearAuthMsgs();
@@ -500,17 +506,11 @@ async function doSignup(ev) {
     if (signupMsg) signupMsg.textContent = e.message || "Sign up failed";
   }
 }
-
 async function doLogout() {
-  try {
-    await api("/api/logout", { method: "POST" });
-  } catch {}
+  try { await api("/api/logout", { method: "POST" }); } catch {}
+  ME = null;
   await enterLogin();
 }
-
-/* =========================
-   Forgot / reset (dev mode)
-========================= */
 async function sendReset() {
   clearAuthMsgs();
 
@@ -537,51 +537,34 @@ async function sendReset() {
 }
 
 /* =========================
-   Dashboard / Clock
+   Dashboard / Clock + live ticker
 ========================= */
-
-
-// NÃO redeclara: já existe em outro lugar
-// let CLOCK = null;
-// let CURRENT_WEEK_ID = null;
-
-let CURRENT_RATE = 0;
-let todayTicker = null;
-let LAST_DASH = null;
-
-let LIVE_TIMER = null;     // interval do “today earnings”
-let LIVE_LAST_TS = 0;      // evita recalcular 1000x
-
-
+let LIVE_TIMER = null;
+let LIVE_LAST_TS = 0;
 
 function stopLiveTicker() {
   if (LIVE_TIMER) clearInterval(LIVE_TIMER);
   LIVE_TIMER = null;
 }
-
 function startLiveTicker() {
   stopLiveTicker();
   LIVE_TIMER = setInterval(() => {
-    // só recalcula se faz sentido
     if (!CLOCK?.has_week) return;
-    updateTodayEarningsUI();
-  }, 1000);
-}
 
-function hhmmToMinutes(hhmm) {
-  if (!hhmm || !String(hhmm).includes(":")) return 0;
-  const [h, m] = String(hhmm).split(":").map(Number);
-  return (Number(h) || 0) * 60 + (Number(m) || 0);
+    const now = Date.now();
+    if (now - LIVE_LAST_TS < 900) return;
+    LIVE_LAST_TS = now;
+
+    updateTodayEarningsUI();
+  }, 250);
 }
 
 function updateTodayEarningsUI() {
-  const tHHMM = document.getElementById("todayEarnHHMM");
-  const tPAY  = document.getElementById("todayEarnPay");
-  const tSTATE = document.getElementById("todayEarnState");
-
+  const tHHMM = $("todayEarnHHMM");
+  const tPAY  = $("todayEarnPay");
+  const tSTATE = $("todayEarnState");
   if (!tHHMM || !tPAY) return;
 
-  // se não tem week ou não deu IN ainda
   if (!CLOCK?.has_week || !CLOCK?.in_time) {
     tHHMM.textContent = "--:--";
     tPAY.textContent  = "€-.--";
@@ -590,7 +573,11 @@ function updateTodayEarningsUI() {
     return;
   }
 
-  const rate = Number(LAST_DASH?.this_week?.hourly_rate ?? 0);
+  const rate =
+    Number(ME?.hourly_rate ?? 0) ||
+    Number(LAST_DASH?.this_week?.hourly_rate ?? 0) ||
+    Number(getSavedRate() ?? 0);
+
   if (!Number.isFinite(rate) || rate <= 0) {
     tHHMM.textContent = "--:--";
     tPAY.textContent  = "€-.--";
@@ -599,13 +586,11 @@ function updateTodayEarningsUI() {
     return;
   }
 
-  // se está em break, congela (não sobe)
   if (CLOCK.break_running) {
     if (tSTATE) tSTATE.textContent = "BREAK";
     return;
   }
 
-  // se já deu OUT, congela no valor final e para interval
   if (CLOCK.out_time) {
     if (tSTATE) tSTATE.textContent = "DONE";
     stopLiveTicker();
@@ -613,7 +598,6 @@ function updateTodayEarningsUI() {
     if (tSTATE) tSTATE.textContent = "LIVE";
   }
 
-  // calcula minutos trabalhados (in -> now/out) - break_minutes acumulado
   const now = new Date();
   const [ih, im] = String(CLOCK.in_time).split(":").map(Number);
   const inDt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), ih || 0, im || 0, 0);
@@ -628,46 +612,10 @@ function updateTodayEarningsUI() {
   const br = Number(CLOCK.break_minutes || 0);
   workedMin = Math.max(0, workedMin - br);
 
-  const hh = String(Math.floor(workedMin / 60)).padStart(2, "0");
-  const mm = String(workedMin % 60).padStart(2, "0");
-  const eur = (workedMin / 60) * rate;
+  const eur = (workedMin / 60) * rate * Number(window.TODAY_MULT || 1);
 
-  tHHMM.textContent = `${hh}:${mm}`;
+  tHHMM.textContent = minutesToHHMM(workedMin);
   tPAY.textContent  = fmtEUR(eur);
-}
-
-async function refreshAll() {
-  // 1) Dashboard (week totals + BH totals)
-  const dash = await api("/api/dashboard");
-  LAST_DASH = dash;
-
-  // Current week label + totals
-  if (cwWeekNo) cwWeekNo.textContent = dash?.this_week?.week_number ? String(dash.this_week.week_number) : "--";
-  //if (cwHHMM) cwHHMM.textContent = dash?.this_week?.hhmm || "--:--";//
-  //if (cwPay)  cwPay.textContent  = fmtEUR(dash?.this_week?.pay_eur || 0);//
-
-  // Bank Holidays (Paid / Not Paid)
-  const paid = Number(dash?.bank_holidays?.paid ?? 0);
-  const remaining = Number(dash?.bank_holidays?.remaining ?? 0);
-
-  if (bhPaid)   bhPaid.textContent   = String(paid);
-  if (bhRemain) bhRemain.textContent = String(remaining);
-
-  // 2) Clock state (in/out/break)
-  await refreshClock();
-await refreshCurrentWeekTotals();
-
-// hoje earnings
-updateTodayEarningsUI();
-
-
-
-  // 3) Atualiza UI do Today earnings + inicia ticker se necessário
-  updateTodayEarningsUI();
-
-  // ticker só roda quando: tem IN, não tem OUT, e não está em break
-  if (CLOCK?.has_week && CLOCK?.in_time && !CLOCK?.out_time) startLiveTicker();
-  else stopLiveTicker();
 }
 
 async function refreshClock() {
@@ -702,7 +650,6 @@ async function refreshClock() {
       else if (!c.out_time) cwStatusText.textContent = "Tracking live…";
       else cwStatusText.textContent = "Done for today ✅";
     }
-
   } catch (e) {
     if (e.status === 401) await enterLogin();
     stopLiveTicker();
@@ -719,7 +666,6 @@ async function refreshCurrentWeekTotals() {
   try {
     const week = await api(`/api/weeks/${CURRENT_WEEK_ID}`);
 
-    // week number (se quiser garantir aqui também)
     if (cwWeekNo) cwWeekNo.textContent = week?.week_number ? String(week.week_number) : "--";
 
     const rate = Number(week?.hourly_rate || 0);
@@ -730,23 +676,67 @@ async function refreshCurrentWeekTotals() {
 
     for (const e of entries) {
       const mins = hhmmToMinutes(e.worked_hhmm);
-      const mult = Number(e.multiplier || 1.0);
       totalMin += mins;
+
+      let mult = Number(e.multiplier || 1);
+
+      let isSun = false;
+      if (e.work_date) {
+        const dt = ymdToDateObj(e.work_date);
+        isSun = dt.getDay() === 0;
+      } else {
+        isSun = String(e.weekday || "").toLowerCase().startsWith("sun");
+      }
+
+      let isBH = false;
+      if (e.work_date) {
+        try {
+          const bh = await bhLookup(e.work_date);
+          isBH = isBhTrue(bh);
+        } catch {}
+      }
+
+      const premium = (isSun || isBH) ? 1.5 : 1;
+      mult = Math.max(mult, premium);
+
       totalPay += (mins / 60) * rate * mult;
     }
 
-    const hh = String(Math.floor(totalMin / 60)).padStart(2, "0");
-    const mm = String(totalMin % 60).padStart(2, "0");
-
-    if (cwHHMM) cwHHMM.textContent = `${hh}:${mm}`;
+    if (cwHHMM) cwHHMM.textContent = minutesToHHMM(totalMin);
     if (cwPay)  cwPay.textContent  = fmtEUR(totalPay);
   } catch (e) {
-    // fallback: não quebra a UI
     if (cwHHMM) cwHHMM.textContent = "--:--";
     if (cwPay)  cwPay.textContent  = "€-.--";
+    if (e?.status === 401) await enterLogin();
   }
 }
 
+async function refreshAll() {
+  // Dashboard (safe even if some elements missing)
+  try {
+    const dash = await api("/api/dashboard");
+    LAST_DASH = dash;
+  } catch (e) {
+    if (e?.status === 401) { await enterLogin(); return; }
+  }
+
+  await refreshTodayMultiplier();
+
+  if (cwWeekNo) cwWeekNo.textContent = LAST_DASH?.this_week?.week_number ? String(LAST_DASH.this_week.week_number) : "--";
+
+  const paid = Number(LAST_DASH?.bank_holidays?.paid ?? 0);
+  const remaining = Number(LAST_DASH?.bank_holidays?.remaining ?? 0);
+  if (bhPaid)   bhPaid.textContent   = String(paid);
+  if (bhRemain) bhRemain.textContent = String(remaining);
+
+  await refreshClock();
+  await refreshCurrentWeekTotals();
+
+  updateTodayEarningsUI();
+
+  if (CLOCK?.has_week && CLOCK?.in_time && !CLOCK?.out_time && !CLOCK?.break_running) startLiveTicker();
+  else stopLiveTicker();
+}
 
 /* =========================
    Overtime prompt (Yes/No)
@@ -756,14 +746,12 @@ async function handleOvertimePrompt(resObj) {
   const kind = resObj.kind || "";
   const work_date = resObj.work_date || todayYMD();
 
-  let text = "";
-  if (reason === "DAY_OFF") {
-    text = "You are off today.\nOvertime Authorized? (Yes / No)";
-  } else {
-    text = "Overtime Authorized? (Yes / No)";
-  }
+  const text =
+    reason === "DAY_OFF"
+      ? "You are off today.\nOvertime Authorized? (Yes / No)"
+      : "Overtime Authorized? (Yes / No)";
 
-  const yes = window.confirm(text); // OK=Yes / Cancel=No
+  const yes = window.confirm(text);
 
   if (yes) {
     await api("/api/clock/extra-confirm", {
@@ -794,9 +782,7 @@ async function handleOvertimePrompt(resObj) {
 ========================= */
 async function doClockIn() {
   try {
-    // ✅ garante week criada automaticamente
     await ensureWeekExistsForClock();
-
     const r = await api("/api/clock/in", { method: "POST" });
 
     if (r?.needs_extra_confirm) {
@@ -810,7 +796,6 @@ async function doClockIn() {
     alert(e.message || "IN failed");
   }
 }
-
 
 async function doClockOut() {
   try {
@@ -828,17 +813,13 @@ async function doClockOut() {
   }
 }
 
-
 async function doClockBreak() {
   try {
     const r = await api("/api/clock/break", { method: "POST" });
 
-    // backend returns break_running true/false (+ break_minutes when stopping)
     if (r && r.break_running === true) {
-      // Start local countdown (60 min default)
       startBreakCountdown(BREAK_DEFAULT_SEC);
     } else {
-      // Stop local countdown, show minutes
       stopBreakCountdown(false);
       await refreshAll();
     }
@@ -853,6 +834,8 @@ async function doClockBreak() {
    Add week page (no modal)
 ========================= */
 function openAddWeekPage(defaultRate = 0) {
+  if (!hasIndexViews()) return;
+
   hideAllViews();
   show(viewAddWeek);
 
@@ -860,12 +843,14 @@ function openAddWeekPage(defaultRate = 0) {
 
   if (awWeekNumber) awWeekNumber.value = String(isoWeekNumber(new Date()));
   if (awStartDate) awStartDate.value = mondayOfThisWeek(new Date());
-  if (awHourlyRate) awHourlyRate.value = String(Number(defaultRate || 0).toFixed(2));
+
+  const r = Number(defaultRate || ME?.hourly_rate || getSavedRate() || 0);
+  if (awHourlyRate) awHourlyRate.value = String(r.toFixed(2));
 }
 
 function backFromAddWeek() {
   if (window.history.length > 1) window.history.back();
-  else window.location.href = "/";
+  else go("/");
 }
 
 async function createWeekFromPage(ev) {
@@ -877,52 +862,68 @@ async function createWeekFromPage(ev) {
     const start_date = (awStartDate?.value || "").trim();
     const hourly_rate = Number(awHourlyRate?.value || 0);
 
+    if (hourly_rate > 0) saveRate(hourly_rate);
+
     await api("/api/weeks", {
       method: "POST",
       body: JSON.stringify({ week_number, start_date, hourly_rate }),
     });
 
-    window.location.href = "/";
+    go("/");
   } catch (e) {
     if (addWeekMsg) addWeekMsg.textContent = e.message || "Failed to create week";
   }
 }
 
 /* =========================
-   ROSTER PAGE (/roster)
+   ROSTER (/roster)
 ========================= */
-let rosterHourlyRate = 0;
-let rosterPicked = []; // 7 codes
-let rosterStartDate = "";
-let rosterActiveDayIndex = 0;
+const R = (id) => document.getElementById(id);
 
-const SHIFT_PAID_MIN = 495; // 8h15 (495m) paid
+const SHIFT_PAID_MIN = 495; // 8h15 paid
 
-function R(id) {
-  return document.getElementById(id);
+function codeToLabel(code) {
+  if (code === "A") return "09:45 → 19:00";
+  if (code === "B") return "10:45 → 20:00";
+  return "OFF";
 }
-
 function rosterExpectedMinutesFromCodes(codes) {
   return (codes || []).reduce((acc, code) => {
     if (code === "A" || code === "B") return acc + SHIFT_PAID_MIN;
     return acc;
   }, 0);
 }
+async function rosterCalcExpectedPay(codes, startYmd, rate) {
+  let total = 0;
+  const r = Number(rate || 0);
 
-function rosterFmtHHMMFromMinutes(mins) {
-  const m = Math.max(0, Math.floor(Number(mins || 0)));
-  const hh = Math.floor(m / 60);
-  const mm = m % 60;
-  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+  for (let i = 0; i < (codes || []).length; i++) {
+    const code = codes[i];
+    if (code !== "A" && code !== "B") continue;
+
+    const ymd = ymdAddDays(startYmd, i);
+    const mult = await premiumMultiplierForYmd(ymd);
+    total += (SHIFT_PAID_MIN / 60) * r * mult;
+  }
+  return total;
 }
 
-function rosterRenderPreview() {
+// single roster state (safe)
+window.__WH_ROSTER = window.__WH_ROSTER || {
+  hourlyRate: 0,
+  picked: [],
+  startDate: "",
+  activeDayIndex: 0,
+};
+const ROSTER = window.__WH_ROSTER;
+
+async function rosterRenderPreview() {
   const box = R("rosterPreview");
   const list = R("rpList");
   const totals = R("rpTotals");
   if (!box || !list || !totals) return;
 
-  if (!rosterPicked.length || !rosterStartDate) {
+  if (!ROSTER.picked.length || !ROSTER.startDate) {
     box.classList.add("hidden");
     return;
   }
@@ -930,14 +931,15 @@ function rosterRenderPreview() {
   box.classList.remove("hidden");
   list.innerHTML = "";
 
-  const mins = rosterExpectedMinutesFromCodes(rosterPicked);
-  const hhmm = rosterFmtHHMMFromMinutes(mins);
-  const pay = (mins / 60) * Number(rosterHourlyRate || 0);
+  const mins = rosterExpectedMinutesFromCodes(ROSTER.picked);
+  const hhmm = minutesToHHMM(mins);
+
+  const pay = await rosterCalcExpectedPay(ROSTER.picked, ROSTER.startDate, ROSTER.hourlyRate);
   totals.textContent = `Expected: ${hhmm} • ${fmtEUR(pay)}`;
 
-  for (let i = 0; i < rosterPicked.length; i++) {
-    const code = rosterPicked[i];
-    const ymd = ymdAddDays(rosterStartDate, i);
+  for (let i = 0; i < ROSTER.picked.length; i++) {
+    const code = ROSTER.picked[i];
+    const ymd = ymdAddDays(ROSTER.startDate, i);
     const dt = ymdToDateObj(ymd);
 
     const row = document.createElement("div");
@@ -962,18 +964,17 @@ function rosterRenderWizardDay() {
 
   if (!startInput) return;
 
-  rosterStartDate = (startInput.value || "").trim();
+  ROSTER.startDate = (startInput.value || "").trim();
+  if (saveBtn) saveBtn.disabled = ROSTER.picked.length !== 7;
 
-  if (saveBtn) saveBtn.disabled = rosterPicked.length !== 7;
-
-  if (!rosterStartDate) {
+  if (!ROSTER.startDate) {
     if (dayTitle) dayTitle.textContent = "Pick start date";
     if (dayDate) dayDate.textContent = "";
-    rosterRenderPreview();
+    rosterRenderPreview().catch(() => {});
     return;
   }
 
-  const ymd = ymdAddDays(rosterStartDate, rosterActiveDayIndex);
+  const ymd = ymdAddDays(ROSTER.startDate, ROSTER.activeDayIndex);
   const dt = ymdToDateObj(ymd);
 
   if (dayTitle) dayTitle.textContent = `${weekdayShort(dt)}`;
@@ -983,35 +984,36 @@ function rosterRenderWizardDay() {
     weekInput.value = String(isoWeekNumber(new Date()));
   }
 
-  rosterRenderPreview();
+  rosterRenderPreview().catch(() => {});
 }
 
 function rosterWizardReset() {
-  rosterPicked = [];
-  rosterActiveDayIndex = 0;
+  ROSTER.picked = [];
+  ROSTER.activeDayIndex = 0;
 
   const weekInput = R("rwWeekNumber");
   const startInput = R("rwStartDate");
 
   if (weekInput) weekInput.value = String(isoWeekNumber(new Date()));
-  if (startInput) startInput.value = todayYMD(); // Sunday-based roster? You can choose your default.
-  rosterStartDate = (startInput?.value || "").trim();
+  if (startInput) startInput.value = todayYMD();
 
+  ROSTER.startDate = (startInput?.value || "").trim();
   rosterRenderWizardDay();
 }
 
 function rosterPick(code) {
   const startInput = R("rwStartDate");
-  rosterStartDate = (startInput?.value || "").trim();
-  if (!rosterStartDate) {
+  ROSTER.startDate = (startInput?.value || "").trim();
+
+  if (!ROSTER.startDate) {
     alert("Select start date first.");
     return;
   }
 
-  if (rosterPicked.length >= 7) return;
+  if (ROSTER.picked.length >= 7) return;
 
-  rosterPicked.push(code);
-  rosterActiveDayIndex = Math.min(6, rosterPicked.length); // next day
+  ROSTER.picked.push(code);
+  ROSTER.activeDayIndex = Math.min(6, ROSTER.picked.length);
   rosterRenderWizardDay();
 }
 
@@ -1020,13 +1022,12 @@ function rosterOpenWizard() {
   if (wizard) wizard.classList.remove("hidden");
   rosterWizardReset();
 }
-
 function rosterCloseWizard() {
   const wizard = R("rosterWizard");
   if (wizard) wizard.classList.add("hidden");
 }
 
-function rosterShowDetail(roster) {
+async function rosterShowDetail(roster) {
   const detail = R("rosterDetail");
   const title = R("rosterDetailTitle");
   const totals = R("rosterDetailTotals");
@@ -1038,10 +1039,11 @@ function rosterShowDetail(roster) {
   const codes = (roster.days || []).map((d) =>
     d.day_off ? "OFF" : d.shift_in === "09:45" ? "A" : "B"
   );
-  const mins = rosterExpectedMinutesFromCodes(codes);
-  const hhmm = rosterFmtHHMMFromMinutes(mins);
-  const pay = (mins / 60) * Number(rosterHourlyRate || 0);
 
+  const mins = rosterExpectedMinutesFromCodes(codes);
+  const hhmm = minutesToHHMM(mins);
+
+  const pay = await rosterCalcExpectedPay(codes, roster.start_date, ROSTER.hourlyRate);
   if (totals) totals.textContent = `Expected: ${hhmm} • ${fmtEUR(pay)}`;
 
   if (grid) {
@@ -1065,7 +1067,7 @@ function rosterShowDetail(roster) {
 async function rosterLoadDetail(rosterId) {
   try {
     const r = await api(`/api/roster/${rosterId}`);
-    rosterShowDetail(r);
+    await rosterShowDetail(r);
   } catch (e) {
     alert(e.message || "Failed to load roster");
   }
@@ -1095,10 +1097,7 @@ async function rosterLoadList() {
           <div class="t1">Week ${it.week_number}</div>
           <div class="t2">Start: ${it.start_date}</div>
         </div>
-        <div class="weekRight">
-          <div class="hhmm"></div>
-          <div class="eur"></div>
-        </div>
+        <div class="weekRight"></div>
       `;
       card.addEventListener("click", () => rosterLoadDetail(it.id));
       list.appendChild(card);
@@ -1119,18 +1118,9 @@ async function rosterSaveWeek() {
   const week_number = Number(weekInput?.value || 0);
   const start_date = (startInput?.value || "").trim();
 
-  if (!week_number || week_number < 1) {
-    alert("Week number invalid.");
-    return;
-  }
-  if (!start_date) {
-    alert("Start date required.");
-    return;
-  }
-  if (rosterPicked.length !== 7) {
-    alert("Select all days (Sun..Sat) before saving.");
-    return;
-  }
+  if (!week_number || week_number < 1) { alert("Week number invalid."); return; }
+  if (!start_date) { alert("Start date required."); return; }
+  if (ROSTER.picked.length !== 7) { alert("Select all days (Sun..Sat) before saving."); return; }
 
   try {
     await api("/api/roster", {
@@ -1138,7 +1128,7 @@ async function rosterSaveWeek() {
       body: JSON.stringify({
         week_number,
         start_date,
-        days: rosterPicked,
+        days: ROSTER.picked,
       }),
     });
 
@@ -1150,22 +1140,22 @@ async function rosterSaveWeek() {
 }
 
 async function enterRoster() {
-  // hourly rate from latest week (for expected pay)
+  // hourly rate priority: profile -> saved -> latest week (if available)
+  ROSTER.hourlyRate =
+    Number(ME?.hourly_rate || 0) ||
+    Number(getSavedRate() || 0);
+
   try {
     const weeks = await api("/api/weeks");
-    rosterHourlyRate = weeks && weeks.length ? Number(weeks[0].hourly_rate || 0) : 0;
-  } catch {
-    rosterHourlyRate = 0;
-  }
+    if (weeks && weeks.length) ROSTER.hourlyRate = Number(weeks[0].hourly_rate || ROSTER.hourlyRate || 0);
+  } catch {}
 
-  // bind roster buttons if exist
   const addBtn = R("btnRosterAddWeek");
   const cancelBtn = R("btnRwCancel");
   const backBtn = R("btnRwBack");
   const saveBtn = R("btnRwSave");
   const startInput = R("rwStartDate");
 
-  // avoid double-binding if user navigates back/forward
   if (addBtn && !addBtn.dataset.bound) {
     addBtn.dataset.bound = "1";
     addBtn.addEventListener("click", rosterOpenWizard);
@@ -1179,25 +1169,29 @@ async function enterRoster() {
     backBtn.addEventListener("click", rosterCloseWizard);
   }
 
-  if (R("btnRwA") && !R("btnRwA").dataset.bound) {
-    R("btnRwA").dataset.bound = "1";
-    R("btnRwA").addEventListener("click", () => rosterPick("A"));
+  const bA = R("btnRwA");
+  const bB = R("btnRwB");
+  const bOFF = R("btnRwOFF");
+
+  if (bA && !bA.dataset.bound) {
+    bA.dataset.bound = "1";
+    bA.addEventListener("click", () => rosterPick("A"));
   }
-  if (R("btnRwB") && !R("btnRwB").dataset.bound) {
-    R("btnRwB").dataset.bound = "1";
-    R("btnRwB").addEventListener("click", () => rosterPick("B"));
+  if (bB && !bB.dataset.bound) {
+    bB.dataset.bound = "1";
+    bB.addEventListener("click", () => rosterPick("B"));
   }
-  if (R("btnRwOFF") && !R("btnRwOFF").dataset.bound) {
-    R("btnRwOFF").dataset.bound = "1";
-    R("btnRwOFF").addEventListener("click", () => rosterPick("OFF"));
+  if (bOFF && !bOFF.dataset.bound) {
+    bOFF.dataset.bound = "1";
+    bOFF.addEventListener("click", () => rosterPick("OFF"));
   }
 
   if (startInput && !startInput.dataset.bound) {
     startInput.dataset.bound = "1";
     startInput.addEventListener("change", () => {
-      rosterStartDate = (R("rwStartDate")?.value || "").trim();
-      rosterPicked = [];
-      rosterActiveDayIndex = 0;
+      ROSTER.startDate = (R("rwStartDate")?.value || "").trim();
+      ROSTER.picked = [];
+      ROSTER.activeDayIndex = 0;
       rosterRenderWizardDay();
     });
   }
@@ -1211,29 +1205,43 @@ async function enterRoster() {
 }
 
 /* =========================
-   Route after auth
+   Route after auth (multi-page safe)
 ========================= */
 async function routeAfterAuth() {
-  // standalone pages
+  // Pages that do not use index views (still load script)
+  if (pathIs("/roster")) { await enterRoster(); return; }
+  if (pathIs("/holidays") || pathIs("/report") || pathIs("/profile")) return;
+
+  // Index view pages
+  if (!hasIndexViews()) return;
+
   if (pathIs("/add-week")) {
-    let defaultRate = 0;
+    let defaultRate = Number(ME?.hourly_rate || 0) || Number(getSavedRate() || 0);
     try {
       const weeks = await api("/api/weeks");
-      if (weeks && weeks.length) defaultRate = Number(weeks[0].hourly_rate || 0);
+      if (weeks && weeks.length) defaultRate = Number(weeks[0].hourly_rate || defaultRate || 0);
     } catch {}
     openAddWeekPage(defaultRate);
     return;
   }
 
-  if (pathIs("/roster")) {
-    // roster.html is a standalone page: no views to show/hide here
-    await enterRoster();
-    return;
-  }
-
-  // default (index)
   await enterHome();
 }
+
+/* =========================
+   Navigation (data-route)
+========================= */
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("[data-route]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const r = el.getAttribute("data-route");
+      if (r) go(r);
+    });
+  });
+
+  const btnHolidays = $("btnHolidays");
+  if (btnHolidays) btnHolidays.addEventListener("click", () => go("/holidays"));
+});
 
 /* =========================
    Bind (common)
@@ -1249,14 +1257,10 @@ function bind() {
   btnSendReset?.addEventListener("click", sendReset);
 
   btnLogout?.addEventListener("click", doLogout);
-  if (btnOpenProfile) btnOpenProfile.addEventListener("click", () => goto("profile"));
-function openProfile() {
-  goto("profile"); // usa teu router atual
-}
 
-if (btnOpenProfile) btnOpenProfile.addEventListener("click", openProfile);
-if (navProfile) navProfile.addEventListener("click", openProfile);
-
+  const openProfile = () => go("/profile");
+  btnOpenProfile?.addEventListener("click", openProfile);
+  navProfile?.addEventListener("click", openProfile);
 
   btnIn?.addEventListener("click", doClockIn);
   btnOut?.addEventListener("click", doClockOut);
@@ -1271,17 +1275,9 @@ if (navProfile) navProfile.addEventListener("click", openProfile);
   addWeekForm?.addEventListener("submit", createWeekFromPage);
 
   navHome?.addEventListener("click", () => go("/"));
-  function openProfile() {
-  goto("profile");
-}
-
-btnOpenProfile?.addEventListener("click", openProfile);
-navProfile?.addEventListener("click", openProfile);
-
   navHistory?.addEventListener("click", () => go("/roster"));
   navHolidays?.addEventListener("click", () => go("/holidays"));
   navReports?.addEventListener("click", () => go("/report"));
-  navProfile?.addEventListener("click", () => go("/profile"));
 }
 
 /* =========================
@@ -1298,18 +1294,10 @@ let dayWatcherStarted = false;
   }
 
   try {
-    await api("/api/me");
+    ME = await api("/api/me");
     await routeAfterAuth();
-  } catch {
-    await enterLogin();
+  } catch (e) {
+    // If index views exist -> show login
+    if (hasIndexViews()) await enterLogin();
   }
 })();
-// Enable click on any element with data-route="/somewhere"
-document.addEventListener("DOMContentLoaded", () => {
-  document.querySelectorAll("[data-route]").forEach((el) => {
-    el.addEventListener("click", () => {
-      const r = el.getAttribute("data-route");
-      if (r) window.location.href = r;
-    });
-  });
-});

@@ -11,18 +11,17 @@
 
   <style>
     /* FIX: Save button appearing washed/white in the modal */
-#editModal .modalActions button[type="submit"]{
-  background: rgba(37,99,235,1) !important;
-  color: #fff !important;
-  border: 1px solid rgba(37,99,235,.35) !important;
-  opacity: 1 !important;
-  filter: none !important;
-  width: 100%;
-}
-
-#editModal .modalActions button[type="submit"]:hover{
-  background: rgba(37,99,235,.92) !important;
-}
+    #editModal .modalActions button[type="submit"]{
+      background: rgba(37,99,235,1) !important;
+      color: #fff !important;
+      border: 1px solid rgba(37,99,235,.35) !important;
+      opacity: 1 !important;
+      filter: none !important;
+      width: 100%;
+    }
+    #editModal .modalActions button[type="submit"]:hover{
+      background: rgba(37,99,235,.92) !important;
+    }
 
     .reportWrap{ width:min(820px,100%); margin:0 auto; padding:22px 16px 120px; }
     .brandRow{ display:flex; align-items:center; gap:12px; }
@@ -90,38 +89,38 @@
     .modalActions{ display:flex; gap:10px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap; }
 
     @media print{
-      #btnBack, #btnHome, .actionsRow, #editModal, #addWeekModal2 { display:none !important; }
+      #btnBack, #btnHome, .actionsRow, #editModal, #addWeekModal2, #dayModal { display:none !important; }
       body{ background:#fff !important; }
       .reportWrap{ padding:0 !important; width:100% !important; }
       .card{ box-shadow:none !important; }
     }
   </style>
 </head>
+
 <!-- DAY DETAILS MODAL -->
 <div id="dayModal" class="modal hidden">
   <div class="modalCard">
-    <div class="modalHeader">
-      <h2 id="ddTitle">Day details</h2>
-      <button onclick="closeDayModal()">✕</button>
+    <div class="modalHeader" style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+      <h2 id="ddTitle" style="margin:0;">Day details</h2>
+      <button class="modalClose" type="button" onclick="closeDayModal()">✕</button>
     </div>
 
-    <div class="modalSection">
-      <h4>🕒 Clocked</h4>
+    <div class="modalSection" style="margin-top:10px;">
+      <h4 style="margin:0 0 6px;">🕒 Clocked</h4>
       <div id="ddClocked"></div>
     </div>
 
-    <div class="modalSection">
-      <h4>🏢 Tesco rules</h4>
+    <div class="modalSection" style="margin-top:10px;">
+      <h4 style="margin:0 0 6px;">🏢 Tesco rules</h4>
       <div id="ddTesco"></div>
     </div>
 
-    <div class="modalSection highlight">
-      <h4>📊 Result</h4>
+    <div class="modalSection highlight" style="margin-top:10px;">
+      <h4 style="margin:0 0 6px;">📊 Result</h4>
       <div id="ddResult"></div>
     </div>
   </div>
 </div>
-
 
 <body>
   <main class="reportWrap">
@@ -186,7 +185,6 @@
               <th>Worked</th>
               <th>Pay</th>
               <th>Details</th>
-
             </tr>
           </thead>
           <tbody id="rows"></tbody>
@@ -198,8 +196,7 @@
         <div>
           <div class="label">Total hours</div>
           <div id="totalHHMM" class="big">00:00</div>
-          <div id="totalMadeVsPaid" class="muted" style="margin-top:8px;">Made: 00:00 • Paid: 00:00</div>
-
+          <div id="totalMadeVsPaid" class="muted" style="margin-top:8px;">Paid: 00:00 • (Details per day: View)</div>
           <div class="muted" style="margin-top:6px;">Highlighted totals at the end</div>
         </div>
         <div style="text-align:right;">
@@ -289,76 +286,186 @@
     </div>
   </div>
 
-  <script>
-    const $ = (id) => document.getElementById(id);
-    const show = (el) => el && el.classList.remove("hidden");
-    const hide = (el) => el && el.classList.add("hidden");
+<script>
+/* =========================
+   Work Hours Tracker - report.html script (v2)
+   FIXES:
+   ✅ Week list shows correct pay (applies Sunday/BH premium)
+   ✅ No duplicate function names
+   ✅ Safe BH cache + limited API calls
+   ✅ Detail view still uses front-end "truth" calculation
+========================= */
 
-    function fmtEUR(n){
-      const v = Number(n || 0);
-      try { return v.toLocaleString(undefined, { style:"currency", currency:"EUR" }); }
-      catch { return "€" + v.toFixed(2); }
-    }
+const $ = (id) => document.getElementById(id);
+const show = (el) => el && el.classList.remove("hidden");
+const hide = (el) => el && el.classList.add("hidden");
 
-    async function api(path, opts = {}){
-      const res = await fetch(path, {
-        credentials:"include",
-        headers: { "Content-Type":"application/json", ...(opts.headers||{}) },
-        ...opts
-      });
-      const ct = res.headers.get("content-type") || "";
-      const data = ct.includes("application/json") ? await res.json() : await res.text();
-      if(!res.ok){
-        const msg = (data && data.detail) ? data.detail : (typeof data === "string" ? data : "Request failed");
-        const e = new Error(msg);
-        e.status = res.status;
-        throw e;
-      }
-      return data;
-    }
+function fmtEUR(n){
+  const v = Number(n || 0);
+  try { return v.toLocaleString(undefined, { style:"currency", currency:"EUR" }); }
+  catch { return "€" + v.toFixed(2); }
+}
 
-    function getWeekId(){
-      const p = new URLSearchParams(location.search);
-      const w = p.get("week_id");
-      return w ? Number(w) : null;
-    }
+async function api(path, opts = {}){
+  const res = await fetch(path, {
+    credentials:"include",
+    headers: { "Content-Type":"application/json", ...(opts.headers||{}) },
+    ...opts
+  });
+  const ct = res.headers.get("content-type") || "";
+  const data = ct.includes("application/json") ? await res.json() : await res.text();
+  if(!res.ok){
+    const msg = (data && data.detail) ? data.detail : (typeof data === "string" ? data : "Request failed");
+    const e = new Error(msg);
+    e.status = res.status;
+    throw e;
+  }
+  return data;
+}
 
-    function goWeek(id){
-      location.href = "/report?week_id=" + encodeURIComponent(id);
-    }
+/* =========================
+   Helpers
+========================= */
+function getWeekId(){
+  const p = new URLSearchParams(location.search);
+  const w = p.get("week_id");
+  return w ? Number(w) : null;
+}
+function goWeek(id){
+  location.href = "/report?week_id=" + encodeURIComponent(id);
+}
+function back(){
+  const id = getWeekId();
+  if (id) location.href = "/report";
+  else if (history.length > 1) history.back();
+  else location.href = "/";
+}
+function minutesFromHHMM(hhmm){
+  if(!hhmm || !String(hhmm).includes(":")) return 0;
+  const [h,m] = String(hhmm).split(":").map(x=>parseInt(x,10));
+  return (Number.isFinite(h)?h:0)*60 + (Number.isFinite(m)?m:0);
+}
+function ymdToDateObj(ymd){
+  const [y,m,d] = String(ymd).split("-").map(Number);
+  return new Date(y, (m||1)-1, d||1);
+}
 
-    function back(){
-      const id = getWeekId();
-      if (id) location.href = "/report";
-      else if (history.length > 1) history.back();
-      else location.href = "/";
-    }
+/* =========================
+   Bank Holiday lookup (cache)
+========================= */
+const bhCache = new Map();
+async function bhLookup(dateYmd){
+  if (!dateYmd) return null;
+  if (bhCache.has(dateYmd)) return bhCache.get(dateYmd);
+  const r = await api(`/api/bank-holidays/lookup?date_ymd=${encodeURIComponent(dateYmd)}`);
+  bhCache.set(dateYmd, r);
+  return r;
+}
+function isBhTrue(bh){
+  if (!bh) return false;
+  return bh.is_bh === true || bh.is_bank_holiday === true || bh.isBH === true;
+}
 
-    function minutesFromHHMM(hhmm){
-      if(!hhmm || !hhmm.includes(":")) return 0;
-      const [h,m] = hhmm.split(":").map(x=>parseInt(x,10));
-      return (isFinite(h)?h:0)*60 + (isFinite(m)?m:0);
-    }
+/* =========================
+   Premium multiplier (Sunday/BH)
+========================= */
+async function premiumForDateYmd(ymd){
+  let mult = 1;
 
-    function computePayForRow(worked_hhmm, rate, multiplier){
-      const mins = minutesFromHHMM(worked_hhmm);
-      const mult = Number(multiplier || 1);
-      return (mins/60) * Number(rate || 0) * mult;
-    }
-    // =====================
-// Day details (Tesco)
-// =====================
+  // Sunday
+  const dt = ymdToDateObj(ymd);
+  if (dt.getDay() === 0) mult = Math.max(mult, 1.5);
+
+  // Bank Holiday
+  try{
+    const bh = await bhLookup(ymd);
+    if (isBhTrue(bh)) mult = Math.max(mult, 1.5);
+  }catch{}
+
+  return mult;
+}
+
+/* =========================
+   Profile (rate priority)
+========================= */
+let ME = null;
+async function loadMe(){
+  if (ME) return ME;
+  try { ME = await api("/api/me"); }
+  catch { ME = null; }
+  return ME;
+}
+
+/* =========================
+   Add week modal helpers
+========================= */
+function isoWeekNumber(d = new Date()) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+}
+function mondayOfThisWeek(d = new Date()) {
+  const x = new Date(d);
+  const day = x.getDay();
+  const diff = (day === 0 ? -6 : 1 - day);
+  x.setDate(x.getDate() + diff);
+  const y = x.getFullYear();
+  const m = String(x.getMonth() + 1).padStart(2, "0");
+  const dd = String(x.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+function openAddWeekModal2(defaultRate = 0){
+  $("addWeekErr2").textContent = "";
+  $("aw2WeekNumber").value = String(isoWeekNumber(new Date()));
+  $("aw2StartDate").value = mondayOfThisWeek(new Date());
+  $("aw2HourlyRate").value = String(Number(defaultRate || 0).toFixed(2));
+  show($("addWeekModal2"));
+}
+function closeAddWeekModal2(){
+  hide($("addWeekModal2"));
+  $("addWeekErr2").textContent = "";
+}
+
+/* =========================
+   State
+========================= */
+let ACTIVE_WEEK_ID = null;
+let ACTIVE_ENTRY_ID = null;
+let ACTIVE_WEEK_RATE = 0;
+
+/* =========================
+   Edit modal
+========================= */
+function openEditModal({ title, entryId, date, timeIn, timeOut, breakMin, note }){
+  $("modalErr").textContent = "";
+  $("modalTitle").textContent = title || "Edit day";
+  ACTIVE_ENTRY_ID = entryId || null;
+
+  $("mDate").value = date ? date : "";
+  $("mIn").value = timeIn || "";
+  $("mOut").value = timeOut || "";
+  $("mBreak").value = String(Number(breakMin || 0));
+  $("mNote").value = note || "";
+
+  $("btnDeleteDay").style.display = entryId ? "" : "none";
+  show($("editModal"));
+}
+function closeEditModal(){
+  hide($("editModal"));
+  $("modalErr").textContent = "";
+}
+
+/* =========================
+   Day details modal
+========================= */
 function openDayDetails(entryId) {
   const modal = $("dayModal");
   const ddTitle = $("ddTitle");
   const ddClocked = $("ddClocked");
   const ddTesco = $("ddTesco");
   const ddResult = $("ddResult");
-
-  if (!modal || !ddTitle || !ddClocked || !ddTesco || !ddResult) {
-    alert("Day details modal not found in HTML.");
-    return;
-  }
 
   api(`/api/day-details/${entryId}`)
     .then(d => {
@@ -386,12 +493,9 @@ function openDayDetails(entryId) {
     })
     .catch(err => alert(err.message || "Failed to load day details"));
 }
-
 function closeDayModal() {
   hide($("dayModal"));
 }
-
-// close modal clicking outside
 (() => {
   const m = $("dayModal");
   if (!m) return;
@@ -400,333 +504,346 @@ function closeDayModal() {
   });
 })();
 
+/* =========================
+   ✅ Core fix: calculate week pay with premium
+   Used for LIST view so it matches DETAIL view.
+========================= */
+async function calcWeekPayWithPremium(weekObj, fallbackRate = 0){
+  const rate = Number(weekObj?.hourly_rate || 0) || Number(fallbackRate || 0);
+  const entries = Array.isArray(weekObj?.entries) ? weekObj.entries : [];
+  let total = 0;
 
-    // ===== add week helpers
-    function isoWeekNumber(d = new Date()) {
-      const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-      const dayNum = date.getUTCDay() || 7;
-      date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-      const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-      return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  // prefetch BH for unique dates to reduce calls
+  const uniqueDates = [...new Set(entries.map(e => e.work_date).filter(Boolean))];
+  await Promise.all(uniqueDates.map(d => bhLookup(d).catch(()=>null)));
+
+  for (const e of entries) {
+    const mins = minutesFromHHMM(e.worked_hhmm || "00:00");
+    if (!mins) continue;
+
+    let mult = Number(e.multiplier || 1);
+
+    if (e.work_date) {
+      const prem = await premiumForDateYmd(e.work_date);
+      mult = Math.max(mult, prem);
     }
 
-    function mondayOfThisWeek(d = new Date()) {
-      const x = new Date(d);
-      const day = x.getDay(); // 0 Sun .. 6 Sat
-      const diff = (day === 0 ? -6 : 1 - day);
-      x.setDate(x.getDate() + diff);
-      const y = x.getFullYear();
-      const m = String(x.getMonth() + 1).padStart(2, "0");
-      const dd = String(x.getDate()).padStart(2, "0");
-      return `${y}-${m}-${dd}`;
+    total += (mins / 60) * rate * mult;
+  }
+
+  return total;
+}
+
+/* =========================
+   Views
+========================= */
+async function loadList(){
+  hide($("viewDetail"));
+  show($("viewList"));
+  $("subTitle").textContent = "Select a week";
+  $("weeksList").innerHTML = "";
+  $("listErr").textContent = "";
+  $("listMsg").textContent = "Loading...";
+
+  try{
+    const me = await loadMe();
+    const weeks = await api("/api/weeks", { method:"GET" });
+
+    if(!weeks || !weeks.length){
+      $("listMsg").textContent = "No weeks yet. Create a week first.";
+      return;
     }
 
-    function openAddWeekModal2(defaultRate = 0){
-      $("addWeekErr2").textContent = "";
-      $("aw2WeekNumber").value = String(isoWeekNumber(new Date()));
-      $("aw2StartDate").value = mondayOfThisWeek(new Date());
-      $("aw2HourlyRate").value = String(Number(defaultRate || 0).toFixed(2));
-      show($("addWeekModal2"));
+    $("listMsg").textContent = "";
+
+    // Render fast first, then correct pay (async update)
+    for(const w of weeks){
+      const item = document.createElement("div");
+      item.className = "weekItem";
+
+      item.innerHTML = `
+        <div class="weekLeft">
+          <div class="t1">Week ${w.week_number}</div>
+          <div class="t2">Start: ${w.start_date}</div>
+        </div>
+        <div class="weekRight">
+          <div class="hhmm">${w.total_hhmm || "00:00"}</div>
+          <div class="eur" data-week-pay="1">${fmtEUR(w.total_pay || 0)}</div>
+        </div>
+      `;
+      item.addEventListener("click", () => goWeek(w.id));
+      $("weeksList").appendChild(item);
+
+      // ✅ FIX: fetch full week and recalc premium pay to match detail
+      (async () => {
+        try{
+          const full = await api("/api/weeks/" + w.id, { method:"GET" });
+          const rateFromProfile = Number(me?.hourly_rate || 0);
+          const rateForCalc = rateFromProfile > 0 ? rateFromProfile : Number(full?.hourly_rate || 0);
+
+          const pay = await calcWeekPayWithPremium(full, rateForCalc);
+          const eurEl = item.querySelector('[data-week-pay="1"]');
+          if (eurEl) eurEl.textContent = fmtEUR(pay);
+        }catch{
+          // keep original value
+        }
+      })();
     }
-    function closeAddWeekModal2(){
-      hide($("addWeekModal2"));
-      $("addWeekErr2").textContent = "";
-    }
+  }catch(e){
+    $("listMsg").textContent = "";
+    $("listErr").textContent = "Error loading weeks: " + (e.message || "failed");
+    if(e.status === 401) location.href = "/";
+  }
+}
 
-    // ===== modal state
-    let ACTIVE_WEEK_ID = null;
-    let ACTIVE_ENTRY_ID = null;
-    let ACTIVE_WEEK_RATE = 0;
+async function loadDetail(weekId){
+  ACTIVE_WEEK_ID = weekId;
 
-    function openEditModal({ title, entryId, date, timeIn, timeOut, breakMin, note }){
-      $("modalErr").textContent = "";
-      $("modalTitle").textContent = title || "Edit day";
-      ACTIVE_ENTRY_ID = entryId || null;
+  hide($("viewList"));
+  show($("viewDetail"));
+  $("detailErr").textContent = "";
+  $("rows").innerHTML = "";
+  $("rateText").textContent = "—";
+  $("startDateText").textContent = "—";
+  $("totalHHMM").textContent = "00:00";
+  $("totalPay").textContent = "€0.00";
 
-      $("mDate").value = date ? date : "";
-      $("mIn").value = timeIn || "";
-      $("mOut").value = timeOut || "";
-      $("mBreak").value = String(Number(breakMin || 0));
-      $("mNote").value = note || "";
+  try{
+    const me = await loadMe();
+    const w = await api("/api/weeks/" + weekId, { method:"GET" });
 
-      $("btnDeleteDay").style.display = entryId ? "" : "none";
-      show($("editModal"))
-      const saveBtn = document.querySelector('#editModal button[type="submit"]');
-if (saveBtn) saveBtn.disabled = false;
+    const rateFromProfile = Number(me?.hourly_rate || 0);
+    const rateFromWeek = Number(w?.hourly_rate || 0);
+    ACTIVE_WEEK_RATE = rateFromProfile > 0 ? rateFromProfile : rateFromWeek;
 
-    }
+    $("subTitle").textContent = `Week ${w.week_number} • Weekly report`;
+    $("rateText").textContent = `€${Number(ACTIVE_WEEK_RATE || 0).toFixed(2)} / hour`;
+    $("startDateText").textContent = w.start_date || "—";
 
-    function closeEditModal(){
-      hide($("editModal"));
-      $("modalErr").textContent = "";
-    }
+    const entries = Array.isArray(w.entries) ? w.entries : [];
 
-    async function loadList(){
-      hide($("viewDetail"));
-      show($("viewList"));
-      $("subTitle").textContent = "Select a week";
-      $("weeksList").innerHTML = "";
-      $("listErr").textContent = "";
-      $("listMsg").textContent = "Loading...";
+    // prefetch BH for all unique dates
+    const uniqueDates = [...new Set(entries.map(x => x.work_date).filter(Boolean))];
+    await Promise.all(uniqueDates.map(d => bhLookup(d).catch(()=>null)));
 
-      try{
-        const weeks = await api("/api/weeks", { method:"GET", headers:{} });
-        if(!weeks || !weeks.length){
-          $("listMsg").textContent = "No weeks yet. Create a week first.";
-          return;
+    let totalMin = 0;
+    let totalPay = 0;
+
+    if(!entries.length){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="8" class="muted">No days yet. Click “Add day”.</td>`;
+      $("rows").appendChild(tr);
+    } else {
+      for(const e of entries){
+        const mins = minutesFromHHMM(e.worked_hhmm || "00:00");
+        totalMin += mins;
+
+        // multiplier: backend OR Sunday/BH premium (max)
+        let mult = Number(e.multiplier || 1);
+        if (e.work_date) {
+          const prem = await premiumForDateYmd(e.work_date);
+          mult = Math.max(mult, prem);
         }
 
-        $("listMsg").textContent = "";
+        const rowPay = (mins/60) * Number(ACTIVE_WEEK_RATE || 0) * mult;
+        totalPay += rowPay;
 
-        for(const w of weeks){
-          const item = document.createElement("div");
-          item.className = "weekItem";
-          item.innerHTML = `
-            <div class="weekLeft">
-              <div class="t1">Week ${w.week_number}</div>
-              <div class="t2">Start: ${w.start_date}</div>
-            </div>
-            <div class="weekRight">
-              <div class="hhmm">${w.total_hhmm || "00:00"}</div>
-              <div class="eur">${fmtEUR(w.total_pay || 0)}</div>
-            </div>
-          `;
-          item.addEventListener("click", () => goWeek(w.id));
-          $("weeksList").appendChild(item);
+        const tr = document.createElement("tr");
+        tr.className = "rowClick";
+        tr.dataset.entryId = e.id;
+
+        tr.innerHTML = `
+          <td>${e.weekday || ""}</td>
+          <td>${e.work_date || ""}</td>
+          <td>${e.time_in || "—"}</td>
+          <td>${e.time_out || "—"}</td>
+          <td>${(e.break_minutes ?? 0)}m</td>
+          <td>${e.worked_hhmm || "00:00"}</td>
+          <td>${fmtEUR(rowPay)}</td>
+          <td>
+            <button class="btn btn--soft btnSmall" type="button" data-details="1">View</button>
+          </td>
+        `;
+
+        const btn = tr.querySelector('button[data-details="1"]');
+        if (btn) {
+          btn.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            openDayDetails(e.id);
+          });
         }
-      }catch(e){
-        $("listMsg").textContent = "";
-        $("listErr").textContent = "Error loading weeks: " + (e.message || "failed");
-        if(e.status === 401) location.href = "/";
+
+        tr.addEventListener("click", () => {
+          openEditModal({
+            title: "Edit day",
+            entryId: e.id,
+            date: e.work_date,
+            timeIn: e.time_in || "",
+            timeOut: e.time_out || "",
+            breakMin: e.break_minutes || 0,
+            note: e.note || ""
+          });
+        });
+
+        $("rows").appendChild(tr);
       }
     }
 
-    async function loadDetail(weekId){
-      ACTIVE_WEEK_ID = weekId;
+    // totals
+    const paidHH = String(Math.floor(totalMin / 60)).padStart(2, "0");
+    const paidMM = String(totalMin % 60).padStart(2, "0");
+    $("totalHHMM").textContent = `${paidHH}:${paidMM}`;
+    $("totalPay").textContent  = fmtEUR(totalPay);
 
-      hide($("viewList"));
-      show($("viewDetail"));
-      $("detailErr").textContent = "";
-      $("rows").innerHTML = "";
-      $("rateText").textContent = "—";
-      $("startDateText").textContent = "—";
-      $("totalHHMM").textContent = "00:00";
-      $("totalPay").textContent = "€0.00";
+    const madePaidEl = $("totalMadeVsPaid");
+    if (madePaidEl) madePaidEl.textContent = `Paid: ${paidHH}:${paidMM} • (Details per day: View)`;
 
-      try{
-        const w = await api("/api/weeks/" + weekId, { method:"GET", headers:{} });
+  }catch(e){
+    $("detailErr").textContent = "Error loading report: " + (e.message || "failed");
+    if(e.status === 401) location.href = "/";
+  }
+}
 
-        ACTIVE_WEEK_RATE = Number(w.hourly_rate || 0);
+/* =========================
+   Binds
+========================= */
+$("btnHome").addEventListener("click", () => location.href = "/");
+$("btnBack").addEventListener("click", back);
+$("btnPrint").addEventListener("click", () => window.print());
 
-        $("subTitle").textContent = `Week ${w.week_number} • Weekly report`;
-        $("rateText").textContent = `€${Number(w.hourly_rate || 0).toFixed(2)} / hour`;
-        $("startDateText").textContent = w.start_date || "—";
+$("btnCloseModal").addEventListener("click", closeEditModal);
+$("editModal").addEventListener("click", (e)=>{ if(e.target === $("editModal")) closeEditModal(); });
 
-        const entries = w.entries || [];
-        if(!entries.length){
-          const tr = document.createElement("tr");
-          tr.innerHTML = `<td colspan="7" class="muted">No days yet. Click “Add day”.</td>`;
-          $("rows").appendChild(tr);
-        }else{
-          for(const e of entries){
-            const tr = document.createElement("tr");
-            tr.className = "rowClick";
-            tr.dataset.entryId = e.id;
+$("btnCloseAddWeek2").addEventListener("click", closeAddWeekModal2);
+$("addWeekModal2").addEventListener("click", (e)=>{ if(e.target === $("addWeekModal2")) closeAddWeekModal2(); });
 
-            const pay = computePayForRow(e.worked_hhmm, w.hourly_rate, e.multiplier);
+$("btnAddWeekHere").addEventListener("click", async () => {
+  let defaultRate = 0;
+  try{
+    const me = await loadMe();
+    defaultRate = Number(me?.hourly_rate || 0);
+    if (!defaultRate) {
+      const weeks = await api("/api/weeks", { method:"GET" });
+      if (weeks && weeks.length) defaultRate = Number(weeks[0].hourly_rate || 0);
+    }
+  }catch{}
+  openAddWeekModal2(defaultRate);
+});
 
-            tr.innerHTML = `
-  <td>${e.weekday || ""}</td>
-  <td>${e.work_date || ""}</td>
-  <td>${e.time_in || "—"}</td>
-  <td>${e.time_out || "—"}</td>
-  <td>${(e.break_minutes ?? 0)}m</td>
-  <td>${e.worked_hhmm || "00:00"}</td>
-  <td>${fmtEUR(pay)}</td>
-  <td>
-    <button class="btn btn--soft btnSmall" type="button" data-details="1">View</button>
-  </td>
-`;
-const btn = tr.querySelector('button[data-details="1"]');
-if (btn) {
-  btn.addEventListener("click", (ev) => {
-    ev.stopPropagation();          // não abre o edit modal
-    openDayDetails(e.id);          // abre day details
+$("addWeekForm2").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  $("addWeekErr2").textContent = "";
+
+  try{
+    const week_number = Number($("aw2WeekNumber").value || 0);
+    const start_date  = ($("aw2StartDate").value || "").trim();
+    const hourly_rate = Number($("aw2HourlyRate").value || 0);
+
+    await api("/api/weeks", {
+      method:"POST",
+      body: JSON.stringify({ week_number, start_date, hourly_rate })
+    });
+
+    closeAddWeekModal2();
+    await loadList();
+  }catch(e){
+    $("addWeekErr2").textContent = e.message || "Failed to create week";
+    if(e.status === 401) location.href = "/";
+  }
+});
+
+$("btnAddDay").addEventListener("click", () => {
+  openEditModal({
+    title: "Add day",
+    entryId: null,
+    date: "",
+    timeIn: "",
+    timeOut: "",
+    breakMin: 0,
+    note: ""
   });
-}
+});
 
+$("btnDeleteWeek").addEventListener("click", async () => {
+  if(!ACTIVE_WEEK_ID) return;
+  const ok = confirm("Delete this week? This will remove all days inside it.");
+  if(!ok) return;
 
-            tr.addEventListener("click", () => {
-              openEditModal({
-                title: "Edit day",
-                entryId: e.id,
-                date: e.work_date,
-                timeIn: e.time_in || "",
-                timeOut: e.time_out || "",
-                breakMin: e.break_minutes || 0,
-                note: e.note || ""
-              });
-            });
+  try{
+    await api("/api/weeks/" + ACTIVE_WEEK_ID, { method:"DELETE" });
+    location.href = "/report";
+  }catch(e){
+    $("detailErr").textContent = e.message || "Failed to delete week";
+  }
+});
 
-            $("rows").appendChild(tr);
-          }
-        }
+$("editForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  $("modalErr").textContent = "";
 
-        $("totalHHMM").textContent = (w.totals && w.totals.total_hhmm) ? w.totals.total_hhmm : "00:00";
-        $("totalPay").textContent  = fmtEUR(w.totals ? w.totals.total_pay : 0);
-        $("totalHHMM").textContent = (w.totals && w.totals.total_hhmm) ? w.totals.total_hhmm : "00:00";
-        $("totalPay").textContent  = fmtEUR(w.totals ? w.totals.total_pay : 0);
-// UX: Made vs Paid (requires backend day-details for exact paid rules per day)
-// We'll estimate "made" using raw clock times - break_real and "paid" using worked_hhmm sum.
-let paidMin = 0;
-for (const e of entries) paidMin += minutesFromHHMM(e.worked_hhmm || "00:00");
+  if(!ACTIVE_WEEK_ID){
+    $("modalErr").textContent = "Missing week.";
+    return;
+  }
 
-// "made" can't be perfectly computed without raw minutes, so we show paid only if missing.
-const madePaidEl = $("totalMadeVsPaid");
-if (madePaidEl) {
-  const paidHH = String(Math.floor(paidMin / 60)).padStart(2, "0");
-  const paidMM = String(paidMin % 60).padStart(2, "0");
-  madePaidEl.textContent = `Paid: ${paidHH}:${paidMM} • (Details per day: View)`;
-}
+  const work_date = ($("mDate").value || "").trim();
+  const time_in = ($("mIn").value || "").trim() || null;
+  const time_out = ($("mOut").value || "").trim() || null;
+  const break_minutes = Number($("mBreak").value || 0);
+  const note = ($("mNote").value || "").trim() || null;
 
-      }catch(e){
-        $("detailErr").textContent = "Error loading report: " + (e.message || "failed");
-        if(e.status === 401) location.href = "/";
-      }
-    }
+  if(!work_date){
+    $("modalErr").textContent = "Pick a date.";
+    return;
+  }
 
-    // ===== binds
-    $("btnHome").addEventListener("click", () => location.href = "/");
-    $("btnBack").addEventListener("click", back);
-
-    $("btnPrint").addEventListener("click", () => window.print());
-
-    $("btnCloseModal").addEventListener("click", closeEditModal);
-    $("editModal").addEventListener("click", (e)=>{ if(e.target === $("editModal")) closeEditModal(); });
-
-    $("btnCloseAddWeek2").addEventListener("click", closeAddWeekModal2);
-    $("addWeekModal2").addEventListener("click", (e)=>{ if(e.target === $("addWeekModal2")) closeAddWeekModal2(); });
-
-    $("btnAddWeekHere").addEventListener("click", async () => {
-      // optional: prefill with last week hourly rate if exists
-      let defaultRate = 0;
-      try{
-        const weeks = await api("/api/weeks", { method:"GET", headers:{} });
-        if (weeks && weeks.length) defaultRate = Number(weeks[0].hourly_rate || 0);
-      }catch{}
-      openAddWeekModal2(defaultRate);
+  try{
+    await api("/api/weeks/" + ACTIVE_WEEK_ID + "/entry", {
+      method: "PUT",
+      body: JSON.stringify({
+        work_date,
+        time_in,
+        time_out,
+        break_minutes,
+        note,
+        bh_paid: null
+      })
     });
 
-    $("addWeekForm2").addEventListener("submit", async (ev) => {
-      ev.preventDefault();
-      $("addWeekErr2").textContent = "";
+    closeEditModal();
+    await loadDetail(ACTIVE_WEEK_ID);
+  }catch(e){
+    $("modalErr").textContent = e.message || "Failed to save day";
+    if(e.status === 401) location.href = "/";
+  }
+});
 
-      try{
-        const week_number = Number($("aw2WeekNumber").value || 0);
-        const start_date  = ($("aw2StartDate").value || "").trim();
-        const hourly_rate = Number($("aw2HourlyRate").value || 0);
+$("btnDeleteDay").addEventListener("click", async () => {
+  if(!ACTIVE_ENTRY_ID){
+    closeEditModal();
+    return;
+  }
+  const ok = confirm("Delete this day entry?");
+  if(!ok) return;
 
-        await api("/api/weeks", {
-          method:"POST",
-          body: JSON.stringify({ week_number, start_date, hourly_rate })
-        });
+  try{
+    await api("/api/entries/" + ACTIVE_ENTRY_ID, { method:"DELETE" });
+    closeEditModal();
+    await loadDetail(ACTIVE_WEEK_ID);
+  }catch(e){
+    $("modalErr").textContent = e.message || "Failed to delete day";
+  }
+});
 
-        closeAddWeekModal2();
-        await loadList();
-      }catch(e){
-        $("addWeekErr2").textContent = e.message || "Failed to create week";
-        if(e.status === 401) location.href = "/";
-      }
-    });
+/* =========================
+   Init
+========================= */
+(async function init(){
+  const id = getWeekId();
+  if(id) await loadDetail(id);
+  else await loadList();
+})();
+</script>
 
-    $("btnAddDay").addEventListener("click", () => {
-      openEditModal({
-        title: "Add day",
-        entryId: null,
-        date: "",
-        timeIn: "",
-        timeOut: "",
-        breakMin: 0,
-        note: ""
-      });
-    });
-
-    $("btnDeleteWeek").addEventListener("click", async () => {
-      if(!ACTIVE_WEEK_ID) return;
-      const ok = confirm("Delete this week? This will remove all days inside it.");
-      if(!ok) return;
-
-      try{
-        await api("/api/weeks/" + ACTIVE_WEEK_ID, { method:"DELETE" });
-        location.href = "/report";
-      }catch(e){
-        $("detailErr").textContent = e.message || "Failed to delete week";
-      }
-    });
-
-    $("editForm").addEventListener("submit", async (ev) => {
-      ev.preventDefault();
-      $("modalErr").textContent = "";
-
-      if(!ACTIVE_WEEK_ID){
-        $("modalErr").textContent = "Missing week.";
-        return;
-      }
-
-      const work_date = ($("mDate").value || "").trim();
-      const time_in = ($("mIn").value || "").trim() || null;
-      const time_out = ($("mOut").value || "").trim() || null;
-      const break_minutes = Number($("mBreak").value || 0);
-      const note = ($("mNote").value || "").trim() || null;
-
-      if(!work_date){
-        $("modalErr").textContent = "Pick a date.";
-        return;
-      }
-
-      try{
-        await api("/api/weeks/" + ACTIVE_WEEK_ID + "/entry", {
-          method: "PUT",
-          body: JSON.stringify({
-            work_date,
-            time_in,
-            time_out,
-            break_minutes,
-            note,
-            bh_paid: null
-          })
-        });
-
-        closeEditModal();
-        await loadDetail(ACTIVE_WEEK_ID);
-      }catch(e){
-        $("modalErr").textContent = e.message || "Failed to save day";
-        if(e.status === 401) location.href = "/";
-      }
-    });
-
-    $("btnDeleteDay").addEventListener("click", async () => {
-      if(!ACTIVE_ENTRY_ID){
-        closeEditModal();
-        return;
-      }
-      const ok = confirm("Delete this day entry?");
-      if(!ok) return;
-
-      try{
-        await api("/api/entries/" + ACTIVE_ENTRY_ID, { method:"DELETE" });
-        closeEditModal();
-        await loadDetail(ACTIVE_WEEK_ID);
-      }catch(e){
-        $("modalErr").textContent = e.message || "Failed to delete day";
-      }
-    });
-
-    (async function init(){
-      const id = getWeekId();
-      if(id) await loadDetail(id);
-      else await loadList();
-    })();
-  </script>
 </body>
 </html>
