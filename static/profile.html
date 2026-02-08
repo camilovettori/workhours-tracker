@@ -7,40 +7,43 @@
   <title>Profile</title>
 
   <link rel="icon" href="/static/logo.png" />
-  <!-- BUMP VERSION when you change this file -->
-  <link rel="stylesheet" href="/static/app.css?v=99" />
+  <link rel="stylesheet" href="/static/app.css?v=12" />
 
   <style>
     :root{
-      --ink:#0f172a;
-      --muted: rgba(15,23,42,.58);
-      --card: rgba(255,255,255,.86);
-      --line: rgba(15,23,42,.10);
-      --soft: rgba(15,23,42,.06);
+      --bg1: rgba(226,236,255,.65);
+      --card: rgba(255,255,255,.78);
+      --card2: rgba(255,255,255,.92);
+      --stroke: rgba(15,23,42,.10);
+      --stroke2: rgba(15,23,42,.08);
+      --shadow: 0 18px 55px rgba(2,6,23,.18);
+      --shadow2: 0 14px 40px rgba(2,6,23,.20);
+      --muted2: rgba(15,23,42,.60);
       --blue: #2563eb;
       --blue2:#1d4ed8;
-      --red:#dc2626;
-      --redSoft: rgba(220,38,38,.08);
-      --shadow: 0 20px 70px rgba(2,6,23,.18);
+      --danger:#ef4444;
+      --danger2:#dc2626;
     }
 
-    body{ background: radial-gradient(1200px 700px at 15% 0%, rgba(37,99,235,.12), transparent 55%),
-                   radial-gradient(900px 600px at 85% 12%, rgba(99,102,241,.12), transparent 55%),
-                   linear-gradient(180deg, rgba(241,245,249,.9), rgba(241,245,249,.55));
+    body{
+      background:
+        radial-gradient(1200px 700px at 20% 10%, var(--bg1), transparent 60%),
+        radial-gradient(900px 600px at 85% 15%, rgba(186,215,255,.55), transparent 55%),
+        linear-gradient(180deg, rgba(248,250,252,.90), rgba(241,245,249,.90));
     }
 
     .wrap{ width:min(980px,100%); margin:0 auto; padding:22px 16px 120px; }
     .top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
     .brand{ display:flex; align-items:center; gap:12px; }
-    .brand img{ width:44px; height:44px; border-radius:12px; object-fit:cover; }
-    .muted{ color: var(--muted); font-weight:900; }
+    .brand img{ width:44px; height:44px; border-radius:14px; object-fit:cover; box-shadow: 0 8px 22px rgba(2,6,23,.10); }
+    .muted{ color: var(--muted2); font-weight:900; }
 
     .card{
-      border-radius:22px;
-      border:1px solid var(--line);
+      border-radius:24px;
+      border:1px solid var(--stroke);
       background: var(--card);
-      box-shadow: 0 18px 60px rgba(2,6,23,.10);
-      overflow:hidden;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
     }
     .cardPad{ padding:16px; }
 
@@ -50,150 +53,270 @@
     .ok{ color:rgba(21,128,61,1); font-weight:1000; margin-top:8px; }
 
     .sectionTitle{ font-weight:1000; font-size:16px; }
-    .sectionSub{ font-weight:900; font-size:12px; color:var(--muted); margin-top:4px; }
+    .sectionSub{ font-weight:900; font-size:12px; color:var(--muted2); margin-top:4px; }
 
+    /* Buttons */
+    .btnX{
+      border:1px solid var(--stroke);
+      background: rgba(255,255,255,.75);
+      padding:10px 14px;
+      border-radius:999px;
+      font-weight:1000;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      box-shadow: 0 10px 24px rgba(2,6,23,.08);
+      user-select:none;
+    }
+    .btnX:active{ transform: translateY(1px); }
+    .btnBlue{
+      background: linear-gradient(180deg, var(--blue), var(--blue2));
+      border:1px solid rgba(37,99,235,.25);
+      color:white;
+      box-shadow: 0 16px 35px rgba(37,99,235,.22);
+    }
+    .btnGhost{ background: rgba(255,255,255,.60); }
+    .btnDangerSolid{
+      background: linear-gradient(180deg, var(--danger), var(--danger2));
+      border:1px solid rgba(239,68,68,.35);
+      color:white;
+      box-shadow: 0 16px 35px rgba(239,68,68,.20);
+    }
+
+    /* Photo block */
+    .avatarBox{
+      display:flex; gap:14px; align-items:center; flex-wrap:wrap;
+      border:1px solid var(--stroke2);
+      background: rgba(255,255,255,.65);
+      border-radius:20px;
+      padding:14px;
+    }
+    .avatarWrap{ position:relative; width:92px; height:92px; }
+    .avatar{
+      width:92px; height:92px; border-radius:24px;
+      background: rgba(15,23,42,.06);
+      border:1px solid rgba(15,23,42,.12);
+      overflow:hidden;
+      display:flex; align-items:center; justify-content:center;
+      font-weight:1000;
+      color: var(--muted2);
+      user-select:none;
+      cursor:pointer;
+    }
+    .avatar img{ width:100%; height:100%; object-fit:cover; }
+    .avatarEdit{
+      position:absolute; right:-6px; bottom:-6px;
+      width:40px; height:40px;
+      border-radius:14px;
+      border:1px solid rgba(37,99,235,.30);
+      background: linear-gradient(180deg, var(--blue), var(--blue2));
+      color:white;
+      display:flex; align-items:center; justify-content:center;
+      box-shadow: 0 12px 28px rgba(37,99,235,.22);
+      cursor:pointer;
+      user-select:none;
+    }
+    .btnRow{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .smallHint{ font-size:12px; font-weight:900; color:var(--muted2); margin-top:6px; }
+
+    /* Menu */
+    .menuList{ display:flex; flex-direction:column; gap:10px; margin-top:12px; }
+    .menuItem{
+      width:100%;
+      text-align:left;
+      border-radius:18px;
+      border:1px solid var(--stroke2);
+      background: rgba(255,255,255,.70);
+      padding:14px 14px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      cursor:pointer;
+      box-shadow: 0 12px 24px rgba(2,6,23,.06);
+    }
+    .menuItem:hover{ background: rgba(255,255,255,.82); }
+    .miLeft .t1{ font-weight:1000; font-size:15px; }
+    .miLeft .t2{ font-weight:900; font-size:12px; color:var(--muted2); margin-top:3px; }
+    .miRight{ font-weight:1000; color:rgba(15,23,42,.35); font-size:18px; }
+    .menuItemDanger{
+      border:1px solid rgba(239,68,68,.25);
+      background: rgba(239,68,68,.08);
+    }
+    .menuItemDanger .miLeft .t1{ color: var(--danger2); }
+
+    /* Modal (center) */
+    .backdrop{
+      position:fixed; inset:0;
+      background: rgba(15,23,42,.50);
+      display:flex; align-items:center; justify-content:center;
+      padding:18px;
+      z-index: 999;
+    }
+    .modal{
+      width:min(720px, 100%);
+      border-radius: 22px;
+      border:1px solid rgba(15,23,42,.12);
+      background: var(--card2);
+      box-shadow: var(--shadow2);
+      backdrop-filter: blur(12px);
+      overflow:hidden;
+      max-height: 86vh;
+      display:flex;
+      flex-direction:column;
+    }
+    .mHead{
+      padding:14px 14px 10px;
+      display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
+      border-bottom: 1px solid rgba(15,23,42,.08);
+      background:
+        radial-gradient(900px 120px at 20% 0%, rgba(37,99,235,.18), transparent 60%),
+        linear-gradient(180deg, rgba(248,250,252,.98), rgba(255,255,255,.90));
+    }
+    .mTitle{
+      font-weight:1000;
+      font-size:18px;
+      letter-spacing:-.02em;
+      line-height:1.1;
+    }
+    .mSub{ margin-top:4px; font-weight:900; font-size:12px; color:var(--muted2); }
+    .mClose{
+      border:1px solid rgba(15,23,42,.12);
+      background: rgba(255,255,255,.80);
+      width:40px; height:40px;
+      border-radius:14px;
+      font-size:18px;
+      cursor:pointer;
+      display:flex; align-items:center; justify-content:center;
+      user-select:none;
+    }
+    .mBody{ padding:14px; overflow:auto; }
+    .mFoot{
+      padding:12px 14px;
+      border-top:1px solid rgba(15,23,42,.08);
+      display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
+      background: rgba(248,250,252,.85);
+    }
+
+    /* Fields */
     .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
     @media (max-width: 520px){ .grid2{ grid-template-columns:1fr; } }
-
     .field{ display:flex; flex-direction:column; gap:6px; }
-    .field span{ font-weight:900; color: var(--muted); font-size:13px; }
+    .field span{ font-weight:900; color: var(--muted2); font-size:13px; }
     .field input, .field textarea{
       padding:12px 12px;
       border-radius:14px;
       border:1px solid rgba(15,23,42,.12);
-      background: rgba(7, 82, 243, 0.75);
+      background: rgba(255,255,255,.80);
       font-weight:900;
       outline:none;
     }
-    .field textarea{ min-height: 92px; resize: vertical; font-weight:800; }
+    .field textarea{ min-height: 92px; resize: vertical; font-weight:900; }
     .field input[readonly]{ opacity:.85; }
 
-    /* photo */
-    .avatarBox{
-      display:flex; gap:14px; align-items:center; flex-wrap:wrap;
+    /* Lists */
+    .listBox{
+      margin-top:12px;
       border:1px solid rgba(15,23,42,.08);
-      background: rgba(255,255,255,.60);
-      border-radius:18px;
-      padding:14px;
-    }
-    .avatar{
-      width:86px; height:86px; border-radius:22px;
-      background: rgba(15,23,42,.06);
-      border:1px solid rgba(15,23,42,.10);
-      overflow:hidden;
-      display:flex; align-items:center; justify-content:center;
-      font-weight:1000;
-      color: var(--muted);
-    }
-    .avatar img{ width:100%; height:100%; object-fit:cover; }
-    .btnRow{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-    .smallHint{ font-size:12px; font-weight:900; color:var(--muted); margin-top:6px; }
-
-    /* menu list */
-    .menuWrap{ padding:16px; }
-    .menuList{ display:flex; flex-direction:column; gap:10px; margin-top:12px; }
-    .menuItem{
-      width:100%;
-      display:flex; align-items:center; justify-content:space-between;
-      gap:12px;
-      padding:14px 14px;
-      border-radius:18px;
-      border:1px solid rgba(15,23,42,.10);
-      background: rgba(245, 245, 247, 0.75);
-      cursor:pointer;
-      transition: transform .06s ease, box-shadow .06s ease, border-color .12s ease;
-      text-align:left;
-    }
-    .menuItem:hover{ transform: translateY(-1px); box-shadow: 0 10px 30px rgba(2,6,23,.10); border-color: rgba(37,99,235,.20); }
-    .miLeft{ display:flex; flex-direction:column; gap:2px; }
-    .miTitle{ font-weight:1000; font-size:15px; color: var(--ink); }
-    .miSub{ font-weight:900; font-size:12px; color: var(--muted); }
-    .chev{ font-weight:1000; color: rgba(15,23,42,.35); font-size:18px; }
-    .menuItem.red{
-      border-color: rgba(241, 5, 5, 0.3);
-      background: var(--redSoft);
-    }
-    .menuItem.red .miTitle{ color: var(--red); }
-    .menuItem.red .chev{ color: rgba(220,38,38,.45); }
-
-    /* buttons (override if app.css doesn’t have) */
-    .btnX{
-      border:1px solid rgba(15,23,42,.12);
-      padding:10px 14px;
-      border-radius:999px;
-      font-weight:1000;
       background: rgba(255,255,255,.70);
-      cursor:pointer;
-    }
-    .btnX.blue{ background: rgba(37,99,235,.10); border-color: rgba(37,99,235,.25); color: var(--blue2); }
-    .btnX.blueSolid{ background: var(--blue); border-color: rgba(37,99,235,.35); color: white; }
-    .btnX.ghost{ background: rgba(255,255,255,.45); }
-    .btnX.danger{ background: rgba(220,38,38,.10); border-color: rgba(220,38,38,.25); color: var(--red); }
-
-    /* modal */
-    .backdrop{
-      position: fixed; inset: 0;
-      background: rgba(15,23,42,.50);
-      display: flex; align-items: center; justify-content: center;
-      padding: 18px;
-      z-index: 60;
-    }
-    .modal{
-      width: min(780px, 100%);
-      border-radius: 22px;
-      border: 1px solid rgba(15,23,42,.10);
-      background: rgba(255,255,255,.93);
-      backdrop-filter: blur(10px);
-      box-shadow: var(--shadow);
-      overflow:hidden;
-    }
-    .mHead{
-      padding:14px 16px;
-      border-bottom:1px solid rgba(15,23,42,.08);
-      display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
-      background: linear-gradient(180deg, rgba(37,99,235,.08), rgba(255,255,255,.0));
-    }
-    .mTitle{ font-weight:1000; font-size:16px; line-height:1.1; }
-    .mSub{ margin-top:4px; font-weight:900; font-size:12px; color: var(--muted); }
-    .mBody{ padding:16px; }
-    .mFooter{
-      padding:12px 16px;
-      border-top:1px solid rgba(15,23,42,.08);
-      display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;
-      background: rgba(255,255,255,.65);
-    }
-
-    /* phone & gate rows */
-    .listCard{ border:1px solid rgba(15,23,42,.08); background: rgba(255,255,255,.70); border-radius:18px; padding:12px; }
-    .itemRow{
-      display:flex; gap:10px; align-items:center; justify-content:space-between;
-      padding:10px 10px;
-      border-radius:14px;
-      border:1px solid rgba(15,23,42,.08);
-      background: rgba(255,255,255,.78);
-      margin-top:10px;
-    }
-    .itemRow .t1{ font-weight:1000; font-size:13px; }
-    .itemRow .t2{ font-weight:900; font-size:12px; color:var(--muted); margin-top:2px; }
-    .itemRow .actions{ display:flex; gap:8px; align-items:center; }
-
-    .pillName{
-      padding:8px 12px;
-      border-radius:999px;
-      background: rgba(4, 75, 241, 0.06);
-      border: 1px solid rgba(15,23,42,.10);
-      font-weight:1000;
-      color: rgba(15,23,42,.65);
-      white-space:nowrap;
-    }
-
-    /* camera modal video */
-    video{
-      width:100%;
       border-radius:18px;
+      padding:10px;
+    }
+    .listTitle{ font-weight:1000; font-size:13px; color: rgba(15,23,42,.72); margin:2px 4px 10px; }
+
+    .itemRow{
+      display:flex; justify-content:space-between; align-items:center; gap:10px;
+      padding:12px 12px;
+      border-radius:16px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.88);
+      margin-bottom:10px;
+    }
+    .itemRow:last-child{ margin-bottom:0; }
+    .itemLeft{ min-width:0; }
+    .itemLeft .l1{
+      font-weight:1000;
+      font-size:16px;
+      letter-spacing:-.01em;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .itemLeft .l2{
+      font-weight:1000;
+      font-size:14px;
+      color:rgba(15,23,42,.72);
+      margin-top:5px;
+      white-space:pre-wrap;
+      word-break:break-word;
+    }
+    .itemActions{ display:flex; gap:6px; align-items:center; justify-content:flex-end; flex:0 0 auto; }
+
+    .tagBlue{
+      display:inline-flex;
+      align-items:center;
+      padding:6px 10px;
+      border-radius:999px;
+      background: rgba(37,99,235,.12);
+      border:1px solid rgba(37,99,235,.22);
+      color: rgba(29,78,216,1);
+    }
+
+    /* Mini icon buttons (discrete) */
+    .iconBtn{
+      width:34px; height:34px;
+      border-radius:12px;
+      border:1px solid rgba(15,23,42,.10);
+      background: rgba(255,255,255,.85);
+      display:flex; align-items:center; justify-content:center;
+      cursor:pointer;
+      font-weight:1000;
+      padding:0;
+      font-size:14px;
+      user-select:none;
+      text-decoration:none;
+      color: inherit;
+    }
+    .iconBtn:hover{ background: rgba(255,255,255,.96); }
+    .iconBtnDanger{
+      border:1px solid rgba(239,68,68,.20);
+      background: rgba(239,68,68,.08);
+      color: var(--danger2);
+    }
+
+    /* Gate add button: always blue even if app.css overrides */
+    #btnAddGate{
+      background: linear-gradient(180deg, var(--blue), var(--blue2)) !important;
+      border:1px solid rgba(37,99,235,.25) !important;
+      color:#fff !important;
+      box-shadow: 0 16px 35px rgba(37,99,235,.22) !important;
+      min-width:110px;
+      justify-content:center;
+    }
+
+    /* Camera */
+    video, .previewImg{
+      width:100%;
+      border-radius:22px;
       border:1px solid rgba(15,23,42,.10);
       background: rgba(15,23,42,.06);
     }
+
+    #btnCamera{
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  font-size: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+#btnCamera{
+  font-size: 22px;
+  padding: 10px 16px;
+}
+
+
   </style>
 </head>
 
@@ -209,8 +332,8 @@
       </div>
 
       <div style="display:flex; gap:10px; align-items:center;">
-        <button id="btnHome" class="btnX blue" type="button">Home</button>
-        <button id="btnBack" class="btnX ghost" type="button">Back</button>
+        <button id="btnHome" class="btnX btnBlue" type="button">Home</button>
+        <button id="btnBack" class="btnX btnGhost" type="button">Back</button>
       </div>
     </div>
 
@@ -219,18 +342,22 @@
       <div class="row">
         <div>
           <div class="sectionTitle">Photo</div>
-                  </div>
-        <div id="pillUser" class="pillName hidden"></div>
+          <div class="sectionSub">Upload an avatar or take a selfie</div>
+        </div>
+        <div id="pillName" class="btnX btnGhost" style="cursor:default;">—</div>
       </div>
 
       <div class="avatarBox" style="margin-top:12px;">
-        <div id="avatar" class="avatar">—</div>
+        <div class="avatarWrap">
+          <div id="avatar" class="avatar">—</div>
+          <button id="btnAvatarEdit" class="avatarEdit" type="button" title="Change photo">✎</button>
+        </div>
 
         <div style="min-width:260px; flex:1;">
           <div class="btnRow">
             <input id="fileAvatar" type="file" accept="image/*" class="hidden" />
-            <button id="btnUpload" class="btnX blue" type="button">Upload photo</button>
-            <button id="btnCamera" class="btnX ghost" type="button">Use camera</button>
+            <button id="btnUpload" class="btnX btnBlue" type="button">⬆ Upload photo</button>
+            <button id="btnCamera" class="btnX btnGhost" type="button">📷</button>
           </div>
           
 
@@ -241,95 +368,276 @@
     </section>
 
     <!-- MENU -->
-    <section class="card menuWrap" style="margin-top:12px;">
-      <div class="sectionTitle">Menu</div>
-      <div class="sectionSub">Tap to open</div>
+    <section class="card cardPad" style="margin-top:12px;">
+      <div class="row">
+        <div>
+          <div class="sectionTitle">Menu</div>
+          <div class="sectionSub">Tap to open</div>
+        </div>
+      </div>
 
       <div class="menuList">
-        <button id="mAccount" class="menuItem" type="button">
+        <button id="openAccount" class="menuItem" type="button">
           <div class="miLeft">
-            <div class="miTitle">Account settings</div>
-            <div class="miSub">Name & email</div>
+            <div class="t1">Account settings</div>
+            <div class="t2">Name & email</div>
           </div>
-          <div class="chev">›</div>
+          <div class="miRight">›</div>
         </button>
 
-        <button id="mPay" class="menuItem" type="button">
+        <button id="openPay" class="menuItem" type="button">
           <div class="miLeft">
-            <div class="miTitle">Pay settings</div>
-            <div class="miSub">Hourly rate used everywhere</div>
+            <div class="t1">Pay settings</div>
+            <div class="t2">Hourly rate used everywhere</div>
           </div>
-          <div class="chev">›</div>
+          <div class="miRight">›</div>
         </button>
 
-        <button id="mPhones" class="menuItem" type="button">
+        <button id="openPhones" class="menuItem" type="button">
           <div class="miLeft">
-            <div class="miTitle">Useful phones</div>
-            <div class="miSub">Call / edit / delete</div>
+            <div class="t1">Useful phones</div>
+            <div class="t2">Call / edit / delete</div>
           </div>
-          <div class="chev">›</div>
+          <div class="miRight">›</div>
         </button>
 
-        <button id="mGates" class="menuItem" type="button">
+        <button id="openGates" class="menuItem" type="button">
           <div class="miLeft">
-            <div class="miTitle">Gate Codes</div>
-            <div class="miSub">Places & codes</div>
+            <div class="t1">Gate Codes</div>
+            <div class="t2">Places & codes</div>
           </div>
-          <div class="chev">›</div>
+          <div class="miRight">›</div>
         </button>
 
-        <button id="mLogout" class="menuItem red" type="button">
+        <button id="openLogout" class="menuItem menuItemDanger" type="button">
           <div class="miLeft">
-            <div class="miTitle">Logout</div>
-            <div class="miSub">Sign out of this device</div>
+            <div class="t1">Logout</div>
+            <div class="t2">Sign out of this device</div>
           </div>
-          <div class="chev">›</div>
+          <div class="miRight">›</div>
         </button>
       </div>
     </section>
   </main>
 
-  <!-- CAMERA MODAL -->
-  <div id="camBackdrop" class="backdrop hidden" aria-hidden="true">
+  <!-- ACCOUNT MODAL -->
+  <div id="bdAccount" class="backdrop hidden" aria-hidden="true">
     <div class="modal" role="dialog" aria-modal="true">
       <div class="mHead">
         <div>
-          <div class="mTitle">Take a selfie</div>
-          <div class="mSub">Click “Capture” then “Save”</div>
+          <div class="mTitle">Account settings</div>
+          <div class="mSub">Edit your basic info</div>
         </div>
-        <button id="btnCloseCam" class="btnX ghost" type="button">Close</button>
+        <button class="mClose" data-close="bdAccount" type="button">×</button>
       </div>
-
       <div class="mBody">
-        <video id="camVideo" autoplay playsinline></video>
-        <div class="btnRow" style="margin-top:12px;">
-          <button id="btnCapture" class="btnX blue" type="button">Capture</button>
-          <button id="btnSaveCapture" class="btnX blueSolid" type="button" disabled>Save</button>
+        <div class="grid2">
+          <label class="field">
+            <span>First name</span>
+            <input id="firstName" type="text" />
+          </label>
+          <label class="field">
+            <span>Last name</span>
+            <input id="lastName" type="text" />
+          </label>
         </div>
-        <div id="camErr" class="err"></div>
+
+        <div class="grid2" style="margin-top:10px;">
+          <label class="field">
+            <span>Email (read-only)</span>
+            <input id="email" type="email" readonly />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input id="password" type="password" placeholder="(next step)" readonly />
+          </label>
+        </div>
+
+        <div id="accMsg" class="ok"></div>
+        <div id="accErr" class="err"></div>
+      </div>
+      <div class="mFoot">
+        <button class="btnX btnGhost" data-close="bdAccount" type="button">Close</button>
+        <button id="btnSaveAccount" class="btnX btnBlue" type="button">Save</button>
       </div>
     </div>
   </div>
 
-  <!-- GENERIC MODAL (Account/Pay/Phones/Gates) -->
-  <div id="modalBackdrop" class="backdrop hidden" aria-hidden="true">
+  <!-- PAY MODAL -->
+  <div id="bdPay" class="backdrop hidden" aria-hidden="true">
     <div class="modal" role="dialog" aria-modal="true">
       <div class="mHead">
         <div>
-          <div id="modalTitle" class="mTitle">Title</div>
-          <div id="modalSub" class="mSub">Subtitle</div>
+          <div class="mTitle">Pay settings</div>
+          <div class="mSub">Single source of truth for Hourly Rate</div>
         </div>
-        <button id="btnCloseModal" class="btnX ghost" type="button">Close</button>
+        <button class="mClose" data-close="bdPay" type="button">×</button>
       </div>
-      <div id="modalBody" class="mBody"></div>
-      <div id="modalFooter" class="mFooter"></div>
+      <div class="mBody">
+        <div class="grid2">
+          <label class="field">
+            <span>Hourly rate (€)</span>
+            <input id="hourlyRate" type="number" step="0.01" min="0" placeholder="e.g. 18.24" />
+          </label>
+          <div class="field">
+            <span>Used by</span>
+            <input type="text" value="Dashboard • Roster • Reports" readonly />
+          </div>
+        </div>
+
+        <div id="payMsg" class="ok"></div>
+        <div id="payErr" class="err"></div>
+      </div>
+      <div class="mFoot">
+        <button class="btnX btnGhost" data-close="bdPay" type="button">Close</button>
+        <button id="btnSavePay" class="btnX btnBlue" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHONES MODAL -->
+  <div id="bdPhones" class="backdrop hidden" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="mHead">
+        <div>
+          <div class="mTitle">Useful phones</div>
+          <div class="mSub">Save contacts for quick calls</div>
+        </div>
+        <button class="mClose" data-close="bdPhones" type="button">×</button>
+      </div>
+      <div class="mBody">
+        <div class="grid2">
+          <label class="field">
+            <span>Label</span>
+            <input id="phLabel" type="text" placeholder="e.g. Ballinlough" />
+          </label>
+          <label class="field">
+            <span>Phone / Notes</span>
+            <input id="phNumber" type="text" placeholder="e.g. 016... or instructions" />
+          </label>
+        </div>
+        <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+          <button id="btnAddPhone" class="btnX btnBlue" type="button" style="min-width:110px; justify-content:center;">Add</button>
+        </div>
+
+        <div class="listBox">
+          <div class="listTitle">Saved contacts</div>
+          <div id="phonesList"></div>
+        </div>
+
+        <div id="phMsg" class="ok"></div>
+        <div id="phErr" class="err"></div>
+      </div>
+      <div class="mFoot">
+        <button class="btnX btnGhost" data-close="bdPhones" type="button">Close</button>
+        <div class="muted" style="font-weight:900;">Tip: tap 📞 to dial</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GATES MODAL -->
+  <div id="bdGates" class="backdrop hidden" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="mHead">
+        <div>
+          <div class="mTitle"><span class="tagBlue">Gate Codes</span></div>
+          
+        </div>
+        
+      </div>
+      <div class="mBody">
+        <div class="grid2">
+          <label class="field">
+            <span>Place</span>
+            <input id="gatePlace" type="text" placeholder="e.g. Brabazon Hall Cork St" />
+          </label>
+          <label class="field">
+            <span>Code / Notes</span>
+            <input id="gateCode" type="text" placeholder="e.g. 5917 or *2665#" />
+          </label>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+          <button id="btnAddGate" class="btnX btnBlue" type="button">Add</button>
+        </div>
+
+        <div class="field" style="margin-top:12px;">
+          <span>Search</span>
+          <input id="gateSearch" type="text" placeholder="Type to filter (place or code)" />
+        </div>
+
+        <div class="listBox" style="margin-top:12px;">
+          <div class="listTitle">Saved gate codes</div>
+          <div id="gatesList"></div>
+        </div>
+
+        <div id="gateMsg" class="ok"></div>
+        <div id="gateErr" class="err"></div>
+      </div>
+      <div class="mFoot">
+        <button class="btnX btnGhost" data-close="bdGates" type="button">Close</button>
+        
+      </div>
+    </div>
+  </div>
+
+  <!-- LOGOUT MODAL -->
+  <div id="bdLogout" class="backdrop hidden" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="mHead">
+        <div>
+          <div class="mTitle">Logout</div>
+          <div class="mSub">Are you sure you want to sign out?</div>
+        </div>
+        <button class="mClose" data-close="bdLogout" type="button">×</button>
+      </div>
+      <div class="mBody">
+        <div style="font-weight:900; color:var(--muted2); line-height:1.45;">
+          You will need to log in again on this device.
+        </div>
+        <div id="loErr" class="err"></div>
+      </div>
+      <div class="mFoot">
+        <button class="btnX btnGhost" data-close="bdLogout" type="button">Cancel</button>
+        <button id="btnLogout" class="btnX btnDangerSolid" type="button">Logout</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CAMERA MODAL -->
+  <div id="bdCam" class="backdrop hidden" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="mHead">
+        <div>
+          <div class="mTitle">Take a selfie</div>
+          <div class="mSub">Tap the camera button, then Save photo</div>
+        </div>
+        <button class="mClose" data-close="bdCam" type="button">×</button>
+      </div>
+
+      <div class="mBody">
+        <div id="camArea">
+          <video id="camVideo" autoplay playsinline></video>
+        </div>
+
+        <div class="btnRow" style="margin-top:12px; justify-content:flex-end;">
+          <button id="btnCapture" class="btnX btnBlue" type="button" title="Capture">📷</button>
+          <button id="btnSaveCapture" class="btnX btnBlue hidden" type="button">Save photo</button>
+          <button id="btnRetake" class="btnX btnGhost hidden" type="button">Retake</button>
+        </div>
+
+        <div id="camErr" class="err"></div>
+      </div>
+
+      <div class="mFoot">
+        <button class="btnX btnGhost" data-close="bdCam" type="button">Close</button>
+        <div class="muted" style="font-weight:900;">Needs HTTPS + permission</div>
+      </div>
     </div>
   </div>
 
   <script>
     const $ = (id) => document.getElementById(id);
-    const show = (el) => el && el.classList.remove("hidden");
-    const hide = (el) => el && el.classList.add("hidden");
 
     async function api(path, opts = {}) {
       const res = await fetch(path, {
@@ -337,10 +645,14 @@
         headers: { ...(opts.headers || {}) },
         ...opts,
       });
+
       const ct = res.headers.get("content-type") || "";
       const data = ct.includes("application/json") ? await res.json() : await res.text();
+
       if (!res.ok) {
-        const msg = (data && data.detail) ? data.detail : (typeof data === "string" ? data : "Request failed");
+        const msg =
+          (data && data.detail) ? data.detail :
+          (typeof data === "string" ? data : "Request failed");
         const e = new Error(msg);
         e.status = res.status;
         throw e;
@@ -348,16 +660,43 @@
       return data;
     }
 
-    // LocalStorage keys
     const LS_AVATAR_URL  = "wh_avatar_url";
     const LS_USER_NAME   = "wh_user_name";
-    const PH_KEY         = "wht_useful_phones";
-    const GATE_KEY       = "wht_gate_codes";
+
+    const PH_KEY = "wht_useful_phones";
+    const GATE_KEY = "wht_gate_codes";
 
     let ME = null;
 
     function esc(s){
-      return String(s || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+      return String(s || "")
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;");
+    }
+
+    async function copyText(txt){
+      try{
+        if (navigator.clipboard && window.isSecureContext){
+          await navigator.clipboard.writeText(txt);
+          return true;
+        }
+      }catch{}
+      try{
+        const ta = document.createElement("textarea");
+        ta.value = txt;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        ta.style.top = "0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        return !!ok;
+      }catch{
+        return false;
+      }
     }
 
     function renderAvatar(url, firstName, lastName){
@@ -372,18 +711,21 @@
         box.appendChild(img);
         return;
       }
+
       const initials = ((firstName||"").slice(0,1) + (lastName||"").slice(0,1)).toUpperCase() || "—";
       box.textContent = initials;
     }
 
     async function loadMe(){
       ME = await api("/api/me");
-      const fullName = `${ME.first_name || ""} ${ME.last_name || ""}`.trim();
 
-      if ($("pillUser")) {
-        $("pillUser").textContent = fullName || "User";
-        $("pillUser").classList.remove("hidden");
-      }
+      const fullName = `${ME.first_name || ""} ${ME.last_name || ""}`.trim() || "User";
+      $("pillName").textContent = fullName;
+
+      $("email").value = ME.email || "";
+      $("firstName").value = ME.first_name || "";
+      $("lastName").value = ME.last_name || "";
+      $("hourlyRate").value = (ME.hourly_rate ?? "").toString();
 
       try {
         localStorage.setItem(LS_AVATAR_URL, ME.avatar_url || "");
@@ -394,9 +736,31 @@
       return ME;
     }
 
-    // -----------------------------
-    // CAMERA / AVATAR
-    // -----------------------------
+    function openModal(id){
+      const bd = $(id);
+      if(!bd) return;
+      bd.classList.remove("hidden");
+      bd.setAttribute("aria-hidden","false");
+    }
+    function closeModal(id){
+      const bd = $(id);
+      if(!bd) return;
+      bd.classList.add("hidden");
+      bd.setAttribute("aria-hidden","true");
+    }
+
+    document.querySelectorAll("[data-close]").forEach(btn=>{
+      btn.addEventListener("click", ()=> closeModal(btn.getAttribute("data-close")));
+    });
+
+    ["bdAccount","bdPay","bdPhones","bdGates","bdLogout","bdCam"].forEach(id=>{
+      const bd = $(id);
+      if(!bd) return;
+      bd.addEventListener("click", (e)=>{
+        if(e.target === bd) closeModal(id);
+      });
+    });
+
     async function uploadAvatarFile(file){
       $("avatarErr").textContent = "";
       $("avatarMsg").textContent = "";
@@ -410,7 +774,7 @@
       fd.append("file", file);
 
       try{
-        const res = await api("/api/me/avatar", { method: "POST", body: fd, headers: {} });
+        const res = await api("/api/me/avatar", { method:"POST", body: fd });
         if (res?.avatar_url) ME.avatar_url = res.avatar_url;
 
         $("avatarMsg").textContent = "Avatar updated.";
@@ -422,45 +786,62 @@
       }
     }
 
-    $("btnUpload").addEventListener("click", () => $("fileAvatar").click());
-    $("fileAvatar").addEventListener("change", async () => {
-      const f = $("fileAvatar").files && $("fileAvatar").files[0];
-      await uploadAvatarFile(f);
-      $("fileAvatar").value = "";
-    });
+    function bindUpload(){
+      $("btnUpload").addEventListener("click", () => $("fileAvatar").click());
+      $("btnAvatarEdit").addEventListener("click", () => $("fileAvatar").click());
+      $("avatar").addEventListener("click", () => $("fileAvatar").click());
 
+      $("fileAvatar").addEventListener("change", async () => {
+        const f = $("fileAvatar").files && $("fileAvatar").files[0];
+        await uploadAvatarFile(f);
+        $("fileAvatar").value = "";
+      });
+    }
+
+    // Camera
     let camStream = null;
     let capturedBlob = null;
 
-    async function openCamera(){
+    function resetCamUI(){
       $("camErr").textContent = "";
       capturedBlob = null;
-      $("btnSaveCapture").disabled = true;
+      $("btnSaveCapture").classList.add("hidden");
+      $("btnRetake").classList.add("hidden");
+      $("btnCapture").classList.remove("hidden");
+      $("camArea").innerHTML = `<video id="camVideo" autoplay playsinline></video>`;
+    }
 
-      show($("camBackdrop"));
-      $("camBackdrop").setAttribute("aria-hidden","false");
+    async function openCamera(){
+      resetCamUI();
+      openModal("bdCam");
 
       try{
-        camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+        camStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" },
+          audio: false
+        });
         $("camVideo").srcObject = camStream;
       }catch(e){
         $("camErr").textContent = "Camera permission denied or unavailable.";
       }
     }
 
-    function closeCamera(){
-      hide($("camBackdrop"));
-      $("camBackdrop").setAttribute("aria-hidden","true");
+    function stopCamera(){
       if(camStream){
         camStream.getTracks().forEach(t => t.stop());
         camStream = null;
       }
-      $("camVideo").srcObject = null;
+    }
+
+    function closeCamera(){
+      stopCamera();
+      closeModal("bdCam");
     }
 
     $("btnCamera").addEventListener("click", openCamera);
-    $("btnCloseCam").addEventListener("click", closeCamera);
-    $("camBackdrop").addEventListener("click", (e) => { if(e.target === $("camBackdrop")) closeCamera(); });
+    document.querySelectorAll('[data-close="bdCam"]').forEach(b=>{
+      b.addEventListener("click", closeCamera);
+    });
 
     $("btnCapture").addEventListener("click", () => {
       $("camErr").textContent = "";
@@ -469,6 +850,7 @@
         $("camErr").textContent = "Camera not ready yet.";
         return;
       }
+
       const canvas = document.createElement("canvas");
       canvas.width = v.videoWidth;
       canvas.height = v.videoHeight;
@@ -476,478 +858,354 @@
       ctx.drawImage(v, 0, 0);
 
       canvas.toBlob((blob) => {
-        if(!blob){ $("camErr").textContent = "Capture failed."; return; }
+        if(!blob){
+          $("camErr").textContent = "Capture failed.";
+          return;
+        }
         capturedBlob = blob;
-        $("btnSaveCapture").disabled = false;
+
+        stopCamera();
+        const url = URL.createObjectURL(blob);
+        $("camArea").innerHTML = `<img class="previewImg" src="${url}" alt="preview" />`;
+
+        $("btnCapture").classList.add("hidden");
+        $("btnSaveCapture").classList.remove("hidden");
+        $("btnRetake").classList.remove("hidden");
       }, "image/jpeg", 0.92);
+    });
+
+    $("btnRetake").addEventListener("click", async () => {
+      resetCamUI();
+      try{
+        camStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" },
+          audio: false
+        });
+        $("camVideo").srcObject = camStream;
+      }catch(e){
+        $("camErr").textContent = "Camera permission denied or unavailable.";
+      }
     });
 
     $("btnSaveCapture").addEventListener("click", async () => {
       $("camErr").textContent = "";
-      if(!capturedBlob){ $("camErr").textContent = "No captured photo."; return; }
+      if(!capturedBlob){
+        $("camErr").textContent = "No captured photo.";
+        return;
+      }
       const file = new File([capturedBlob], "selfie.jpg", { type: "image/jpeg" });
       await uploadAvatarFile(file);
       closeCamera();
     });
 
-    // -----------------------------
-    // MODAL SYSTEM
-    // -----------------------------
-    function openModal(title, sub, bodyHTML, footerHTML){
-      $("modalTitle").textContent = title || "";
-      $("modalSub").textContent = sub || "";
-      $("modalBody").innerHTML = bodyHTML || "";
-      $("modalFooter").innerHTML = footerHTML || "";
-      show($("modalBackdrop"));
-      $("modalBackdrop").setAttribute("aria-hidden","false");
-    }
-    function closeModal(){
-      hide($("modalBackdrop"));
-      $("modalBackdrop").setAttribute("aria-hidden","true");
-      $("modalBody").innerHTML = "";
-      $("modalFooter").innerHTML = "";
-    }
-    $("btnCloseModal").addEventListener("click", closeModal);
-    $("modalBackdrop").addEventListener("click", (e) => { if(e.target === $("modalBackdrop")) closeModal(); });
+    // Save account
+    $("btnSaveAccount").addEventListener("click", async () => {
+      $("accErr").textContent = "";
+      $("accMsg").textContent = "";
 
-    // -----------------------------
-    // ACCOUNT MODAL
-    // -----------------------------
-    function openAccount(){
-      const body = `
-        <div class="grid2">
-          <label class="field">
-            <span>First name</span>
-            <input id="m_first" type="text" value="${esc(ME?.first_name || "")}" />
-          </label>
-          <label class="field">
-            <span>Last name</span>
-            <input id="m_last" type="text" value="${esc(ME?.last_name || "")}" />
-          </label>
-        </div>
+      const first_name = ($("firstName").value || "").trim();
+      const last_name = ($("lastName").value || "").trim();
 
-        <div class="grid2" style="margin-top:10px;">
-          <label class="field">
-            <span>Email (read-only)</span>
-            <input type="email" readonly value="${esc(ME?.email || "")}" />
-          </label>
-          <label class="field">
-            <span>Password</span>
-            <input type="password" readonly placeholder="(next step)" />
-          </label>
-        </div>
-
-        <div id="m_acc_ok" class="ok"></div>
-        <div id="m_acc_err" class="err"></div>
-      `;
-
-      const footer = `
-        <button id="btnAccCancel" class="btnX ghost" type="button">Cancel</button>
-        <button id="btnAccSave" class="btnX blueSolid" type="button">Save</button>
-      `;
-
-      openModal("Account settings", "Name & email", body, footer);
-
-      $("btnAccCancel").addEventListener("click", closeModal);
-      $("btnAccSave").addEventListener("click", async () => {
-        $("m_acc_ok").textContent = "";
-        $("m_acc_err").textContent = "";
-        const first_name = ($("m_first").value || "").trim();
-        const last_name  = ($("m_last").value || "").trim();
-
-        try{
-          await api("/api/me", {
-            method:"PATCH",
-            headers:{ "Content-Type":"application/json" },
-            body: JSON.stringify({ first_name, last_name })
-          });
-          $("m_acc_ok").textContent = "Saved.";
-          await loadMe();
-        }catch(e){
-          $("m_acc_err").textContent = e.message || "Failed to save";
-          if(e.status === 401) location.href = "/";
-        }
-      });
-    }
-
-    // -----------------------------
-    // PAY MODAL
-    // -----------------------------
-    function openPay(){
-      const body = `
-        <div class="grid2">
-          <label class="field">
-            <span>Hourly rate (€)</span>
-            <input id="m_rate" type="number" step="0.01" min="0" value="${esc(String(ME?.hourly_rate ?? ""))}" placeholder="e.g. 18.24" />
-          </label>
-          <div class="field">
-            <span>Used by</span>
-            <input type="text" value="Dashboard • Roster • Reports" readonly />
-          </div>
-        </div>
-
-        <div id="m_pay_ok" class="ok"></div>
-        <div id="m_pay_err" class="err"></div>
-      `;
-      const footer = `
-        <button id="btnPayCancel" class="btnX ghost" type="button">Cancel</button>
-        <button id="btnPaySave" class="btnX blueSolid" type="button">Save</button>
-      `;
-
-      openModal("Pay settings", "Hourly rate used everywhere", body, footer);
-
-      $("btnPayCancel").addEventListener("click", closeModal);
-      $("btnPaySave").addEventListener("click", async () => {
-        $("m_pay_ok").textContent = "";
-        $("m_pay_err").textContent = "";
-        const hourly_rate = Number(($("m_rate").value || "").trim() || 0);
-        if(!hourly_rate || hourly_rate <= 0){
-          $("m_pay_err").textContent = "Hourly Rate must be > 0.";
-          return;
-        }
-        try{
-          await api("/api/me", {
-            method:"PATCH",
-            headers:{ "Content-Type":"application/json" },
-            body: JSON.stringify({ hourly_rate })
-          });
-          $("m_pay_ok").textContent = "Hourly Rate saved.";
-          await loadMe();
-        }catch(e){
-          $("m_pay_err").textContent = e.message || "Failed to save";
-          if(e.status === 401) location.href = "/";
-        }
-      });
-    }
-
-    // -----------------------------
-    // PHONES (localStorage)
-    // -----------------------------
-    function defaultPhonesIfEmpty(){
       try{
-        const raw = localStorage.getItem(PH_KEY);
-        if(raw) return;
-      }catch{}
-      const seed = [
+        await api("/api/me", {
+          method: "PATCH",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify({ first_name, last_name })
+        });
+
+        $("accMsg").textContent = "Saved.";
+        await loadMe();
+      }catch(e){
+        $("accErr").textContent = e.message || "Failed to save";
+        if(e.status === 401) location.href = "/";
+      }
+    });
+
+    // Save pay
+    $("btnSavePay").addEventListener("click", async () => {
+      $("payErr").textContent = "";
+      $("payMsg").textContent = "";
+
+      const hourly_rate = Number($("hourlyRate").value || 0);
+      if(!hourly_rate || hourly_rate <= 0){
+        $("payErr").textContent = "Hourly Rate must be > 0.";
+        return;
+      }
+
+      try{
+        await api("/api/me", {
+          method: "PATCH",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify({ hourly_rate })
+        });
+
+        $("payMsg").textContent = "Hourly Rate saved.";
+        await loadMe();
+      }catch(e){
+        $("payErr").textContent = e.message || "Failed to save";
+        if(e.status === 401) location.href = "/";
+      }
+    });
+
+    // Phones (localStorage)
+    function loadPhones(){
+      try{ return JSON.parse(localStorage.getItem(PH_KEY) || "[]"); }catch{ return []; }
+    }
+    function savePhones(items){ localStorage.setItem(PH_KEY, JSON.stringify(items || [])); }
+    function seedPhonesIfEmpty(){
+      const items = loadPhones();
+      if(items.length) return;
+      savePhones([
         { id: Date.now()+1, label: "Ballinlough", phone: "016874191 or (8)8819" },
         { id: Date.now()+2, label: "Waterford", phone: "1800 248 123 - instructions - press 2..1..4 and 3 to speak to an operator in CS." }
-      ];
-      try{ localStorage.setItem(PH_KEY, JSON.stringify(seed)); }catch{}
+      ]);
     }
-    function loadPhones(){
-      try{
-        const raw = localStorage.getItem(PH_KEY);
-        return raw ? JSON.parse(raw) : [];
-      }catch{ return []; }
-    }
-    function savePhones(items){
-      localStorage.setItem(PH_KEY, JSON.stringify(items || []));
-    }
-    function renderPhonesInto(containerId){
-      const box = $(containerId);
-      if(!box) return;
-      const items = loadPhones();
 
+    function renderPhones(){
+      const list = $("phonesList");
+      list.innerHTML = "";
+      const items = loadPhones();
       if(!items.length){
-        box.innerHTML = `<div class="muted" style="margin-top:6px;">No contacts yet.</div>`;
+        list.innerHTML = `<div class="muted" style="margin:8px 6px;">No contacts yet.</div>`;
         return;
       }
-
-      box.innerHTML = `<div class="listCard"><div style="font-weight:1000;">Saved contacts</div></div>`;
-      const card = box.querySelector(".listCard");
 
       for(const it of items){
         const row = document.createElement("div");
         row.className = "itemRow";
         row.innerHTML = `
-          <div style="min-width:180px; flex:1;">
-            <div class="t1">${esc(it.label)}</div>
-            <div class="t2">${esc(it.phone)}</div>
+          <div class="itemLeft">
+            <div class="l1">${esc(it.label)}</div>
+            <div class="l2">${esc(it.phone)}</div>
           </div>
-          <div class="actions">
-            <a class="btnX blue" href="tel:${encodeURIComponent(it.phone||"")}" style="text-decoration:none;">Call</a>
-            <button class="btnX danger" type="button">Delete</button>
+          <div class="itemActions">
+            <a class="iconBtn" href="tel:${encodeURIComponent(it.phone||"")}" title="Call" aria-label="Call">📞</a>
+            <button class="iconBtn" type="button" title="Edit" aria-label="Edit" data-edit="${it.id}">✎</button>
+            <button class="iconBtn iconBtnDanger" type="button" title="Delete" aria-label="Delete" data-del="${it.id}">🗑</button>
           </div>
         `;
-        row.querySelector("button").addEventListener("click", () => {
-          const next = loadPhones().filter(x => x.id !== it.id);
-          savePhones(next);
-          renderPhonesInto(containerId);
-        });
-        card.appendChild(row);
+        list.appendChild(row);
       }
+
+      list.querySelectorAll("[data-del]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const id = Number(btn.getAttribute("data-del"));
+          savePhones(loadPhones().filter(x => x.id !== id));
+          renderPhones();
+        });
+      });
+
+      list.querySelectorAll("[data-edit]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const id = Number(btn.getAttribute("data-edit"));
+          const it = loadPhones().find(x=>x.id===id);
+          if(!it) return;
+          $("phLabel").value = it.label || "";
+          $("phNumber").value = it.phone || "";
+          $("btnAddPhone").textContent = "Save";
+          $("btnAddPhone").dataset.editId = String(id);
+        });
+      });
     }
 
-    function openPhones(){
-      defaultPhonesIfEmpty();
+    $("btnAddPhone").addEventListener("click", ()=>{
+      $("phErr").textContent = "";
+      $("phMsg").textContent = "";
 
-      const body = `
-        <div class="grid2">
-          <label class="field">
-            <span>Label</span>
-            <input id="m_ph_label" type="text" placeholder="e.g. Mechanic" />
-          </label>
-          <label class="field">
-            <span>Phone / Notes</span>
-            <input id="m_ph_phone" type="text" placeholder="e.g. +353... or instructions" />
-          </label>
-        </div>
+      const label = ($("phLabel").value || "").trim();
+      const phone = ($("phNumber").value || "").trim();
 
-        <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-          <button id="btnPhAdd" class="btnX blueSolid" type="button">Add</button>
-        </div>
+      if(!label || !phone){
+        $("phErr").textContent = "Fill label and phone.";
+        return;
+      }
 
-        <div id="m_ph_list" style="margin-top:12px;"></div>
-        <div id="m_ph_ok" class="ok"></div>
-        <div id="m_ph_err" class="err"></div>
-      `;
+      const items = loadPhones();
+      const editId = Number($("btnAddPhone").dataset.editId || "0");
 
-      const footer = `
-        <button id="btnPhClose" class="btnX ghost" type="button">Close</button>
-      `;
-
-      openModal("Useful phones", "Call / edit / delete", body, footer);
-      renderPhonesInto("m_ph_list");
-
-      $("btnPhClose").addEventListener("click", closeModal);
-      $("btnPhAdd").addEventListener("click", () => {
-        $("m_ph_ok").textContent = "";
-        $("m_ph_err").textContent = "";
-
-        const label = ($("m_ph_label").value || "").trim();
-        const phone = ($("m_ph_phone").value || "").trim();
-        if(!label || !phone){
-          $("m_ph_err").textContent = "Fill label and phone/notes.";
-          return;
+      if(editId){
+        const idx = items.findIndex(x=>x.id===editId);
+        if(idx >= 0){
+          items[idx].label = label;
+          items[idx].phone = phone;
+          savePhones(items);
+          $("phMsg").textContent = "Updated.";
         }
-
-        const items = loadPhones();
+        $("btnAddPhone").textContent = "Add";
+        delete $("btnAddPhone").dataset.editId;
+      }else{
         items.unshift({ id: Date.now(), label, phone });
         savePhones(items);
-
-        $("m_ph_label").value = "";
-        $("m_ph_phone").value = "";
-        $("m_ph_ok").textContent = "Added.";
-        renderPhonesInto("m_ph_list");
-      });
-    }
-
-    // -----------------------------
-    // GATE CODES (localStorage)
-    // -----------------------------
-    function defaultGatesIfEmpty(){
-      try{
-        const raw = localStorage.getItem(GATE_KEY);
-        if(raw) return;
-      }catch{}
-
-      const seed = [
-        { id: Date.now()+1, place:"Old chocolate", code:"4238" },
-        { id: Date.now()+2, place:"Brabazon Hall Cork st", code:"5917" },
-        { id: Date.now()+3, place:"Brabazon Pimlico side", code:"4683 inside pad" },
-        { id: Date.now()+4, place:"Bridge water quay", code:"0406" },
-        { id: Date.now()+5, place:"Camac crescent", code:"3535" },
-        { id: Date.now()+6, place:"Chandler", code:"*2665#" },
-        { id: Date.now()+7, place:"Leinster park", code:"4282" },
-        { id: Date.now()+8, place:"Millbrook court", code:"3863" },
-        { id: Date.now()+9, place:"Rockfield", code:"2985" },
-        { id: Date.now()+10, place:"Eastmoreland Court", code:"1946" },
-        { id: Date.now()+11, place:"The Prominade Roebuck Road", code:"7253" },
-        { id: Date.now()+12, place:"Saddlers Place", code:"2004" },
-        { id: Date.now()+13, place:"Swanward Court main", code:"1326" },
-        { id: Date.now()+14, place:"Swanward Court pedestrian", code:"6231" },
-        { id: Date.now()+15, place:"Harold Bridge Court", code:"3224" },
-        { id: Date.now()+16, place:"Stanford", code:"4763" },
-        { id: Date.now()+17, place:"Mellowes Quay", code:"0AAAA" },
-        { id: Date.now()+18, place:"The Pines", code:"Key 2902 Key" },
-        { id: Date.now()+19, place:"The Pavilion Roebuck Hall", code:"75233" },
-        { id: Date.now()+20, place:"Balnagowan", code:"9087" },
-        { id: Date.now()+21, place:"Hyde Square", code:"4916" },
-        { id: Date.now()+22, place:"Hybreasal", code:"5825" },
-        { id: Date.now()+23, place:"Riverbank house - Pedestrian Gate", code:"1955" },
-        { id: Date.now()+24, place:"Rosedale Castaheany", code:"9745" },
-        { id: Date.now()+25, place:"Whitworth hall d7", code:"1974" }
-      ];
-
-      try{ localStorage.setItem(GATE_KEY, JSON.stringify(seed)); }catch{}
-    }
-
-    function loadGates(){
-      try{
-        const raw = localStorage.getItem(GATE_KEY);
-        return raw ? JSON.parse(raw) : [];
-      }catch{ return []; }
-    }
-    function saveGates(items){
-      localStorage.setItem(GATE_KEY, JSON.stringify(items || []));
-    }
-
-    function renderGates(containerId){
-      const box = $(containerId);
-      if(!box) return;
-
-      const items = loadGates();
-      if(!items.length){
-        box.innerHTML = `<div class="muted" style="margin-top:6px;">No gate codes yet.</div>`;
-        return;
+        $("phMsg").textContent = "Added.";
       }
 
-      box.innerHTML = `<div class="listCard"><div style="font-weight:1000;">Saved gate codes</div></div>`;
-      const card = box.querySelector(".listCard");
+      $("phLabel").value = "";
+      $("phNumber").value = "";
+      renderPhones();
+    });
+
+    // Gates (localStorage)
+    function loadGates(){
+      try{ return JSON.parse(localStorage.getItem(GATE_KEY) || "[]"); }catch{ return []; }
+    }
+    function saveGates(items){ localStorage.setItem(GATE_KEY, JSON.stringify(items || [])); }
+    function seedGatesIfEmpty(){
+      const items = loadGates();
+      if(items.length) return;
+      const seeded = [
+        ["Old chocolate","4238"],
+        ["Brabazon Hall Cork st","5917"],
+        ["Brabazon Pimlico side","4683 inside pad"],
+        ["Bridge water quay","0406"],
+        ["Camac crescent","3535"],
+        ["Chandler","*2665#"],
+        ["Leinster park","4282"],
+        ["Millbrook court","3863"],
+      ].map((x, i)=>({ id: Date.now()+100+i, place:x[0], code:x[1] }));
+      saveGates(seeded);
+    }
+
+    function renderGates(){
+      const list = $("gatesList");
+      list.innerHTML = "";
+
+      const q = ($("gateSearch").value || "").trim().toLowerCase();
+      let items = loadGates();
+      if(q){
+        items = items.filter(it =>
+          String(it.place||"").toLowerCase().includes(q) ||
+          String(it.code||"").toLowerCase().includes(q)
+        );
+      }
+
+      if(!items.length){
+        list.innerHTML = `<div class="muted" style="margin:8px 6px;">No gate codes found.</div>`;
+        return;
+      }
 
       for(const it of items){
         const row = document.createElement("div");
         row.className = "itemRow";
+        row.style.cursor = "pointer";
+        row.title = "Tap to copy";
+
         row.innerHTML = `
-          <div style="min-width:200px; flex:1;">
-            <div class="t1">${esc(it.place)}</div>
-            <div class="t2">${esc(it.code)}</div>
+          <div class="itemLeft">
+            <div class="l1">${esc(it.place)}</div>
+            <div class="l2">${esc(it.code)}</div>
           </div>
-          <div class="actions">
-            <button class="btnX blue" type="button">Edit</button>
-            <button class="btnX danger" type="button">Delete</button>
+          <div class="itemActions">
+            <button class="iconBtn" type="button" title="Edit" aria-label="Edit" data-edit="${it.id}">✎</button>
+            <button class="iconBtn iconBtnDanger" type="button" title="Delete" aria-label="Delete" data-del="${it.id}">🗑</button>
           </div>
         `;
 
-        const [btnEdit, btnDel] = row.querySelectorAll("button");
-
-        btnDel.addEventListener("click", () => {
-          const next = loadGates().filter(x => x.id !== it.id);
-          saveGates(next);
-          renderGates(containerId);
+        row.addEventListener("click", async (e)=>{
+          if (e.target && e.target.closest(".itemActions")) return;
+          const ok = await copyText(`${it.place}: ${it.code}`);
+          if(ok){
+            $("gateMsg").textContent = "Copied.";
+            setTimeout(()=> $("gateMsg").textContent = "", 900);
+          }else{
+            $("gateErr").textContent = "Copy not available on this device/browser.";
+            setTimeout(()=> $("gateErr").textContent = "", 1200);
+          }
         });
 
-        btnEdit.addEventListener("click", () => {
-          const editBody = `
-            <div class="grid2">
-              <label class="field">
-                <span>Place</span>
-                <input id="edit_place" type="text" value="${esc(it.place)}" />
-              </label>
-              <label class="field">
-                <span>Code</span>
-                <input id="edit_code" type="text" value="${esc(it.code)}" />
-              </label>
-            </div>
-            <div id="edit_err" class="err"></div>
-          `;
-          const editFooter = `
-            <button id="btnEditCancel" class="btnX ghost" type="button">Cancel</button>
-            <button id="btnEditSave" class="btnX blueSolid" type="button">Save</button>
-          `;
-          openModal("Edit gate code", "Update place & code", editBody, editFooter);
-
-          $("btnEditCancel").addEventListener("click", () => {
-            // reopen gates modal quickly
-            closeModal();
-            openGates();
-          });
-
-          $("btnEditSave").addEventListener("click", () => {
-            $("edit_err").textContent = "";
-            const place = ($("edit_place").value || "").trim();
-            const code  = ($("edit_code").value || "").trim();
-            if(!place || !code){
-              $("edit_err").textContent = "Place and code are required.";
-              return;
-            }
-            const items = loadGates().map(x => x.id === it.id ? { ...x, place, code } : x);
-            saveGates(items);
-            closeModal();
-            openGates();
-          });
-        });
-
-        card.appendChild(row);
+        list.appendChild(row);
       }
-    }
 
-    function openGates(){
-      defaultGatesIfEmpty();
+      list.querySelectorAll("[data-del]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const id = Number(btn.getAttribute("data-del"));
+          saveGates(loadGates().filter(x => x.id !== id));
+          renderGates();
+        });
+      });
 
-      const body = `
-        <div class="grid2">
-          <label class="field">
-            <span>Place</span>
-            <input id="m_gate_place" type="text" placeholder="e.g. Brabazon Hall" />
-          </label>
-          <label class="field">
-            <span>Code</span>
-            <input id="m_gate_code" type="text" placeholder="e.g. 5917 / *2665# / notes" />
-          </label>
-        </div>
-
-        <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-          <button id="btnGateAdd" class="btnX blueSolid" type="button">Add</button>
-        </div>
-
-        <div id="m_gate_list" style="margin-top:12px;"></div>
-        <div id="m_gate_ok" class="ok"></div>
-        <div id="m_gate_err" class="err"></div>
-      `;
-
-      const footer = `<button id="btnGateClose" class="btnX ghost" type="button">Close</button>`;
-
-      openModal("Gate Codes", "Places & codes", body, footer);
-      renderGates("m_gate_list");
-
-      $("btnGateClose").addEventListener("click", closeModal);
-      $("btnGateAdd").addEventListener("click", () => {
-        $("m_gate_ok").textContent = "";
-        $("m_gate_err").textContent = "";
-        const place = ($("m_gate_place").value || "").trim();
-        const code  = ($("m_gate_code").value || "").trim();
-        if(!place || !code){
-          $("m_gate_err").textContent = "Fill place and code.";
-          return;
-        }
-        const items = loadGates();
-        items.unshift({ id: Date.now(), place, code });
-        saveGates(items);
-        $("m_gate_place").value = "";
-        $("m_gate_code").value = "";
-        $("m_gate_ok").textContent = "Added.";
-        renderGates("m_gate_list");
+      list.querySelectorAll("[data-edit]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const id = Number(btn.getAttribute("data-edit"));
+          const it = loadGates().find(x=>x.id===id);
+          if(!it) return;
+          $("gatePlace").value = it.place || "";
+          $("gateCode").value = it.code || "";
+          $("btnAddGate").textContent = "Save";
+          $("btnAddGate").dataset.editId = String(id);
+        });
       });
     }
 
-    // -----------------------------
-    // LOGOUT
-    // -----------------------------
-    async function doLogout(){
-      // confirm
-      const ok = confirm("Logout now?");
-      if(!ok) return;
+    $("gateSearch").addEventListener("input", ()=> renderGates());
 
-      try{
-        await api("/api/logout", { method:"POST" });
-      }catch{}
+    $("btnAddGate").addEventListener("click", ()=>{
+      $("gateErr").textContent = "";
+      $("gateMsg").textContent = "";
 
-      // optional: clear local-only user hints
-      try{
-        localStorage.removeItem(LS_AVATAR_URL);
-        localStorage.removeItem(LS_USER_NAME);
-      }catch{}
+      const place = ($("gatePlace").value || "").trim();
+      const code = ($("gateCode").value || "").trim();
 
+      if(!place || !code){
+        $("gateErr").textContent = "Fill place and code.";
+        return;
+      }
+
+      const items = loadGates();
+      const editId = Number($("btnAddGate").dataset.editId || "0");
+
+      if(editId){
+        const idx = items.findIndex(x=>x.id===editId);
+        if(idx >= 0){
+          items[idx].place = place;
+          items[idx].code = code;
+          saveGates(items);
+          $("gateMsg").textContent = "Updated.";
+        }
+        $("btnAddGate").textContent = "Add";
+        delete $("btnAddGate").dataset.editId;
+      }else{
+        items.unshift({ id: Date.now(), place, code });
+        saveGates(items);
+        $("gateMsg").textContent = "Added.";
+      }
+
+      $("gatePlace").value = "";
+      $("gateCode").value = "";
+      renderGates();
+    });
+
+    // Menu open
+    $("openAccount").addEventListener("click", ()=> openModal("bdAccount"));
+    $("openPay").addEventListener("click", ()=> openModal("bdPay"));
+    $("openPhones").addEventListener("click", ()=>{
+      seedPhonesIfEmpty();
+      renderPhones();
+      openModal("bdPhones");
+    });
+    $("openGates").addEventListener("click", ()=>{
+      seedGatesIfEmpty();
+      renderGates();
+      openModal("bdGates");
+    });
+    $("openLogout").addEventListener("click", ()=> openModal("bdLogout"));
+
+    // Logout
+    $("btnLogout").addEventListener("click", async ()=>{
+      $("loErr").textContent = "";
+      try{ await api("/api/logout", { method:"POST" }); }catch(e){}
       location.href = "/";
-    }
+    });
 
-    // -----------------------------
-    // NAV
-    // -----------------------------
+    // Nav
     $("btnHome").addEventListener("click", () => location.href = "/");
     $("btnBack").addEventListener("click", () => history.length > 1 ? history.back() : (location.href = "/"));
 
-    // menu bindings
-    $("mAccount").addEventListener("click", openAccount);
-    $("mPay").addEventListener("click", openPay);
-    $("mPhones").addEventListener("click", openPhones);
-    $("mGates").addEventListener("click", openGates);
-    $("mLogout").addEventListener("click", doLogout);
-
-    // init
+    // Init
     (async function init(){
       try{
+        bindUpload();
+        seedPhonesIfEmpty();
+        seedGatesIfEmpty();
         await loadMe();
       }catch(e){
         location.href = "/";
