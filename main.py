@@ -33,9 +33,10 @@ AVATARS_DIR.mkdir(parents=True, exist_ok=True)
 
 APP_SECRET = os.environ.get("WORKHOURS_SECRET", "dev-secret-change-me").encode("utf-8")
 COOKIE_AGE = 90 * 24 * 60 * 60  # 90 days
-COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"  # keep 0 in localhost/http
+COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"  # keep 0 on localhost/http
 
-app = FastAPI(title="Work Hours Tracker", version="9.2")
+
+app = FastAPI(title="Work Hours Tracker", version="9.3")
 
 
 # ======================================================
@@ -45,16 +46,48 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.middleware("http")
-async def no_cache_static_dev(request: Request, call_next):
+async def security_no_cache_and_api_isolation(request: Request, call_next):
+    """
+    CRITICAL:
+      - Prevent PWA/ServiceWorker/proxy from caching /api responses (fixes cross-user data “leak” symptoms)
+      - Keep no-store for HTML/static pages too (dev friendly)
+    """
     resp = await call_next(request)
+
     p = request.url.path or ""
+
+    # Never cache API responses (important for cookie-auth apps)
+    if p.startswith("/api/"):
+        resp.headers["Cache-Control"] = "no-store, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        resp.headers["Vary"] = "Cookie"
+
+    # Dev: also prevent caching for pages/static
     if p == "/" or p.startswith("/static/") or p in (
         "/hours", "/weeks", "/holidays", "/reports", "/profile", "/report", "/add-week", "/roster"
     ):
         resp.headers["Cache-Control"] = "no-store, max-age=0"
         resp.headers["Pragma"] = "no-cache"
         resp.headers["Expires"] = "0"
+
     return resp
+
+@app.middleware("http")
+async def no_cache_api(request: Request, call_next):
+    resp = await call_next(request)
+
+    p = request.url.path or ""
+    if p.startswith("/api/"):
+        # nunca deixar cachear respostas da API
+        resp.headers["Cache-Control"] = "no-store, no-cache, max-age=0, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        # MUITO importante: se algum cache existir, ele deve variar por cookie
+        resp.headers["Vary"] = "Cookie"
+
+    return resp
+
 
 # ======================================================
 # DB
@@ -69,25 +102,6 @@ def db() -> sqlite3.Connection:
 def now() -> str:
     return datetime.utcnow().isoformat(timespec="seconds")
 
-def ensure_user_columns(conn: sqlite3.Connection):
-    cols = conn.execute("PRAGMA table_info(users)").fetchall()
-    names = {c["name"] for c in cols}
-
-    # strings
-    if "first_name" not in names:
-        conn.execute("ALTER TABLE users ADD COLUMN first_name TEXT")
-    if "last_name" not in names:
-        conn.execute("ALTER TABLE users ADD COLUMN last_name TEXT")
-
-    # number
-    if "hourly_rate" not in names:
-        conn.execute("ALTER TABLE users ADD COLUMN hourly_rate REAL DEFAULT 0")
-
-    # avatar file path
-    if "avatar_path" not in names:
-        conn.execute("ALTER TABLE users ADD COLUMN avatar_path TEXT")
-
-
 
 def col_exists(conn: sqlite3.Connection, table: str, col: str) -> bool:
     cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
@@ -97,6 +111,13 @@ def col_exists(conn: sqlite3.Connection, table: str, col: str) -> bool:
 def add_col_if_missing(conn: sqlite3.Connection, table: str, col: str, ddl: str) -> None:
     if not col_exists(conn, table, col):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+
+
+def ensure_user_columns(conn: sqlite3.Connection) -> None:
+    add_col_if_missing(conn, "users", "first_name", "TEXT")
+    add_col_if_missing(conn, "users", "last_name", "TEXT")
+    add_col_if_missing(conn, "users", "hourly_rate", "REAL DEFAULT 0")
+    add_col_if_missing(conn, "users", "avatar_path", "TEXT")
 
 
 def ensure_clock_tables(conn: sqlite3.Connection) -> None:
@@ -119,7 +140,6 @@ def ensure_clock_tables(conn: sqlite3.Connection) -> None:
 
 
 def ensure_bh_indexes(conn: sqlite3.Connection) -> None:
-    # anti-duplicate index
     conn.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_bh_unique
@@ -130,7 +150,6 @@ def ensure_bh_indexes(conn: sqlite3.Connection) -> None:
 
 def init_db() -> None:
     with db() as conn:
-        # --- base tables ---
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS users(
@@ -140,6 +159,7 @@ def init_db() -> None:
                 email TEXT UNIQUE,
                 salt_hex TEXT,
                 pass_hash TEXT,
+                hourly_rate REAL DEFAULT 0,
                 avatar_path TEXT,
                 created_at TEXT
             );
@@ -209,16 +229,10 @@ def init_db() -> None:
             """
         )
 
-        with db() as conn:
-          ensure_user_columns(conn)
-          conn.commit()
-
-        
-
-        # --- migrations (safe / idempotent) ---
+        # safe/idempotent migrations
+        ensure_user_columns(conn)
         add_col_if_missing(conn, "users", "salt_hex", "TEXT")
         add_col_if_missing(conn, "users", "pass_hash", "TEXT")
-        add_col_if_missing(conn, "users", "avatar_path", "TEXT")
         add_col_if_missing(conn, "users", "created_at", "TEXT")
 
         add_col_if_missing(conn, "entries", "note", "TEXT")
@@ -233,7 +247,6 @@ def init_db() -> None:
 
         ensure_bh_indexes(conn)
         ensure_clock_tables(conn)
-
         conn.commit()
 
 
@@ -270,46 +283,84 @@ BANK_HOLIDAYS_2025: list[tuple[str, str]] = [
 ]
 
 
-def irish_bank_holidays(year: int) -> list[tuple[str, str]]:
-    if year == 2026:
-        return BANK_HOLIDAYS_2026
+def irish_bank_holidays(year: int) -> List[tuple[str, str]]:
     if year == 2025:
         return BANK_HOLIDAYS_2025
+    if year == 2026:
+        return BANK_HOLIDAYS_2026
     return []
 
 
-def seed_bank_holidays(conn: sqlite3.Connection, user_id: int, year: int) -> None:
+def bh_repair(conn: sqlite3.Connection, uid: int, year: int) -> None:
+    # remove broken rows
+    conn.execute(
+        """
+        DELETE FROM bank_holidays
+        WHERE user_id=? AND year=?
+          AND (
+            name IS NULL
+            OR trim(name) = ''
+            OR name GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+            OR bh_date IS NULL
+            OR bh_date NOT LIKE '____-__-__'
+          )
+        """,
+        (uid, year),
+    )
+
+    # normalize dates
+    conn.execute(
+        """
+        UPDATE bank_holidays
+        SET bh_date = date(bh_date)
+        WHERE user_id=? AND year=? AND bh_date IS NOT NULL
+        """,
+        (uid, year),
+    )
+
+    # remove duplicates
+    conn.execute(
+        """
+        DELETE FROM bank_holidays
+        WHERE id IN (
+          SELECT id FROM (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY user_id, year, bh_date
+                     ORDER BY
+                       paid DESC,
+                       CASE WHEN paid_date IS NOT NULL THEN 1 ELSE 0 END DESC,
+                       id ASC
+                   ) AS rn
+            FROM bank_holidays
+            WHERE user_id=? AND year=?
+          )
+          WHERE rn > 1
+        )
+        """,
+        (uid, year),
+    )
+
+    ensure_bh_indexes(conn)
+    conn.commit()
+
+
+def ensure_bh_for_year(conn: sqlite3.Connection, uid: int, year: int) -> None:
+    bh_repair(conn, uid, year)
+
     items = irish_bank_holidays(year)
     if not items:
         return
 
     conn.executemany(
         """
-        INSERT OR IGNORE INTO bank_holidays (user_id, year, name, bh_date, paid, applicable)
+        INSERT OR IGNORE INTO bank_holidays
+        (user_id, year, name, bh_date, paid, applicable)
         VALUES (?, ?, ?, date(?), 0, 1)
         """,
-        [(user_id, year, name, ymd) for (ymd, name) in items],
+        [(uid, year, name, ymd) for (ymd, name) in items],
     )
     conn.commit()
-
-
-def get_bank_holidays(conn: sqlite3.Connection, user_id: int, year: int) -> list[dict]:
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT bh_date, name, paid, applicable
-        FROM bank_holidays
-        WHERE user_id=? AND year=?
-        ORDER BY date(bh_date) ASC
-        """,
-        (user_id, year),
-    )
-    rows = cur.fetchall()
-    return [
-        {"date": r[0], "name": r[1], "paid": bool(r[2]), "applicable": bool(r[3])}
-        for r in rows
-    ]
-
 
 
 # ======================================================
@@ -337,9 +388,11 @@ class WeekCreate(BaseModel):
 class WeekRatePatch(BaseModel):
     hourly_rate: float
 
+
 class RosterDayPatch(BaseModel):
     work_date: str  # yyyy-mm-dd
     code: str       # "A" | "B" | "OFF"
+
 
 class EntryUpsert(BaseModel):
     work_date: str  # yyyy-mm-dd
@@ -357,8 +410,6 @@ class BhPaidPatch(BaseModel):
     applicable: Optional[bool] = None
 
 
-
-
 class ForgotIn(BaseModel):
     email: EmailStr
 
@@ -368,7 +419,6 @@ class ResetIn(BaseModel):
     new_password: str = Field(..., min_length=4)
 
 
-# Roster models
 class RosterCreate(BaseModel):
     week_number: int
     start_date: str  # yyyy-mm-dd (Sunday)
@@ -378,6 +428,12 @@ class RosterCreate(BaseModel):
 class ExtraConfirmIn(BaseModel):
     work_date: str  # yyyy-mm-dd
     authorized: bool
+
+
+class MeUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    hourly_rate: Optional[float] = None
 
 
 # ======================================================
@@ -414,9 +470,8 @@ def weeks_page():
 
 @app.get("/holidays", response_class=HTMLResponse)
 def holidays_page(req: Request):
-    require_user(req)  # garante login
+    require_user(req)
     return (STATIC_DIR / "holidays.html").read_text(encoding="utf-8")
-
 
 
 @app.get("/reports", response_class=HTMLResponse)
@@ -430,16 +485,10 @@ def profile_page(req: Request):
     return (STATIC_DIR / "profile.html").read_text(encoding="utf-8")
 
 
-
 @app.get("/roster", response_class=HTMLResponse)
 def roster_page():
     return (STATIC_DIR / "roster.html").read_text(encoding="utf-8")
 
-
-
-# ======================================================
-# AUTH API
-# ======================================================
 
 # ======================================================
 # AUTH (cookie session)
@@ -496,6 +545,7 @@ def set_cookie(resp: Response, tok: str, remember: bool) -> None:
         path="/",
     )
 
+
 @app.post("/api/signup")
 def signup(p: SignupIn):
     salt_hex = secrets.token_hex(16)
@@ -528,6 +578,7 @@ def signup(p: SignupIn):
         ).fetchone()["id"]
 
     resp = JSONResponse({"ok": True})
+    # signup: keep as remembered for now (you can change later if you add a checkbox)
     set_cookie(resp, make_token(uid), remember=True)
     return resp
 
@@ -558,6 +609,10 @@ def login(p: LoginIn):
 def logout():
     r = JSONResponse({"ok": True})
     r.delete_cookie("wh_session", path="/")
+    # Helps on some clients/SW setups
+    r.headers["Cache-Control"] = "no-store, max-age=0"
+    r.headers["Pragma"] = "no-cache"
+    r.headers["Expires"] = "0"
     return r
 
 
@@ -565,11 +620,13 @@ def logout():
 def me(req: Request):
     uid = require_user(req)
     with db() as conn:
-        u = conn.execute("SELECT id,email,first_name,last_name,hourly_rate,avatar_path FROM users WHERE id=?", (uid,)).fetchone()
+        u = conn.execute(
+            "SELECT id,email,first_name,last_name,hourly_rate,avatar_path FROM users WHERE id=?",
+            (uid,),
+        ).fetchone()
         if not u:
             raise HTTPException(401, "Not logged")
 
-        avatar_url = u["avatar_path"] or ""
         return {
             "ok": True,
             "id": int(u["id"]),
@@ -577,9 +634,31 @@ def me(req: Request):
             "first_name": u["first_name"] or "",
             "last_name": u["last_name"] or "",
             "hourly_rate": float(u["hourly_rate"] or 0),
-            "avatar_url": avatar_url,
+            "avatar_url": u["avatar_path"] or "",
         }
 
+
+@app.patch("/api/me")
+def me_patch(p: MeUpdate, req: Request):
+    uid = require_user(req)
+    with db() as conn:
+        u = conn.execute("SELECT id FROM users WHERE id=?", (uid,)).fetchone()
+        if not u:
+            raise HTTPException(401, "Not logged")
+
+        if p.first_name is not None:
+            conn.execute("UPDATE users SET first_name=? WHERE id=?", (p.first_name.strip(), uid))
+        if p.last_name is not None:
+            conn.execute("UPDATE users SET last_name=? WHERE id=?", (p.last_name.strip(), uid))
+        if p.hourly_rate is not None:
+            hr = float(p.hourly_rate)
+            if hr < 0 or hr > 200:
+                raise HTTPException(400, "Invalid hourly_rate")
+            conn.execute("UPDATE users SET hourly_rate=? WHERE id=?", (hr, uid))
+
+        conn.commit()
+
+    return {"ok": True}
 
 
 # ======================================================
@@ -627,7 +706,7 @@ def reset(p: ResetIn):
 
 
 # ======================================================
-# AVATAR
+# AVATAR (single correct endpoint)
 # ======================================================
 @app.post("/api/me/avatar")
 async def upload_avatar(req: Request, file: UploadFile = File(...)):
@@ -637,8 +716,8 @@ async def upload_avatar(req: Request, file: UploadFile = File(...)):
         raise HTTPException(400, "Invalid image (use jpg/png/webp)")
 
     data = await file.read()
-    if len(data) > 2_500_000:
-        raise HTTPException(400, "Image too large (max 2.5MB)")
+    if len(data) > 5_000_000:
+        raise HTTPException(400, "Image too large (max 5MB)")
 
     ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}[file.content_type]
     fname = f"user_{uid}.{ext}"
@@ -665,6 +744,7 @@ TOLERANCE_MIN = 5
 
 # Public Holiday premium (payslip). Default = 1.0787 (~€19.67/h when base is €18.24/h)
 PUBLIC_HOLIDAY_MULT = float(os.environ.get("PUBLIC_HOLIDAY_MULT", "1.0787"))
+
 
 def hhmm_to_min(hhmm: str) -> int:
     h, m = hhmm.split(":")
@@ -735,173 +815,45 @@ def weekday_short_en(d: date) -> str:
     return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][d.weekday()]
 
 
+def today_ymd() -> str:
+    return date.today().isoformat()
+
+
+def hhmm_now() -> str:
+    return datetime.now().strftime("%H:%M")
+
+
 # ======================================================
-# ROSTER HELPERS (used by clock)
+# MULTIPLIER (Sunday / BH paid)
 # ======================================================
-def roster_for_date(conn: sqlite3.Connection, uid: int, ymd: str) -> Optional[sqlite3.Row]:
-    return conn.execute(
-        """
-        SELECT rd.shift_in, rd.shift_out, rd.day_off
-        FROM roster_days rd
-        JOIN rosters r ON r.id = rd.roster_id
-        WHERE rd.user_id=? AND rd.work_date=?
-        ORDER BY r.start_date DESC
-        LIMIT 1
-        """,
-        (uid, ymd),
-    ).fetchone()
-
-
-def needs_extra_confirm(real_hhmm: str, official_hhmm: str) -> bool:
-    if not real_hhmm or not official_hhmm:
-        return False
-    return abs(hhmm_to_min(real_hhmm) - hhmm_to_min(official_hhmm)) > TOLERANCE_MIN
-
-
-def snap_to_official_if_not_authorized(real_hhmm: str, official_hhmm: Optional[str], authorized: bool) -> str:
+def multiplier_for_date(conn: sqlite3.Connection, uid: int, work_date: str) -> float:
     """
-    If NOT authorized and roster exists: we store OFFICIAL time (so extra does NOT count).
-    If authorized: store real.
-    If no official: store real.
+    Priority:
+      1) Public Holiday paid => PUBLIC_HOLIDAY_MULT
+      2) Sunday => 1.5
+      3) else => 1.0
     """
-    if not official_hhmm:
-        return real_hhmm
-    if authorized:
-        return real_hhmm
-    return official_hhmm
+    try:
+        row = conn.execute(
+            "SELECT paid FROM bank_holidays WHERE user_id=? AND bh_date=? LIMIT 1",
+            (uid, work_date),
+        ).fetchone()
+        if row and int(row["paid"] or 0) == 1:
+            return float(PUBLIC_HOLIDAY_MULT)
+
+        d = parse_ymd(work_date)
+        return 1.5 if d.weekday() == 6 else 1.0
+    except Exception:
+        return 1.0
+
 
 # ======================================================
-# BANK HOLIDAYS
+# BANK HOLIDAYS API
 # ======================================================
-
-def irish_bank_holidays(year: int) -> List[tuple[str, str]]:
-    # returns list of (date_ymd, name)
-    if year == 2025:
-        return BANK_HOLIDAYS_2025
-    if year == 2026:
-        return BANK_HOLIDAYS_2026
-    return []
-
-
-
-def bh_repair(conn: sqlite3.Connection, uid: int, year: int) -> None:
-    # 0) Remove registros quebrados (sem nome / nome vazio / nome que virou data)
-    conn.execute(
-        """
-        DELETE FROM bank_holidays
-        WHERE user_id=? AND year=?
-          AND (
-            name IS NULL
-            OR trim(name) = ''
-            OR name GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-            OR bh_date IS NULL
-            OR bh_date NOT LIKE '____-__-__'
-          )
-        """,
-        (uid, year),
-    )
-
-    # 1) Normaliza datas (vira YYYY-MM-DD)
-    conn.execute(
-        """
-        UPDATE bank_holidays
-        SET bh_date = date(bh_date)
-        WHERE user_id=? AND year=? AND bh_date IS NOT NULL
-        """,
-        (uid, year),
-    )
-
-    # 2) Remove duplicados, mantendo o "melhor" registro:
-    conn.execute(
-        """
-        DELETE FROM bank_holidays
-        WHERE id IN (
-          SELECT id FROM (
-            SELECT id,
-                   ROW_NUMBER() OVER (
-                     PARTITION BY user_id, year, bh_date
-                     ORDER BY
-                       paid DESC,
-                       CASE WHEN paid_date IS NOT NULL THEN 1 ELSE 0 END DESC,
-                       id ASC
-                   ) AS rn
-            FROM bank_holidays
-            WHERE user_id=? AND year=?
-          )
-          WHERE rn > 1
-        )
-        """,
-        (uid, year),
-    )
-
-    # 3) Trava anti-duplicação
-    conn.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_bh_unique
-        ON bank_holidays (user_id, year, bh_date)
-        """
-    )
-    conn.commit()
-
-
-def ensure_bh_for_year(conn: sqlite3.Connection, uid: int, year: int) -> None:
-    # SEMPRE limpa antes
-    bh_repair(conn, uid, year)
-
-    items = irish_bank_holidays(year)
-    if not items:
-        return
-
-    # ✅ ordem correta: (ymd, name)
-    conn.executemany(
-        """
-        INSERT OR IGNORE INTO bank_holidays
-        (user_id, year, name, bh_date, paid)
-        VALUES (?, ?, ?, date(?), 0)
-        """,
-        [(uid, year, name, ymd) for (ymd, name) in items],
-    )
-    conn.commit()
-
-
-@app.get("/api/bank-holidays/2026")
-def list_bh_2026(request: Request):
-    uid = require_user(request)
-    with db() as conn:
-        # ✅ limpa e garante seed correto
-        ensure_bh_for_year(conn, uid, 2026)
-
-        rows = conn.execute(
-            """
-           SELECT id, name, bh_date, paid, paid_date, paid_week, applicable
-
-            FROM bank_holidays
-            WHERE user_id=? AND year=?
-            ORDER BY date(bh_date) ASC, id ASC
-            """,
-            (uid, 2026),
-        ).fetchall()
-
-        return [
-  {
-    "id": int(r["id"]),
-    "name": r["name"],
-    "date": r["bh_date"],
-    "paid": bool(r["paid"]),
-    "paid_date": r["paid_date"],
-    "paid_week": r["paid_week"],
-    "applicable": bool(r["applicable"]),
-  }
-  for r in rows
-]
-
-        
-    
 @app.get("/api/bank-holidays/years")
 def bh_years(req: Request):
     uid = require_user(req)
     with db() as conn:
-        # anos já existentes no DB para esse usuário
         rows = conn.execute(
             "SELECT DISTINCT year FROM bank_holidays WHERE user_id=? ORDER BY year ASC",
             (uid,),
@@ -909,12 +861,9 @@ def bh_years(req: Request):
 
         years = [int(r["year"]) for r in rows if r["year"] is not None]
 
-        # também inclui anos definidos no código (ex: 2026) mesmo se DB ainda vazio
-        # (evita dropdown vazio em conta nova)
         for y in (2025, 2026):
-           if y not in years and irish_bank_holidays(y):
-              years.append(y)
-
+            if y not in years and irish_bank_holidays(y):
+                years.append(y)
 
         years = sorted(set(years))
         return {"years": years}
@@ -923,14 +872,11 @@ def bh_years(req: Request):
 @app.get("/api/bank-holidays/year/{year}")
 def list_bh_year(year: int, req: Request):
     uid = require_user(req)
-
     with db() as conn:
         ensure_bh_for_year(conn, uid, year)
-
         rows = conn.execute(
             """
             SELECT id, name, bh_date, paid, paid_date, paid_week, applicable
-
             FROM bank_holidays
             WHERE user_id=? AND year=?
             ORDER BY date(bh_date) ASC, id ASC
@@ -939,24 +885,56 @@ def list_bh_year(year: int, req: Request):
         ).fetchall()
 
         return [
-  {
-    "id": int(r["id"]),
-    "name": r["name"],
-    "date": r["bh_date"],
-    "paid": bool(r["paid"]),
-    "paid_date": r["paid_date"],
-    "paid_week": r["paid_week"],
-    "applicable": bool(r["applicable"]),
-  }
-  for r in rows
-]
+            {
+                "id": int(r["id"]),
+                "name": r["name"],
+                "date": r["bh_date"],
+                "paid": bool(r["paid"]),
+                "paid_date": r["paid_date"],
+                "paid_week": r["paid_week"],
+                "applicable": bool(r["applicable"]),
+            }
+            for r in rows
+        ]
 
+
+@app.get("/api/bank-holidays/lookup")
+def bh_lookup(req: Request, date_ymd: str):
+    uid = require_user(req)
+    try:
+        y = int(date_ymd.split("-")[0])
+    except Exception:
+        raise HTTPException(400, "Invalid date")
+
+    with db() as conn:
+        ensure_bh_for_year(conn, uid, y)
+        row = conn.execute(
+            """
+            SELECT id, name, bh_date, paid, paid_date, paid_week
+            FROM bank_holidays
+            WHERE user_id=? AND year=? AND bh_date=?
+            LIMIT 1
+            """,
+            (uid, y, date_ymd),
+        ).fetchone()
+
+        if not row:
+            return {"is_bh": False}
+
+        return {
+            "is_bh": True,
+            "id": int(row["id"]),
+            "name": row["name"],
+            "date": row["bh_date"],
+            "paid": bool(row["paid"]),
+            "paid_date": row["paid_date"],
+            "paid_week": row["paid_week"],
+        }
 
 
 @app.patch("/api/bank-holidays/{bh_id}")
 def patch_bh(bh_id: int, p: BhPaidPatch, req: Request):
     uid = require_user(req)
-
     with db() as conn:
         row = conn.execute(
             "SELECT id FROM bank_holidays WHERE id=? AND user_id=?",
@@ -965,14 +943,11 @@ def patch_bh(bh_id: int, p: BhPaidPatch, req: Request):
         if not row:
             raise HTTPException(404, "Bank holiday not found")
 
-        # --- N/A toggle (applicable) ---
         if p.applicable is not None:
             conn.execute(
                 "UPDATE bank_holidays SET applicable=? WHERE id=? AND user_id=?",
                 (1 if p.applicable else 0, bh_id, uid),
             )
-
-            # if set to N/A, clear paid fields to avoid counting confusion
             if p.applicable is False:
                 conn.execute(
                     """
@@ -983,7 +958,6 @@ def patch_bh(bh_id: int, p: BhPaidPatch, req: Request):
                     (bh_id, uid),
                 )
 
-        # --- Paid toggle ---
         if p.paid is not None:
             if p.paid:
                 conn.execute(
@@ -1013,69 +987,9 @@ def patch_bh(bh_id: int, p: BhPaidPatch, req: Request):
 
     return {"ok": True}
 
-class MeUpdate(BaseModel):
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    hourly_rate: Optional[float] = None
-
-@app.patch("/api/me")
-def me_patch(p: MeUpdate, req: Request):
-    uid = require_user(req)
-    with db() as conn:
-        u = conn.execute("SELECT id FROM users WHERE id=?", (uid,)).fetchone()
-        if not u:
-            raise HTTPException(401, "Not logged")
-
-        if p.first_name is not None:
-            conn.execute("UPDATE users SET first_name=? WHERE id=?", (p.first_name.strip(), uid))
-        if p.last_name is not None:
-            conn.execute("UPDATE users SET last_name=? WHERE id=?", (p.last_name.strip(), uid))
-        if p.hourly_rate is not None:
-            hr = float(p.hourly_rate)
-            if hr < 0 or hr > 200:
-                raise HTTPException(400, "Invalid hourly_rate")
-            conn.execute("UPDATE users SET hourly_rate=? WHERE id=?", (hr, uid))
-
-        conn.commit()
-
-    return {"ok": True}
-
-AVATAR_DIR = STATIC_DIR / "avatars"
-AVATAR_DIR.mkdir(parents=True, exist_ok=True)
-
-@app.post("/api/me/avatar")
-async def me_avatar(file: UploadFile = File(...), req: Request = None):
-    uid = require_user(req)
-
-    if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(400, "File must be an image")
-
-    ext = ".jpg"
-    if file.filename and "." in file.filename:
-        ext = "." + file.filename.split(".")[-1].lower()
-        if ext not in [".jpg", ".jpeg", ".png", ".webp"]:
-            ext = ".jpg"
-
-    filename = f"user_{uid}{ext}"
-    path = AVATAR_DIR / filename
-
-    content = await file.read()
-    if len(content) > 5_000_000:
-        raise HTTPException(400, "Image too large (max 5MB)")
-
-    path.write_bytes(content)
-
-    avatar_url = f"/static/avatars/{filename}"
-
-    with db() as conn:
-        conn.execute("UPDATE users SET avatar_path=? WHERE id=?", (avatar_url, uid))
-        conn.commit()
-
-    return {"ok": True, "avatar_url": avatar_url}
-
 
 # ======================================================
-# DAY DETAILS (TESCO VIEW)
+# DAY DETAILS
 # ======================================================
 @app.get("/api/day-details/{entry_id}")
 def day_details(entry_id: int, req: Request):
@@ -1118,7 +1032,6 @@ def day_details(entry_id: int, req: Request):
             paid_out_min += 24 * 60
 
         worked_raw = paid_out_min - paid_in_min
-
         break_eff = effective_break_minutes(clocked_in, clocked_out, break_real)
         worked_paid_min = max(0, worked_raw - break_eff)
 
@@ -1143,16 +1056,37 @@ def day_details(entry_id: int, req: Request):
 
 
 # ======================================================
-# ROSTER API
+# ROSTER HELPERS
 # ======================================================
+def roster_for_date(conn: sqlite3.Connection, uid: int, ymd: str) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT rd.shift_in, rd.shift_out, rd.day_off
+        FROM roster_days rd
+        JOIN rosters r ON r.id = rd.roster_id
+        WHERE rd.user_id=? AND rd.work_date=?
+        ORDER BY r.start_date DESC
+        LIMIT 1
+        """,
+        (uid, ymd),
+    ).fetchone()
+
+
+def needs_extra_confirm(real_hhmm: str, official_hhmm: str) -> bool:
+    if not real_hhmm or not official_hhmm:
+        return False
+    return abs(hhmm_to_min(real_hhmm) - hhmm_to_min(official_hhmm)) > TOLERANCE_MIN
+
+
+def snap_to_official_if_not_authorized(real_hhmm: str, official_hhmm: Optional[str], authorized: bool) -> str:
+    if not official_hhmm:
+        return real_hhmm
+    if authorized:
+        return real_hhmm
+    return official_hhmm
+
 
 def ensure_week_from_roster(conn: sqlite3.Connection, uid: int, week_number: int, start_date: str) -> int:
-    """
-    Ensures a 'weeks' row exists for (user_id, week_number). If missing, creates it.
-    Returns week_id.
-    This is schema-safe: it checks which columns exist in 'weeks' and only inserts those.
-    """
-    # 1) already exists?
     row = conn.execute(
         "SELECT id FROM weeks WHERE user_id=? AND week_number=? LIMIT 1",
         (uid, int(week_number)),
@@ -1160,58 +1094,28 @@ def ensure_week_from_roster(conn: sqlite3.Connection, uid: int, week_number: int
     if row:
         return int(row["id"])
 
-    # 2) discover weeks columns
-    cols = conn.execute("PRAGMA table_info(weeks)").fetchall()
-    colnames = {c["name"] for c in cols}  # uses row_factory already in your db()
-
-    # 3) pick an hourly_rate default (best effort)
     hourly_rate = 0.0
-    if "hourly_rate" in colnames:
-        last = conn.execute(
-            "SELECT hourly_rate FROM weeks WHERE user_id=? ORDER BY start_date DESC LIMIT 1",
-            (uid,),
-        ).fetchone()
-        if last and last["hourly_rate"] is not None:
-            try:
-                hourly_rate = float(last["hourly_rate"])
-            except Exception:
-                hourly_rate = 0.0
+    last = conn.execute(
+        "SELECT hourly_rate FROM weeks WHERE user_id=? ORDER BY start_date DESC LIMIT 1",
+        (uid,),
+    ).fetchone()
+    if last and last["hourly_rate"] is not None:
+        try:
+            hourly_rate = float(last["hourly_rate"])
+        except Exception:
+            hourly_rate = 0.0
 
-    # 4) build INSERT dynamically
-    insert_cols = []
-    insert_vals = []
-
-    if "user_id" in colnames:
-        insert_cols.append("user_id")
-        insert_vals.append(uid)
-
-    if "week_number" in colnames:
-        insert_cols.append("week_number")
-        insert_vals.append(int(week_number))
-
-    if "start_date" in colnames:
-        insert_cols.append("start_date")
-        insert_vals.append(start_date)
-
-    if "hourly_rate" in colnames:
-        insert_cols.append("hourly_rate")
-        insert_vals.append(hourly_rate)
-
-    if "created_at" in colnames:
-        insert_cols.append("created_at")
-        insert_vals.append(now())
-
-    if not insert_cols:
-        raise HTTPException(500, "weeks table schema not supported")
-
-    placeholders = ",".join(["?"] * len(insert_cols))
-    sql = f"INSERT INTO weeks({','.join(insert_cols)}) VALUES ({placeholders})"
-    conn.execute(sql, tuple(insert_vals))
-
-    week_id = conn.execute("SELECT last_insert_rowid() id").fetchone()["id"]
-    return int(week_id)
+    conn.execute(
+        "INSERT INTO weeks(user_id,week_number,start_date,hourly_rate,created_at) VALUES (?,?,?,?,?)",
+        (uid, int(week_number), start_date, float(hourly_rate), now()),
+    )
+    conn.commit()
+    return int(conn.execute("SELECT last_insert_rowid() id").fetchone()["id"])
 
 
+# ======================================================
+# ROSTER API
+# ======================================================
 @app.get("/api/roster")
 def roster_list(req: Request):
     uid = require_user(req)
@@ -1220,20 +1124,14 @@ def roster_list(req: Request):
             "SELECT id, week_number, start_date FROM rosters WHERE user_id=? ORDER BY start_date DESC",
             (uid,),
         ).fetchall()
-        return [
-            {"id": int(r["id"]), "week_number": int(r["week_number"]), "start_date": r["start_date"]}
-            for r in rows
-        ]
+        return [{"id": int(r["id"]), "week_number": int(r["week_number"]), "start_date": r["start_date"]} for r in rows]
 
 
 @app.get("/api/roster/{roster_id}")
 def roster_get(roster_id: int, req: Request):
     uid = require_user(req)
     with db() as conn:
-        r = conn.execute(
-            "SELECT * FROM rosters WHERE id=? AND user_id=?",
-            (roster_id, uid),
-        ).fetchone()
+        r = conn.execute("SELECT * FROM rosters WHERE id=? AND user_id=?", (roster_id, uid)).fetchone()
         if not r:
             raise HTTPException(404, "Roster not found")
 
@@ -1261,160 +1159,91 @@ def roster_get(roster_id: int, req: Request):
 @app.post("/api/roster")
 def roster_create(p: RosterCreate, req: Request):
     uid = require_user(req)
-
     if not p.days or len(p.days) != 7:
         raise HTTPException(400, "days must have 7 items (Sun..Sat)")
 
     start = parse_ymd(p.start_date)
 
     with db() as conn:
-        # (opcional, mas recomendado) evita criar roster duplicado
         dup = conn.execute(
             "SELECT id FROM rosters WHERE user_id=? AND week_number=? AND start_date=? LIMIT 1",
             (uid, int(p.week_number), p.start_date),
         ).fetchone()
         if dup:
-            return {"ok": True, "id": int(dup["id"]), "week_id": int(
-                conn.execute(
-                    "SELECT id FROM weeks WHERE user_id=? AND week_number=? LIMIT 1",
-                    (uid, int(p.week_number)),
-                ).fetchone()["id"]
-            )}
+            wk = conn.execute(
+                "SELECT id FROM weeks WHERE user_id=? AND week_number=? LIMIT 1",
+                (uid, int(p.week_number)),
+            ).fetchone()
+            return {"ok": True, "id": int(dup["id"]), "week_id": int(wk["id"]) if wk else None}
 
-        # 1) cria/garante a week correspondente (weeks)
         week_id = ensure_week_from_roster(conn, uid, int(p.week_number), p.start_date)
 
-        # 2) cria o roster
         conn.execute(
             "INSERT INTO rosters(user_id,week_number,start_date,created_at) VALUES (?,?,?,?)",
             (uid, int(p.week_number), p.start_date, now()),
         )
-        roster_id = conn.execute("SELECT last_insert_rowid() id").fetchone()["id"]
+        roster_id = int(conn.execute("SELECT last_insert_rowid() id").fetchone()["id"])
 
-        # 3) cria os 7 dias
         for i, code in enumerate(p.days):
             d = start + timedelta(days=i)
             ymd = d.isoformat()
-
             code_up = (code or "").strip().upper()
 
             if code_up == "OFF":
-                conn.execute(
-                    """
-                    INSERT INTO roster_days(user_id,roster_id,work_date,shift_in,shift_out,day_off,created_at)
-                    VALUES (?,?,?,?,?,?,?)
-                    """,
-                    (uid, roster_id, ymd, None, None, 1, now()),
-                )
+                shift_in, shift_out, day_off = None, None, 1
             elif code_up == "A":
-                conn.execute(
-                    """
-                    INSERT INTO roster_days(user_id,roster_id,work_date,shift_in,shift_out,day_off,created_at)
-                    VALUES (?,?,?,?,?,?,?)
-                    """,
-                    (uid, roster_id, ymd, SHIFT_A_IN, SHIFT_A_OUT, 0, now()),
-                )
+                shift_in, shift_out, day_off = SHIFT_A_IN, SHIFT_A_OUT, 0
             elif code_up == "B":
-                conn.execute(
-                    """
-                    INSERT INTO roster_days(user_id,roster_id,work_date,shift_in,shift_out,day_off,created_at)
-                    VALUES (?,?,?,?,?,?,?)
-                    """,
-                    (uid, roster_id, ymd, SHIFT_B_IN, SHIFT_B_OUT, 0, now()),
-                )
+                shift_in, shift_out, day_off = SHIFT_B_IN, SHIFT_B_OUT, 0
             else:
                 raise HTTPException(400, "Invalid day code (use A, B, OFF)")
 
+            conn.execute(
+                """
+                INSERT INTO roster_days(user_id,roster_id,work_date,shift_in,shift_out,day_off,created_at)
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                (uid, roster_id, ymd, shift_in, shift_out, day_off, now()),
+            )
+
         conn.commit()
 
-    return {"ok": True, "id": int(roster_id), "week_id": int(week_id)}
+    return {"ok": True, "id": roster_id, "week_id": int(week_id)}
 
 
 @app.patch("/api/roster/{roster_id}/day")
 def roster_day_patch(roster_id: int, p: RosterDayPatch, req: Request):
     uid = require_user(req)
-
     code = (p.code or "").strip().upper()
     if code not in ("A", "B", "OFF"):
         raise HTTPException(400, "Invalid code (use A, B, OFF)")
 
     with db() as conn:
-        # garante que o roster é do user
-        r = conn.execute(
-            "SELECT id FROM rosters WHERE id=? AND user_id=?",
-            (roster_id, uid),
-        ).fetchone()
+        r = conn.execute("SELECT id FROM rosters WHERE id=? AND user_id=?", (roster_id, uid)).fetchone()
         if not r:
             raise HTTPException(404, "Roster not found")
 
-        # garante que existe o dia dentro do roster
         d = conn.execute(
-            """
-            SELECT id FROM roster_days
-            WHERE roster_id=? AND user_id=? AND work_date=?
-            """,
+            "SELECT id FROM roster_days WHERE roster_id=? AND user_id=? AND work_date=?",
             (roster_id, uid, p.work_date),
         ).fetchone()
         if not d:
             raise HTTPException(404, "Roster day not found")
 
-        # aplica A / B / OFF
         if code == "OFF":
             shift_in, shift_out, day_off = None, None, 1
         elif code == "A":
             shift_in, shift_out, day_off = SHIFT_A_IN, SHIFT_A_OUT, 0
-        else:  # "B"
+        else:
             shift_in, shift_out, day_off = SHIFT_B_IN, SHIFT_B_OUT, 0
 
         conn.execute(
-            """
-            UPDATE roster_days
-            SET shift_in=?, shift_out=?, day_off=?
-            WHERE id=? AND user_id=?
-            """,
+            "UPDATE roster_days SET shift_in=?, shift_out=?, day_off=? WHERE id=? AND user_id=?",
             (shift_in, shift_out, day_off, int(d["id"]), uid),
         )
         conn.commit()
 
     return {"ok": True}
-
-
-@app.get("/api/bank-holidays/lookup")
-def bh_lookup(req: Request, date_ymd: str):
-    uid = require_user(req)
-
-    # date_ymd = "YYYY-MM-DD"
-    try:
-        y = int(date_ymd.split("-")[0])
-    except Exception:
-        raise HTTPException(400, "Invalid date")
-
-    with db() as conn:
-        ensure_bh_for_year(conn, uid, y)
-
-        row = conn.execute(
-            """
-            SELECT id, name, bh_date, paid, paid_date, paid_week
-            FROM bank_holidays
-            WHERE user_id=? AND year=? AND bh_date=?
-            LIMIT 1
-            """,
-            (uid, y, date_ymd),
-        ).fetchone()
-
-        if not row:
-            return {"is_bh": False}
-
-        return {
-            "is_bh": True,
-            "id": int(row["id"]),
-            "name": row["name"],
-            "date": row["bh_date"],
-            "paid": bool(row["paid"]),
-            "paid_date": row["paid_date"],
-            "paid_week": row["paid_week"],
-        }
-
 
 
 # ======================================================
@@ -1452,10 +1281,10 @@ def list_weeks(req: Request):
 
             out.append(
                 {
-                    "id": w["id"],
-                    "week_number": w["week_number"],
+                    "id": int(w["id"]),
+                    "week_number": int(w["week_number"]),
                     "start_date": w["start_date"],
-                    "hourly_rate": w["hourly_rate"],
+                    "hourly_rate": float(w["hourly_rate"] or 0),
                     "total_hhmm": f"{total_min//60:02d}:{total_min%60:02d}",
                     "total_pay": round(total_pay, 2),
                 }
@@ -1479,10 +1308,7 @@ def create_week(p: WeekCreate, req: Request):
 def get_week(week_id: int, req: Request):
     uid = require_user(req)
     with db() as conn:
-        w = conn.execute(
-            "SELECT * FROM weeks WHERE id=? AND user_id=?",
-            (week_id, uid),
-        ).fetchone()
+        w = conn.execute("SELECT * FROM weeks WHERE id=? AND user_id=?", (week_id, uid)).fetchone()
         if not w:
             raise HTTPException(404, "Week not found")
 
@@ -1507,8 +1333,8 @@ def get_week(week_id: int, req: Request):
 
             entries.append(
                 {
-                    "id": r["id"],
-                    "week_id": r["week_id"],
+                    "id": int(r["id"]),
+                    "week_id": int(r["week_id"]),
                     "work_date": r["work_date"],
                     "weekday": weekday_short_en(d),
                     "date_ddmmyyyy": ddmmyyyy(d),
@@ -1523,10 +1349,10 @@ def get_week(week_id: int, req: Request):
             )
 
         return {
-            "id": w["id"],
-            "week_number": w["week_number"],
+            "id": int(w["id"]),
+            "week_number": int(w["week_number"]),
             "start_date": w["start_date"],
-            "hourly_rate": w["hourly_rate"],
+            "hourly_rate": float(w["hourly_rate"] or 0),
             "totals": {"total_hhmm": f"{total_min//60:02d}:{total_min%60:02d}", "total_pay": round(total_pay, 2)},
             "entries": entries,
         }
@@ -1550,10 +1376,7 @@ def patch_week(week_id: int, p: WeekRatePatch, req: Request):
 def delete_week(week_id: int, req: Request):
     uid = require_user(req)
     with db() as conn:
-        ok = conn.execute(
-            "DELETE FROM weeks WHERE id=? AND user_id=?",
-            (week_id, uid),
-        ).rowcount
+        ok = conn.execute("DELETE FROM weeks WHERE id=? AND user_id=?", (week_id, uid)).rowcount
         conn.commit()
     if not ok:
         raise HTTPException(404, "Week not found")
@@ -1564,15 +1387,12 @@ def delete_week(week_id: int, req: Request):
 def upsert_entry(week_id: int, p: EntryUpsert, req: Request):
     uid = require_user(req)
 
-    # multiplier: Sunday => 1.5, else 1.0
-    with db() as conn:
-     mult = multiplier_for_date(conn, uid, p.work_date)
-
-
     with db() as conn:
         w = conn.execute("SELECT id FROM weeks WHERE id=? AND user_id=?", (week_id, uid)).fetchone()
         if not w:
             raise HTTPException(404, "Week not found")
+
+        mult = multiplier_for_date(conn, uid, p.work_date)
 
         existing = conn.execute(
             "SELECT id FROM entries WHERE user_id=? AND week_id=? AND work_date=?",
@@ -1622,15 +1442,14 @@ def upsert_entry(week_id: int, p: EntryUpsert, req: Request):
                     now(),
                 ),
             )
-        # ✅ Sync dashboard clock_state if user edited TODAY via Week report
+
+        # Sync dashboard clock_state if user edited TODAY via Week report
         if p.work_date == today_ymd():
             st = conn.execute(
                 "SELECT * FROM clock_state WHERE user_id=? AND work_date=?",
                 (uid, p.work_date),
             ).fetchone()
-
             if st:
-                # keep break_running/break_start as-is
                 conn.execute(
                     """
                     UPDATE clock_state
@@ -1674,12 +1493,8 @@ def delete_entry(entry_id: int, req: Request):
 @app.get("/api/dashboard")
 def dashboard(req: Request):
     uid = require_user(req)
-    year = date.today().year  # ano atual local
 
     with db() as conn:
-        # =========================
-        # Weeks totals (como você já tinha)
-        # =========================
         weeks = conn.execute(
             "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC",
             (uid,),
@@ -1715,42 +1530,29 @@ def dashboard(req: Request):
                 this_week_min += m
                 this_week_pay += (m / 60.0) * rate * mult
 
-       
-      # =========================
-        # Bank Holidays: summary + years (2025 / 2026)
-        # =========================
         supported_years = [y for y in (2025, 2026) if irish_bank_holidays(y)]
-
-        bh_years = []
+        bh_years_out = []
         total_allowance = 0
         total_paid = 0
 
         for y in supported_years:
             ensure_bh_for_year(conn, uid, y)
-
             rows = conn.execute(
-    """
-     SELECT paid
-    FROM bank_holidays
-    WHERE user_id=? AND year=?
-      AND applicable=1
-      AND date(bh_date) <= date('now')
-    """,
-    (uid, y),
-).fetchall()
-
+                """
+                SELECT paid
+                FROM bank_holidays
+                WHERE user_id=? AND year=?
+                  AND applicable=1
+                  AND date(bh_date) <= date('now')
+                """,
+                (uid, y),
+            ).fetchall()
 
             allowance = len(rows)
             paid = sum(1 for r in rows if int(r["paid"] or 0) == 1)
             not_paid = allowance - paid
 
-            bh_years.append({
-                "year": y,
-                "allowance": allowance,
-                "paid": paid,
-                "not_paid": not_paid,
-            })
-
+            bh_years_out.append({"year": y, "allowance": allowance, "paid": paid, "not_paid": not_paid})
             total_allowance += allowance
             total_paid += paid
 
@@ -1758,27 +1560,22 @@ def dashboard(req: Request):
 
         return {
             "this_week": {
-    "week_number": (int(most_recent["week_number"]) if most_recent else None),
-    "hourly_rate": (float(most_recent["hourly_rate"] or 0) if most_recent else 0),
-    "hhmm": f"{this_week_min//60:02d}:{this_week_min%60:02d}",
-    "pay_eur": round(this_week_pay, 2),
-},
-
-            "bank_holidays_years": bh_years,
-            "bank_holidays": {
-  "allowance": total_allowance,
-  "paid": total_paid,
-  "remaining": total_remaining,
-},
-
+                "week_number": (int(most_recent["week_number"]) if most_recent else None),
+                "hourly_rate": (float(most_recent["hourly_rate"] or 0) if most_recent else 0),
+                "hhmm": f"{this_week_min//60:02d}:{this_week_min%60:02d}",
+                "pay_eur": round(this_week_pay, 2),
+            },
+            "bank_holidays_years": bh_years_out,
+            "bank_holidays": {"allowance": total_allowance, "paid": total_paid, "remaining": total_remaining},
         }
 
 
-
+# ======================================================
+# REPORT CURRENT WEEK
+# ======================================================
 @app.get("/api/report/week/current")
 def report_current_week(req: Request):
     uid = require_user(req)
-
     with db() as conn:
         w = conn.execute(
             "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC LIMIT 1",
@@ -1807,24 +1604,25 @@ def report_current_week(req: Request):
         for r in rows:
             m = minutes_between(r["work_date"], r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
             mult = float(r["multiplier"] or 1.0)
-
             total_min += m
             total_pay += (m / 60.0) * rate * mult
 
             d = parse_ymd(r["work_date"])
             break_eff = effective_break_minutes(r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
 
-            entries.append({
-                "id": int(r["id"]),
-                "work_date": r["work_date"],
-                "weekday": weekday_short_en(d),
-                "date_ddmmyyyy": ddmmyyyy(d),
-                "time_in": r["time_in"] or "",
-                "time_out": r["time_out"] or "",
-                "break_minutes": int(break_eff),
-                "worked_hhmm": f"{m//60:02d}:{m%60:02d}",
-                "pay_eur": round((m/60.0) * rate * mult, 2),
-            })
+            entries.append(
+                {
+                    "id": int(r["id"]),
+                    "work_date": r["work_date"],
+                    "weekday": weekday_short_en(d),
+                    "date_ddmmyyyy": ddmmyyyy(d),
+                    "time_in": r["time_in"] or "",
+                    "time_out": r["time_out"] or "",
+                    "break_minutes": int(break_eff),
+                    "worked_hhmm": f"{m//60:02d}:{m%60:02d}",
+                    "pay_eur": round((m / 60.0) * rate * mult, 2),
+                }
+            )
 
         return {
             "ok": True,
@@ -1836,54 +1634,16 @@ def report_current_week(req: Request):
                 "hourly_rate": rate,
             },
             "entries": entries,
-            "totals": {
-                "hhmm": f"{total_min//60:02d}:{total_min%60:02d}",
-                "pay_eur": round(total_pay, 2),
-            },
-            
+            "totals": {"hhmm": f"{total_min//60:02d}:{total_min%60:02d}", "pay_eur": round(total_pay, 2)},
         }
 
 
 # ======================================================
-# CLOCK (IN / OUT / BREAK) + ROSTER EXTRA CONFIRM
+# CLOCK (IN / OUT / BREAK) + EXTRA CONFIRM
 # ======================================================
-def today_ymd() -> str:
-    return date.today().isoformat()
-
-
-def hhmm_now() -> str:
-    return datetime.now().strftime("%H:%M")
-def multiplier_for_date(conn: sqlite3.Connection, uid: int, work_date: str) -> float:
-    """
-    Priority:
-      1) Public Holiday paid => PUBLIC_HOLIDAY_MULT
-      2) Sunday => 1.5
-      3) else => 1.0
-    """
-    try:
-        # Public Holiday (only if user marked paid=1)
-        row = conn.execute(
-            "SELECT paid FROM bank_holidays WHERE user_id=? AND bh_date=? LIMIT 1",
-            (uid, work_date),
-        ).fetchone()
-        if row and int(row["paid"] or 0) == 1:
-            return float(PUBLIC_HOLIDAY_MULT)
-
-        # Sunday rule
-        d = parse_ymd(work_date)
-        return 1.5 if d.weekday() == 6 else 1.0
-    except Exception:
-        return 1.0
-
-
-
 def get_current_week(conn: sqlite3.Connection, uid: int) -> Optional[sqlite3.Row]:
     today = date.today()
-    weeks = conn.execute(
-        "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC",
-        (uid,),
-    ).fetchall()
-
+    weeks = conn.execute("SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC", (uid,)).fetchall()
     if not weeks:
         return None
 
@@ -1895,7 +1655,6 @@ def get_current_week(conn: sqlite3.Connection, uid: int) -> Optional[sqlite3.Row
         end = start + timedelta(days=6)
         if start <= today <= end:
             return w
-
     return weeks[0]
 
 
@@ -1909,7 +1668,6 @@ def get_or_create_today_entry(conn: sqlite3.Connection, uid: int, week_id: int, 
 
     mult = multiplier_for_date(conn, uid, work_date)
 
-
     conn.execute(
         """
         INSERT INTO entries(
@@ -1922,7 +1680,6 @@ def get_or_create_today_entry(conn: sqlite3.Connection, uid: int, week_id: int, 
         """,
         (uid, week_id, work_date, None, None, 0, None, None, float(mult), now(), 0, 0),
     )
-
     conn.commit()
 
     return conn.execute(
@@ -1939,21 +1696,13 @@ def clock_today(req: Request):
 
         w = get_current_week(conn, uid)
         if not w:
-            return {
-                "ok": True,
-                "has_week": False,
-                "in_time": None,
-                "out_time": None,
-                "break_minutes": 0,
-                "break_running": False,
-            }
+            return {"ok": True, "has_week": False, "in_time": None, "out_time": None, "break_minutes": 0, "break_running": False}
 
         work_date = today_ymd()
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
         st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
 
-        # If missing OR it's a different day: reset state for the new day (as you already do)
         if not st or st["work_date"] != work_date:
             conn.execute(
                 """
@@ -1983,11 +1732,8 @@ def clock_today(req: Request):
             )
             conn.commit()
             st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
-
         else:
-            # ✅ IMPORTANT FIX:
-            # clock_state exists for TODAY, but user may have edited the day in /report.
-            # Sync in/out/break_minutes from today's entry WITHOUT touching break_running/break_start.
+            # Sync from today's entry (but keep break_running/break_start)
             conn.execute(
                 """
                 UPDATE clock_state
@@ -1998,15 +1744,7 @@ def clock_today(req: Request):
                     updated_at=?
                 WHERE user_id=? AND work_date=?
                 """,
-                (
-                    int(w["id"]),
-                    e["time_in"],
-                    e["time_out"],
-                    int(e["break_minutes"] or 0),
-                    now(),
-                    uid,
-                    work_date,
-                ),
+                (int(w["id"]), e["time_in"], e["time_out"], int(e["break_minutes"] or 0), now(), uid, work_date),
             )
             conn.commit()
             st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
@@ -2026,7 +1764,6 @@ def clock_today(req: Request):
 @app.post("/api/clock/extra-confirm")
 def clock_extra_confirm(p: ExtraConfirmIn, req: Request):
     uid = require_user(req)
-
     with db() as conn:
         w = get_current_week(conn, uid)
         if not w:
@@ -2043,68 +1780,35 @@ def clock_extra_confirm(p: ExtraConfirmIn, req: Request):
     return {"ok": True, "work_date": p.work_date, "authorized": bool(p.authorized)}
 
 
-
 @app.post("/api/clock/in")
 def clock_in(req: Request):
     uid = require_user(req)
     with db() as conn:
         ensure_clock_tables(conn)
-
         w = get_current_week(conn, uid)
         if not w:
             raise HTTPException(400, "Create a week first")
 
         work_date = today_ymd()
         real_now = hhmm_now()
-
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
-
         ro = roster_for_date(conn, uid, work_date)
 
-        # --- DAY OFF: ask overtime instead of 400
         if ro and int(ro["day_off"] or 0) == 1:
             if int(e["extra_checked"] or 0) == 0:
-                return {
-                    "ok": True,
-                    "needs_extra_confirm": True,
-                    "reason": "DAY_OFF",
-                    "kind": "IN",
-                    "work_date": work_date,
-                    "official": None,
-                    "real": real_now,
-                }
-
-            # if user answered already
-            authorized = bool(int(e["extra_authorized"] or 0) == 1)
-            if not authorized:
+                return {"ok": True, "needs_extra_confirm": True, "reason": "DAY_OFF", "kind": "IN", "work_date": work_date, "official": None, "real": real_now}
+            if not bool(int(e["extra_authorized"] or 0) == 1):
                 return {"ok": True, "ignored": True, "reason": "DAY_OFF", "work_date": work_date}
-            # authorized => proceed with real time
 
         official_in = ro["shift_in"] if ro else None
-
-        # --- Working day: outside tolerance => ask once
         if official_in and needs_extra_confirm(real_now, official_in) and int(e["extra_checked"] or 0) == 0:
-            return {
-                "ok": True,
-                "needs_extra_confirm": True,
-                "reason": "OUTSIDE_TOLERANCE",
-                "kind": "IN",
-                "work_date": work_date,
-                "official": official_in,
-                "real": real_now,
-            }
+            return {"ok": True, "needs_extra_confirm": True, "reason": "OUTSIDE_TOLERANCE", "kind": "IN", "work_date": work_date, "official": official_in, "real": real_now}
 
         authorized = bool(int(e["extra_authorized"] or 0) == 1)
         store_in = snap_to_official_if_not_authorized(real_now, official_in, authorized)
 
         mult = multiplier_for_date(conn, uid, work_date)
-
-
-        conn.execute(
-            "UPDATE entries SET time_in=?, time_out=NULL, multiplier=? WHERE id=? AND user_id=?",
-            (store_in, float(mult), int(e["id"]), uid),
-        )
-
+        conn.execute("UPDATE entries SET time_in=?, time_out=NULL, multiplier=? WHERE id=? AND user_id=?", (store_in, float(mult), int(e["id"]), uid))
 
         conn.execute(
             """
@@ -2132,77 +1836,40 @@ def clock_out(req: Request):
     uid = require_user(req)
     with db() as conn:
         ensure_clock_tables(conn)
-
         w = get_current_week(conn, uid)
         if not w:
             raise HTTPException(400, "Create a week first")
 
         work_date = today_ymd()
         real_now = hhmm_now()
-
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
         ro = roster_for_date(conn, uid, work_date)
 
-        # --- DAY OFF: ask overtime instead of 400
         if ro and int(ro["day_off"] or 0) == 1:
             if int(e["extra_checked"] or 0) == 0:
-                return {
-                    "ok": True,
-                    "needs_extra_confirm": True,
-                    "reason": "DAY_OFF",
-                    "kind": "OUT",
-                    "work_date": work_date,
-                    "official": None,
-                    "real": real_now,
-                }
-
-            authorized = bool(int(e["extra_authorized"] or 0) == 1)
-            if not authorized:
+                return {"ok": True, "needs_extra_confirm": True, "reason": "DAY_OFF", "kind": "OUT", "work_date": work_date, "official": None, "real": real_now}
+            if not bool(int(e["extra_authorized"] or 0) == 1):
                 return {"ok": True, "ignored": True, "reason": "DAY_OFF", "work_date": work_date}
-            # authorized => proceed with real time
 
         official_out = ro["shift_out"] if ro else None
-
-        # --- Working day: outside tolerance => ask once
         if official_out and needs_extra_confirm(real_now, official_out) and int(e["extra_checked"] or 0) == 0:
-            return {
-                "ok": True,
-                "needs_extra_confirm": True,
-                "reason": "OUTSIDE_TOLERANCE",
-                "kind": "OUT",
-                "work_date": work_date,
-                "official": official_out,
-                "real": real_now,
-            }
+            return {"ok": True, "needs_extra_confirm": True, "reason": "OUTSIDE_TOLERANCE", "kind": "OUT", "work_date": work_date, "official": official_out, "real": real_now}
 
         authorized = bool(int(e["extra_authorized"] or 0) == 1)
         store_out = snap_to_official_if_not_authorized(real_now, official_out, authorized)
 
-        # if break is running, close it and add minutes
         st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
         if st and int(st["break_running"] or 0) == 1 and st["break_start"]:
             bs = datetime.fromisoformat(st["break_start"])
             add = int((datetime.now() - bs).total_seconds() // 60)
             new_break = int(st["break_minutes"] or 0) + max(0, add)
 
-            conn.execute(
-                "UPDATE clock_state SET break_running=0, break_start=NULL, break_minutes=?, updated_at=? WHERE user_id=?",
-                (new_break, now(), uid),
-            )
-            conn.execute(
-                "UPDATE entries SET break_minutes=? WHERE id=? AND user_id=?",
-                (new_break, int(e["id"]), uid),
-            )
-            # refresh entry row for correct break_minutes below
+            conn.execute("UPDATE clock_state SET break_running=0, break_start=NULL, break_minutes=?, updated_at=? WHERE user_id=?", (new_break, now(), uid))
+            conn.execute("UPDATE entries SET break_minutes=? WHERE id=? AND user_id=?", (new_break, int(e["id"]), uid))
             e = conn.execute("SELECT * FROM entries WHERE id=? AND user_id=?", (int(e["id"]), uid)).fetchone()
 
-        # ALWAYS save out time
         mult = multiplier_for_date(conn, uid, work_date)
-
-        conn.execute(
-            "UPDATE entries SET time_out=?, multiplier=? WHERE id=? AND user_id=?",
-            (store_out, float(mult), int(e["id"]), uid),
-        )
+        conn.execute("UPDATE entries SET time_out=?, multiplier=? WHERE id=? AND user_id=?", (store_out, float(mult), int(e["id"]), uid))
 
         conn.execute(
             """
@@ -2217,17 +1884,7 @@ def clock_out(req: Request):
               break_minutes=excluded.break_minutes,
               updated_at=excluded.updated_at
             """,
-            (
-                uid,
-                int(w["id"]),
-                work_date,
-                None,
-                store_out,
-                0,
-                None,
-                int(e["break_minutes"] or 0),
-                now(),
-            ),
+            (uid, int(w["id"]), work_date, None, store_out, 0, None, int(e["break_minutes"] or 0), now()),
         )
 
         conn.commit()
@@ -2235,14 +1892,11 @@ def clock_out(req: Request):
     return {"ok": True, "work_date": work_date}
 
 
-
-
 @app.post("/api/clock/break")
 def clock_break(req: Request):
     uid = require_user(req)
     with db() as conn:
         ensure_clock_tables(conn)
-
         w = get_current_week(conn, uid)
         if not w:
             raise HTTPException(400, "Create a week first")
@@ -2250,10 +1904,7 @@ def clock_break(req: Request):
         work_date = today_ymd()
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
-        st = conn.execute(
-            "SELECT * FROM clock_state WHERE user_id=? AND work_date=?",
-            (uid, work_date),
-        ).fetchone()
+        st = conn.execute("SELECT * FROM clock_state WHERE user_id=? AND work_date=?", (uid, work_date)).fetchone()
 
         if not st:
             conn.execute(
@@ -2261,34 +1912,20 @@ def clock_break(req: Request):
                 INSERT INTO clock_state(user_id,week_id,work_date,in_time,out_time,break_running,break_start,break_minutes,updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?)
                 """,
-                (
-                    uid, int(w["id"]), work_date,
-                    e["time_in"], e["time_out"],
-                    1, datetime.now().isoformat(timespec="seconds"),
-                    int(e["break_minutes"] or 0),
-                    now()
-                ),
+                (uid, int(w["id"]), work_date, e["time_in"], e["time_out"], 1, datetime.now().isoformat(timespec="seconds"), int(e["break_minutes"] or 0), now()),
             )
             conn.commit()
             return {"ok": True, "break_running": True}
 
         running = int(st["break_running"] or 0) == 1
 
-        # start
         if not running:
-            conn.execute(
-                "UPDATE clock_state SET break_running=1, break_start=?, updated_at=? WHERE user_id=?",
-                (datetime.now().isoformat(timespec="seconds"), now(), uid),
-            )
+            conn.execute("UPDATE clock_state SET break_running=1, break_start=?, updated_at=? WHERE user_id=?", (datetime.now().isoformat(timespec="seconds"), now(), uid))
             conn.commit()
             return {"ok": True, "break_running": True}
 
-        # stop
         if not st["break_start"]:
-            conn.execute(
-                "UPDATE clock_state SET break_running=0, break_start=NULL, updated_at=? WHERE user_id=?",
-                (now(), uid),
-            )
+            conn.execute("UPDATE clock_state SET break_running=0, break_start=NULL, updated_at=? WHERE user_id=?", (now(), uid))
             conn.commit()
             return {"ok": True, "break_running": False}
 
@@ -2296,14 +1933,8 @@ def clock_break(req: Request):
         add = int((datetime.now() - bs).total_seconds() // 60)
         new_break = int(st["break_minutes"] or 0) + max(0, add)
 
-        conn.execute(
-            "UPDATE clock_state SET break_running=0, break_start=NULL, break_minutes=?, updated_at=? WHERE user_id=?",
-            (new_break, now(), uid),
-        )
-        conn.execute(
-            "UPDATE entries SET break_minutes=? WHERE id=? AND user_id=?",
-            (new_break, int(e["id"]), uid),
-        )
+        conn.execute("UPDATE clock_state SET break_running=0, break_start=NULL, break_minutes=?, updated_at=? WHERE user_id=?", (new_break, now(), uid))
+        conn.execute("UPDATE entries SET break_minutes=? WHERE id=? AND user_id=?", (new_break, int(e["id"]), uid))
         conn.commit()
 
     return {"ok": True, "break_running": False, "break_minutes": new_break}

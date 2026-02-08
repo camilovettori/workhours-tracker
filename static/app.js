@@ -508,9 +508,21 @@ async function doSignup(ev) {
 }
 async function doLogout() {
   try { await api("/api/logout", { method: "POST" }); } catch {}
+
+  // limpa estado local (não é o bug principal, mas evita UI suja)
   ME = null;
-  await enterLogin();
+  LAST_DASH = null;
+  CLOCK = null;
+  CURRENT_WEEK_ID = null;
+
+  stopLiveTicker();
+  stopBreakCountdown(false);
+  clearBreakStorage();
+
+  // força recarregar (mata qualquer DOM antigo)
+  window.location.href = "/";
 }
+
 async function sendReset() {
   clearAuthMsgs();
 

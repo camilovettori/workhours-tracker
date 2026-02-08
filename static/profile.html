@@ -7,16 +7,43 @@
   <title>Profile</title>
 
   <link rel="icon" href="/static/logo.png" />
-  <link rel="stylesheet" href="/static/app.css?v=12" />
+  <!-- BUMP VERSION when you change this file -->
+  <link rel="stylesheet" href="/static/app.css?v=99" />
 
   <style>
+    :root{
+      --ink:#0f172a;
+      --muted: rgba(15,23,42,.58);
+      --card: rgba(255,255,255,.86);
+      --line: rgba(15,23,42,.10);
+      --soft: rgba(15,23,42,.06);
+      --blue: #2563eb;
+      --blue2:#1d4ed8;
+      --red:#dc2626;
+      --redSoft: rgba(220,38,38,.08);
+      --shadow: 0 20px 70px rgba(2,6,23,.18);
+    }
+
+    body{ background: radial-gradient(1200px 700px at 15% 0%, rgba(37,99,235,.12), transparent 55%),
+                   radial-gradient(900px 600px at 85% 12%, rgba(99,102,241,.12), transparent 55%),
+                   linear-gradient(180deg, rgba(241,245,249,.9), rgba(241,245,249,.55));
+    }
+
     .wrap{ width:min(980px,100%); margin:0 auto; padding:22px 16px 120px; }
     .top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
     .brand{ display:flex; align-items:center; gap:12px; }
     .brand img{ width:44px; height:44px; border-radius:12px; object-fit:cover; }
     .muted{ color: var(--muted); font-weight:900; }
 
+    .card{
+      border-radius:22px;
+      border:1px solid var(--line);
+      background: var(--card);
+      box-shadow: 0 18px 60px rgba(2,6,23,.10);
+      overflow:hidden;
+    }
     .cardPad{ padding:16px; }
+
     .row{ display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; }
     .hidden{ display:none !important; }
     .err{ color:#b91c1c; font-weight:1000; margin-top:8px; }
@@ -30,7 +57,7 @@
 
     .field{ display:flex; flex-direction:column; gap:6px; }
     .field span{ font-weight:900; color: var(--muted); font-size:13px; }
-    .field input{
+    .field input, .field textarea{
       padding:12px 12px;
       border-radius:14px;
       border:1px solid rgba(15,23,42,.12);
@@ -38,9 +65,10 @@
       font-weight:900;
       outline:none;
     }
+    .field textarea{ min-height: 92px; resize: vertical; font-weight:800; }
     .field input[readonly]{ opacity:.85; }
 
-    /* avatar */
+    /* photo */
     .avatarBox{
       display:flex; gap:14px; align-items:center; flex-wrap:wrap;
       border:1px solid rgba(15,23,42,.08);
@@ -58,51 +86,114 @@
       color: var(--muted);
     }
     .avatar img{ width:100%; height:100%; object-fit:cover; }
-    .btnRow{ display:flex; gap:10px; flex-wrap:wrap; }
+    .btnRow{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
     .smallHint{ font-size:12px; font-weight:900; color:var(--muted); margin-top:6px; }
 
-    /* camera modal */
-    .modalBackdrop{
+    /* menu list */
+    .menuWrap{ padding:16px; }
+    .menuList{ display:flex; flex-direction:column; gap:10px; margin-top:12px; }
+    .menuItem{
+      width:100%;
+      display:flex; align-items:center; justify-content:space-between;
+      gap:12px;
+      padding:14px 14px;
+      border-radius:18px;
+      border:1px solid rgba(15,23,42,.10);
+      background: rgba(255,255,255,.75);
+      cursor:pointer;
+      transition: transform .06s ease, box-shadow .06s ease, border-color .12s ease;
+      text-align:left;
+    }
+    .menuItem:hover{ transform: translateY(-1px); box-shadow: 0 10px 30px rgba(2,6,23,.10); border-color: rgba(37,99,235,.20); }
+    .miLeft{ display:flex; flex-direction:column; gap:2px; }
+    .miTitle{ font-weight:1000; font-size:15px; color: var(--ink); }
+    .miSub{ font-weight:900; font-size:12px; color: var(--muted); }
+    .chev{ font-weight:1000; color: rgba(15,23,42,.35); font-size:18px; }
+    .menuItem.red{
+      border-color: rgba(220,38,38,.30);
+      background: var(--redSoft);
+    }
+    .menuItem.red .miTitle{ color: var(--red); }
+    .menuItem.red .chev{ color: rgba(220,38,38,.45); }
+
+    /* buttons (override if app.css doesn’t have) */
+    .btnX{
+      border:1px solid rgba(15,23,42,.12);
+      padding:10px 14px;
+      border-radius:999px;
+      font-weight:1000;
+      background: rgba(255,255,255,.70);
+      cursor:pointer;
+    }
+    .btnX.blue{ background: rgba(37,99,235,.10); border-color: rgba(37,99,235,.25); color: var(--blue2); }
+    .btnX.blueSolid{ background: var(--blue); border-color: rgba(37,99,235,.35); color: white; }
+    .btnX.ghost{ background: rgba(255,255,255,.45); }
+    .btnX.danger{ background: rgba(220,38,38,.10); border-color: rgba(220,38,38,.25); color: var(--red); }
+
+    /* modal */
+    .backdrop{
       position: fixed; inset: 0;
-      background: rgba(15,23,42,.45);
+      background: rgba(15,23,42,.50);
       display: flex; align-items: center; justify-content: center;
       padding: 18px;
-      z-index: 50;
+      z-index: 60;
     }
     .modal{
-      width: min(720px, 100%);
+      width: min(780px, 100%);
       border-radius: 22px;
       border: 1px solid rgba(15,23,42,.10);
-      background: rgba(255,255,255,.92);
+      background: rgba(255,255,255,.93);
       backdrop-filter: blur(10px);
-      box-shadow: 0 20px 70px rgba(2,6,23,.28);
-      padding: 16px;
+      box-shadow: var(--shadow);
+      overflow:hidden;
     }
-    .modalHead{
-      display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
-      margin-bottom: 10px;
+    .mHead{
+      padding:14px 16px;
+      border-bottom:1px solid rgba(15,23,42,.08);
+      display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
+      background: linear-gradient(180deg, rgba(37,99,235,.08), rgba(255,255,255,.0));
     }
-    .modalTitle{ font-weight:1000; font-size:16px; line-height:1.15; }
-    .modalSub{ margin-top:4px; font-weight:900; font-size:12px; color: var(--muted); }
-    .modalBody{ display:flex; flex-direction:column; gap:12px; }
+    .mTitle{ font-weight:1000; font-size:16px; line-height:1.1; }
+    .mSub{ margin-top:4px; font-weight:900; font-size:12px; color: var(--muted); }
+    .mBody{ padding:16px; }
+    .mFooter{
+      padding:12px 16px;
+      border-top:1px solid rgba(15,23,42,.08);
+      display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;
+      background: rgba(255,255,255,.65);
+    }
+
+    /* phone & gate rows */
+    .listCard{ border:1px solid rgba(15,23,42,.08); background: rgba(255,255,255,.70); border-radius:18px; padding:12px; }
+    .itemRow{
+      display:flex; gap:10px; align-items:center; justify-content:space-between;
+      padding:10px 10px;
+      border-radius:14px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.78);
+      margin-top:10px;
+    }
+    .itemRow .t1{ font-weight:1000; font-size:13px; }
+    .itemRow .t2{ font-weight:900; font-size:12px; color:var(--muted); margin-top:2px; }
+    .itemRow .actions{ display:flex; gap:8px; align-items:center; }
+
+    .pillName{
+      padding:8px 12px;
+      border-radius:999px;
+      background: rgba(15,23,42,.06);
+      border: 1px solid rgba(15,23,42,.10);
+      font-weight:1000;
+      color: rgba(15,23,42,.65);
+      white-space:nowrap;
+    }
+
+    /* camera modal video */
     video{
       width:100%;
       border-radius:18px;
       border:1px solid rgba(15,23,42,.10);
       background: rgba(15,23,42,.06);
     }
-
-    .phoneRow{
-      display:flex; gap:10px; align-items:center; justify-content:space-between;
-      padding:10px 12px;
-      border-radius:14px;
-      border:1px solid rgba(15,23,42,.08);
-      background: rgba(255,255,255,.70);
-      margin-top:8px;
-    }
-    .phoneRow .l1{ font-weight:1000; font-size:13px; }
-    .phoneRow .l2{ font-weight:900; font-size:12px; color:var(--muted); margin-top:2px; }
-    .phoneRow .actions{ display:flex; gap:8px; }
   </style>
 </head>
 
@@ -118,18 +209,19 @@
       </div>
 
       <div style="display:flex; gap:10px; align-items:center;">
-        <button id="btnHome" class="btn btn--pill btn--soft" type="button">Home</button>
-        <button id="btnBack" class="btn btn--pill btn--ghost" type="button">Back</button>
+        <button id="btnHome" class="btnX blue" type="button">Home</button>
+        <button id="btnBack" class="btnX ghost" type="button">Back</button>
       </div>
     </div>
 
-    <!-- AVATAR -->
+    <!-- PHOTO -->
     <section class="card cardPad">
       <div class="row">
         <div>
           <div class="sectionTitle">Photo</div>
           <div class="sectionSub">Upload an avatar or take a selfie</div>
         </div>
+        <div id="pillUser" class="pillName hidden"></div>
       </div>
 
       <div class="avatarBox" style="margin-top:12px;">
@@ -138,8 +230,8 @@
         <div style="min-width:260px; flex:1;">
           <div class="btnRow">
             <input id="fileAvatar" type="file" accept="image/*" class="hidden" />
-            <button id="btnUpload" class="btn btn--soft" type="button">Upload photo</button>
-            <button id="btnCamera" class="btn btn--ghost" type="button">Use camera</button>
+            <button id="btnUpload" class="btnX blue" type="button">Upload photo</button>
+            <button id="btnCamera" class="btnX ghost" type="button">Use camera</button>
           </div>
           <div class="smallHint">Tip: Camera works on HTTPS or localhost. On mobile, allow permission.</div>
 
@@ -149,131 +241,89 @@
       </div>
     </section>
 
-    <!-- ACCOUNT -->
-    <section class="card cardPad" style="margin-top:12px;">
-      <div class="row">
-        <div>
-          <div class="sectionTitle">Account settings</div>
-          <div class="sectionSub">Edit your basic info</div>
-        </div>
-        <button id="btnSaveAccount" class="btn btn--primary" type="button">Save</button>
+    <!-- MENU -->
+    <section class="card menuWrap" style="margin-top:12px;">
+      <div class="sectionTitle">Menu</div>
+      <div class="sectionSub">Tap to open</div>
+
+      <div class="menuList">
+        <button id="mAccount" class="menuItem" type="button">
+          <div class="miLeft">
+            <div class="miTitle">Account settings</div>
+            <div class="miSub">Name & email</div>
+          </div>
+          <div class="chev">›</div>
+        </button>
+
+        <button id="mPay" class="menuItem" type="button">
+          <div class="miLeft">
+            <div class="miTitle">Pay settings</div>
+            <div class="miSub">Hourly rate used everywhere</div>
+          </div>
+          <div class="chev">›</div>
+        </button>
+
+        <button id="mPhones" class="menuItem" type="button">
+          <div class="miLeft">
+            <div class="miTitle">Useful phones</div>
+            <div class="miSub">Call / edit / delete</div>
+          </div>
+          <div class="chev">›</div>
+        </button>
+
+        <button id="mGates" class="menuItem" type="button">
+          <div class="miLeft">
+            <div class="miTitle">Gate Codes</div>
+            <div class="miSub">Places & codes</div>
+          </div>
+          <div class="chev">›</div>
+        </button>
+
+        <button id="mLogout" class="menuItem red" type="button">
+          <div class="miLeft">
+            <div class="miTitle">Logout</div>
+            <div class="miSub">Sign out of this device</div>
+          </div>
+          <div class="chev">›</div>
+        </button>
       </div>
-
-      <div class="grid2" style="margin-top:12px;">
-        <label class="field">
-          <span>First name</span>
-          <input id="firstName" type="text" />
-        </label>
-        <label class="field">
-          <span>Last name</span>
-          <input id="lastName" type="text" />
-        </label>
-      </div>
-
-      <div class="grid2" style="margin-top:10px;">
-        <label class="field">
-          <span>Email (read-only)</span>
-          <input id="email" type="email" readonly />
-        </label>
-        <label class="field">
-          <span>Password</span>
-          <input id="password" type="password" placeholder="(next step)" readonly />
-        </label>
-      </div>
-
-      <div id="accMsg" class="ok"></div>
-      <div id="accErr" class="err"></div>
-    </section>
-
-    <!-- PAY -->
-    <section class="card cardPad" style="margin-top:12px;">
-      <div class="row">
-        <div>
-          <div class="sectionTitle">Pay settings</div>
-          <div class="sectionSub">Single source of truth for Hourly Rate</div>
-        </div>
-        <button id="btnSavePay" class="btn btn--primary" type="button">Save</button>
-      </div>
-
-      <div class="grid2" style="margin-top:12px;">
-        <label class="field">
-          <span>Hourly rate (€)</span>
-          <input id="hourlyRate" type="number" step="0.01" min="0" placeholder="e.g. 18.24" />
-        </label>
-        <div class="field">
-          <span>Used by</span>
-          <input type="text" value="Dashboard • Roster • Reports" readonly />
-        </div>
-      </div>
-
-      <div id="payMsg" class="ok"></div>
-      <div id="payErr" class="err"></div>
-    </section>
-
-    <!-- HELP -->
-    <section class="card cardPad" style="margin-top:12px;">
-      <div class="sectionTitle">Help</div>
-      <div class="sectionSub">Quick guide</div>
-
-      <div style="margin-top:10px; font-weight:900; color:var(--muted); line-height:1.45;">
-        • Set your Hourly Rate here once.<br/>
-        • Add weeks in Roster (Sun → Sat).<br/>
-        • Bank Holidays are detected automatically from your BH tracker.<br/>
-        • Premium rules (Sunday / BH) will be applied consistently (app.js + report).
-      </div>
-    </section>
-
-    <!-- USEFUL PHONES -->
-    <section class="card cardPad" style="margin-top:12px;">
-      <div class="row">
-        <div>
-          <div class="sectionTitle">Useful phones</div>
-          <div class="sectionSub">Mechanic, customer service, etc.</div>
-        </div>
-      </div>
-
-      <div class="grid2" style="margin-top:12px;">
-        <label class="field">
-          <span>Label</span>
-          <input id="phLabel" type="text" placeholder="e.g. Mechanic" />
-        </label>
-        <label class="field">
-          <span>Phone</span>
-          <input id="phNumber" type="tel" placeholder="e.g. +353..." />
-        </label>
-      </div>
-
-      <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-        <button id="btnAddPhone" class="btn btn--soft" type="button">Add</button>
-      </div>
-
-      <div id="phones"></div>
-      <div id="phMsg" class="ok"></div>
-      <div id="phErr" class="err"></div>
     </section>
   </main>
 
   <!-- CAMERA MODAL -->
-  <div id="camBackdrop" class="modalBackdrop hidden" aria-hidden="true">
+  <div id="camBackdrop" class="backdrop hidden" aria-hidden="true">
     <div class="modal" role="dialog" aria-modal="true">
-      <div class="modalHead">
+      <div class="mHead">
         <div>
-          <div class="modalTitle">Take a selfie</div>
-          <div class="modalSub">Click “Capture” then “Save”</div>
+          <div class="mTitle">Take a selfie</div>
+          <div class="mSub">Click “Capture” then “Save”</div>
         </div>
-        <button id="btnCloseCam" class="btn btn--pill btn--ghost" type="button">Close</button>
+        <button id="btnCloseCam" class="btnX ghost" type="button">Close</button>
       </div>
 
-      <div class="modalBody">
+      <div class="mBody">
         <video id="camVideo" autoplay playsinline></video>
-
-        <div class="btnRow">
-          <button id="btnCapture" class="btn btn--soft" type="button">Capture</button>
-          <button id="btnSaveCapture" class="btn btn--primary" type="button" disabled>Save</button>
+        <div class="btnRow" style="margin-top:12px;">
+          <button id="btnCapture" class="btnX blue" type="button">Capture</button>
+          <button id="btnSaveCapture" class="btnX blueSolid" type="button" disabled>Save</button>
         </div>
-
         <div id="camErr" class="err"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- GENERIC MODAL (Account/Pay/Phones/Gates) -->
+  <div id="modalBackdrop" class="backdrop hidden" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="mHead">
+        <div>
+          <div id="modalTitle" class="mTitle">Title</div>
+          <div id="modalSub" class="mSub">Subtitle</div>
+        </div>
+        <button id="btnCloseModal" class="btnX ghost" type="button">Close</button>
+      </div>
+      <div id="modalBody" class="mBody"></div>
+      <div id="modalFooter" class="mFooter"></div>
     </div>
   </div>
 
@@ -288,14 +338,10 @@
         headers: { ...(opts.headers || {}) },
         ...opts,
       });
-
       const ct = res.headers.get("content-type") || "";
       const data = ct.includes("application/json") ? await res.json() : await res.text();
-
       if (!res.ok) {
-        const msg =
-          (data && data.detail) ? data.detail :
-          (typeof data === "string" ? data : "Request failed");
+        const msg = (data && data.detail) ? data.detail : (typeof data === "string" ? data : "Request failed");
         const e = new Error(msg);
         e.status = res.status;
         throw e;
@@ -303,11 +349,17 @@
       return data;
     }
 
-    // Save avatar URL so dashboard/app.js can use it without extra calls
+    // LocalStorage keys
     const LS_AVATAR_URL  = "wh_avatar_url";
     const LS_USER_NAME   = "wh_user_name";
+    const PH_KEY         = "wht_useful_phones";
+    const GATE_KEY       = "wht_gate_codes";
 
     let ME = null;
+
+    function esc(s){
+      return String(s || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+    }
 
     function renderAvatar(url, firstName, lastName){
       const box = $("avatar");
@@ -316,24 +368,24 @@
 
       if (url) {
         const img = document.createElement("img");
-        img.src = url + (url.includes("?") ? "&" : "?") + "v=" + Date.now(); // bust cache
+        img.src = url + (url.includes("?") ? "&" : "?") + "v=" + Date.now();
         img.alt = "avatar";
         box.appendChild(img);
         return;
       }
-
       const initials = ((firstName||"").slice(0,1) + (lastName||"").slice(0,1)).toUpperCase() || "—";
       box.textContent = initials;
     }
 
     async function loadMe(){
       ME = await api("/api/me");
-      $("email").value = ME.email || "";
-      $("firstName").value = ME.first_name || "";
-      $("lastName").value = ME.last_name || "";
-      $("hourlyRate").value = (ME.hourly_rate ?? "").toString();
-
       const fullName = `${ME.first_name || ""} ${ME.last_name || ""}`.trim();
+
+      if ($("pillUser")) {
+        $("pillUser").textContent = fullName || "User";
+        $("pillUser").classList.remove("hidden");
+      }
+
       try {
         localStorage.setItem(LS_AVATAR_URL, ME.avatar_url || "");
         localStorage.setItem(LS_USER_NAME, fullName || "");
@@ -344,7 +396,7 @@
     }
 
     // -----------------------------
-    // AVATAR UPLOAD
+    // CAMERA / AVATAR
     // -----------------------------
     async function uploadAvatarFile(file){
       $("avatarErr").textContent = "";
@@ -359,17 +411,10 @@
       fd.append("file", file);
 
       try{
-        const res = await api("/api/me/avatar", {
-          method: "POST",
-          body: fd,
-          headers: {} // do not set Content-Type for FormData
-        });
-
-        // keep local ME in sync
+        const res = await api("/api/me/avatar", { method: "POST", body: fd, headers: {} });
         if (res?.avatar_url) ME.avatar_url = res.avatar_url;
 
         $("avatarMsg").textContent = "Avatar updated.";
-
         try { localStorage.setItem(LS_AVATAR_URL, ME.avatar_url || ""); } catch {}
         renderAvatar(ME.avatar_url || "", ME?.first_name || "", ME?.last_name || "");
       }catch(e){
@@ -385,9 +430,6 @@
       $("fileAvatar").value = "";
     });
 
-    // -----------------------------
-    // CAMERA CAPTURE
-    // -----------------------------
     let camStream = null;
     let capturedBlob = null;
 
@@ -419,9 +461,7 @@
 
     $("btnCamera").addEventListener("click", openCamera);
     $("btnCloseCam").addEventListener("click", closeCamera);
-    $("camBackdrop").addEventListener("click", (e) => {
-      if(e.target === $("camBackdrop")) closeCamera();
-    });
+    $("camBackdrop").addEventListener("click", (e) => { if(e.target === $("camBackdrop")) closeCamera(); });
 
     $("btnCapture").addEventListener("click", () => {
       $("camErr").textContent = "";
@@ -430,7 +470,6 @@
         $("camErr").textContent = "Camera not ready yet.";
         return;
       }
-
       const canvas = document.createElement("canvas");
       canvas.width = v.videoWidth;
       canvas.height = v.videoHeight;
@@ -438,10 +477,7 @@
       ctx.drawImage(v, 0, 0);
 
       canvas.toBlob((blob) => {
-        if(!blob){
-          $("camErr").textContent = "Capture failed.";
-          return;
-        }
+        if(!blob){ $("camErr").textContent = "Capture failed."; return; }
         capturedBlob = blob;
         $("btnSaveCapture").disabled = false;
       }, "image/jpeg", 0.92);
@@ -449,146 +485,453 @@
 
     $("btnSaveCapture").addEventListener("click", async () => {
       $("camErr").textContent = "";
-      if(!capturedBlob){
-        $("camErr").textContent = "No captured photo.";
-        return;
-      }
-
+      if(!capturedBlob){ $("camErr").textContent = "No captured photo."; return; }
       const file = new File([capturedBlob], "selfie.jpg", { type: "image/jpeg" });
       await uploadAvatarFile(file);
       closeCamera();
     });
 
     // -----------------------------
-    // ACCOUNT SAVE
+    // MODAL SYSTEM
     // -----------------------------
-    $("btnSaveAccount").addEventListener("click", async () => {
-      $("accErr").textContent = "";
-      $("accMsg").textContent = "";
-
-      const first_name = ($("firstName").value || "").trim();
-      const last_name = ($("lastName").value || "").trim();
-
-      try{
-        await api("/api/me", {
-          method: "PATCH",
-          headers: { "Content-Type":"application/json" },
-          body: JSON.stringify({ first_name, last_name })
-        });
-
-        $("accMsg").textContent = "Saved.";
-        await loadMe();
-      }catch(e){
-        $("accErr").textContent = e.message || "Failed to save";
-        if(e.status === 401) location.href = "/";
-      }
-    });
+    function openModal(title, sub, bodyHTML, footerHTML){
+      $("modalTitle").textContent = title || "";
+      $("modalSub").textContent = sub || "";
+      $("modalBody").innerHTML = bodyHTML || "";
+      $("modalFooter").innerHTML = footerHTML || "";
+      show($("modalBackdrop"));
+      $("modalBackdrop").setAttribute("aria-hidden","false");
+    }
+    function closeModal(){
+      hide($("modalBackdrop"));
+      $("modalBackdrop").setAttribute("aria-hidden","true");
+      $("modalBody").innerHTML = "";
+      $("modalFooter").innerHTML = "";
+    }
+    $("btnCloseModal").addEventListener("click", closeModal);
+    $("modalBackdrop").addEventListener("click", (e) => { if(e.target === $("modalBackdrop")) closeModal(); });
 
     // -----------------------------
-    // PAY SAVE
+    // ACCOUNT MODAL
     // -----------------------------
-    $("btnSavePay").addEventListener("click", async () => {
-      $("payErr").textContent = "";
-      $("payMsg").textContent = "";
+    function openAccount(){
+      const body = `
+        <div class="grid2">
+          <label class="field">
+            <span>First name</span>
+            <input id="m_first" type="text" value="${esc(ME?.first_name || "")}" />
+          </label>
+          <label class="field">
+            <span>Last name</span>
+            <input id="m_last" type="text" value="${esc(ME?.last_name || "")}" />
+          </label>
+        </div>
 
-      const hourly_rate = Number($("hourlyRate").value || 0);
-      if(!hourly_rate || hourly_rate <= 0){
-        $("payErr").textContent = "Hourly Rate must be > 0.";
-        return;
-      }
+        <div class="grid2" style="margin-top:10px;">
+          <label class="field">
+            <span>Email (read-only)</span>
+            <input type="email" readonly value="${esc(ME?.email || "")}" />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input type="password" readonly placeholder="(next step)" />
+          </label>
+        </div>
 
-      try{
-        await api("/api/me", {
-          method: "PATCH",
-          headers: { "Content-Type":"application/json" },
-          body: JSON.stringify({ hourly_rate })
-        });
+        <div id="m_acc_ok" class="ok"></div>
+        <div id="m_acc_err" class="err"></div>
+      `;
 
-        $("payMsg").textContent = "Hourly Rate saved.";
-        await loadMe();
-      }catch(e){
-        $("payErr").textContent = e.message || "Failed to save";
-        if(e.status === 401) location.href = "/";
-      }
-    });
+      const footer = `
+        <button id="btnAccCancel" class="btnX ghost" type="button">Cancel</button>
+        <button id="btnAccSave" class="btnX blueSolid" type="button">Save</button>
+      `;
 
-    // -----------------------------
-    // USEFUL PHONES (localStorage)
-    // -----------------------------
-    const PH_KEY = "wht_useful_phones";
+      openModal("Account settings", "Name & email", body, footer);
 
-    function esc(s){
-      return String(s || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+      $("btnAccCancel").addEventListener("click", closeModal);
+      $("btnAccSave").addEventListener("click", async () => {
+        $("m_acc_ok").textContent = "";
+        $("m_acc_err").textContent = "";
+        const first_name = ($("m_first").value || "").trim();
+        const last_name  = ($("m_last").value || "").trim();
+
+        try{
+          await api("/api/me", {
+            method:"PATCH",
+            headers:{ "Content-Type":"application/json" },
+            body: JSON.stringify({ first_name, last_name })
+          });
+          $("m_acc_ok").textContent = "Saved.";
+          await loadMe();
+        }catch(e){
+          $("m_acc_err").textContent = e.message || "Failed to save";
+          if(e.status === 401) location.href = "/";
+        }
+      });
     }
 
+    // -----------------------------
+    // PAY MODAL
+    // -----------------------------
+    function openPay(){
+      const body = `
+        <div class="grid2">
+          <label class="field">
+            <span>Hourly rate (€)</span>
+            <input id="m_rate" type="number" step="0.01" min="0" value="${esc(String(ME?.hourly_rate ?? ""))}" placeholder="e.g. 18.24" />
+          </label>
+          <div class="field">
+            <span>Used by</span>
+            <input type="text" value="Dashboard • Roster • Reports" readonly />
+          </div>
+        </div>
+
+        <div id="m_pay_ok" class="ok"></div>
+        <div id="m_pay_err" class="err"></div>
+      `;
+      const footer = `
+        <button id="btnPayCancel" class="btnX ghost" type="button">Cancel</button>
+        <button id="btnPaySave" class="btnX blueSolid" type="button">Save</button>
+      `;
+
+      openModal("Pay settings", "Hourly rate used everywhere", body, footer);
+
+      $("btnPayCancel").addEventListener("click", closeModal);
+      $("btnPaySave").addEventListener("click", async () => {
+        $("m_pay_ok").textContent = "";
+        $("m_pay_err").textContent = "";
+        const hourly_rate = Number(($("m_rate").value || "").trim() || 0);
+        if(!hourly_rate || hourly_rate <= 0){
+          $("m_pay_err").textContent = "Hourly Rate must be > 0.";
+          return;
+        }
+        try{
+          await api("/api/me", {
+            method:"PATCH",
+            headers:{ "Content-Type":"application/json" },
+            body: JSON.stringify({ hourly_rate })
+          });
+          $("m_pay_ok").textContent = "Hourly Rate saved.";
+          await loadMe();
+        }catch(e){
+          $("m_pay_err").textContent = e.message || "Failed to save";
+          if(e.status === 401) location.href = "/";
+        }
+      });
+    }
+
+    // -----------------------------
+    // PHONES (localStorage)
+    // -----------------------------
+    function defaultPhonesIfEmpty(){
+      try{
+        const raw = localStorage.getItem(PH_KEY);
+        if(raw) return;
+      }catch{}
+      const seed = [
+        { id: Date.now()+1, label: "Ballinlough", phone: "016874191 or (8)8819" },
+        { id: Date.now()+2, label: "Waterford", phone: "1800 248 123 - instructions - press 2..1..4 and 3 to speak to an operator in CS." }
+      ];
+      try{ localStorage.setItem(PH_KEY, JSON.stringify(seed)); }catch{}
+    }
     function loadPhones(){
       try{
         const raw = localStorage.getItem(PH_KEY);
         return raw ? JSON.parse(raw) : [];
-      }catch{
-        return [];
-      }
+      }catch{ return []; }
     }
     function savePhones(items){
       localStorage.setItem(PH_KEY, JSON.stringify(items || []));
     }
-    function renderPhones(){
-      $("phErr").textContent = "";
-      $("phMsg").textContent = "";
-      const list = $("phones");
-      list.innerHTML = "";
-
+    function renderPhonesInto(containerId){
+      const box = $(containerId);
+      if(!box) return;
       const items = loadPhones();
+
       if(!items.length){
-        list.innerHTML = `<div class="muted" style="margin-top:10px;">No contacts yet.</div>`;
+        box.innerHTML = `<div class="muted" style="margin-top:6px;">No contacts yet.</div>`;
         return;
       }
+
+      box.innerHTML = `<div class="listCard"><div style="font-weight:1000;">Saved contacts</div></div>`;
+      const card = box.querySelector(".listCard");
 
       for(const it of items){
         const row = document.createElement("div");
-        row.className = "phoneRow";
+        row.className = "itemRow";
         row.innerHTML = `
-          <div>
-            <div class="l1">${esc(it.label)}</div>
-            <div class="l2">${esc(it.phone)}</div>
+          <div style="min-width:180px; flex:1;">
+            <div class="t1">${esc(it.label)}</div>
+            <div class="t2">${esc(it.phone)}</div>
           </div>
           <div class="actions">
-            <a class="btn btn--pill btn--soft" href="tel:${encodeURIComponent(it.phone||"")}" style="text-decoration:none;">Call</a>
-            <button class="btn btn--pill btn--ghost" type="button">Delete</button>
+            <a class="btnX blue" href="tel:${encodeURIComponent(it.phone||"")}" style="text-decoration:none;">Call</a>
+            <button class="btnX danger" type="button">Delete</button>
           </div>
         `;
-
         row.querySelector("button").addEventListener("click", () => {
           const next = loadPhones().filter(x => x.id !== it.id);
           savePhones(next);
-          renderPhones();
+          renderPhonesInto(containerId);
         });
-
-        list.appendChild(row);
+        card.appendChild(row);
       }
     }
 
-    $("btnAddPhone").addEventListener("click", () => {
-      $("phErr").textContent = "";
-      $("phMsg").textContent = "";
+    function openPhones(){
+      defaultPhonesIfEmpty();
 
-      const label = ($("phLabel").value || "").trim();
-      const phone = ($("phNumber").value || "").trim();
+      const body = `
+        <div class="grid2">
+          <label class="field">
+            <span>Label</span>
+            <input id="m_ph_label" type="text" placeholder="e.g. Mechanic" />
+          </label>
+          <label class="field">
+            <span>Phone / Notes</span>
+            <input id="m_ph_phone" type="text" placeholder="e.g. +353... or instructions" />
+          </label>
+        </div>
 
-      if(!label || !phone){
-        $("phErr").textContent = "Fill label and phone.";
+        <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+          <button id="btnPhAdd" class="btnX blueSolid" type="button">Add</button>
+        </div>
+
+        <div id="m_ph_list" style="margin-top:12px;"></div>
+        <div id="m_ph_ok" class="ok"></div>
+        <div id="m_ph_err" class="err"></div>
+      `;
+
+      const footer = `
+        <button id="btnPhClose" class="btnX ghost" type="button">Close</button>
+      `;
+
+      openModal("Useful phones", "Call / edit / delete", body, footer);
+      renderPhonesInto("m_ph_list");
+
+      $("btnPhClose").addEventListener("click", closeModal);
+      $("btnPhAdd").addEventListener("click", () => {
+        $("m_ph_ok").textContent = "";
+        $("m_ph_err").textContent = "";
+
+        const label = ($("m_ph_label").value || "").trim();
+        const phone = ($("m_ph_phone").value || "").trim();
+        if(!label || !phone){
+          $("m_ph_err").textContent = "Fill label and phone/notes.";
+          return;
+        }
+
+        const items = loadPhones();
+        items.unshift({ id: Date.now(), label, phone });
+        savePhones(items);
+
+        $("m_ph_label").value = "";
+        $("m_ph_phone").value = "";
+        $("m_ph_ok").textContent = "Added.";
+        renderPhonesInto("m_ph_list");
+      });
+    }
+
+    // -----------------------------
+    // GATE CODES (localStorage)
+    // -----------------------------
+    function defaultGatesIfEmpty(){
+      try{
+        const raw = localStorage.getItem(GATE_KEY);
+        if(raw) return;
+      }catch{}
+
+      const seed = [
+        { id: Date.now()+1, place:"Old chocolate", code:"4238" },
+        { id: Date.now()+2, place:"Brabazon Hall Cork st", code:"5917" },
+        { id: Date.now()+3, place:"Brabazon Pimlico side", code:"4683 inside pad" },
+        { id: Date.now()+4, place:"Bridge water quay", code:"0406" },
+        { id: Date.now()+5, place:"Camac crescent", code:"3535" },
+        { id: Date.now()+6, place:"Chandler", code:"*2665#" },
+        { id: Date.now()+7, place:"Leinster park", code:"4282" },
+        { id: Date.now()+8, place:"Millbrook court", code:"3863" },
+        { id: Date.now()+9, place:"Rockfield", code:"2985" },
+        { id: Date.now()+10, place:"Eastmoreland Court", code:"1946" },
+        { id: Date.now()+11, place:"The Prominade Roebuck Road", code:"7253" },
+        { id: Date.now()+12, place:"Saddlers Place", code:"2004" },
+        { id: Date.now()+13, place:"Swanward Court main", code:"1326" },
+        { id: Date.now()+14, place:"Swanward Court pedestrian", code:"6231" },
+        { id: Date.now()+15, place:"Harold Bridge Court", code:"3224" },
+        { id: Date.now()+16, place:"Stanford", code:"4763" },
+        { id: Date.now()+17, place:"Mellowes Quay", code:"0AAAA" },
+        { id: Date.now()+18, place:"The Pines", code:"Key 2902 Key" },
+        { id: Date.now()+19, place:"The Pavilion Roebuck Hall", code:"75233" },
+        { id: Date.now()+20, place:"Balnagowan", code:"9087" },
+        { id: Date.now()+21, place:"Hyde Square", code:"4916" },
+        { id: Date.now()+22, place:"Hybreasal", code:"5825" },
+        { id: Date.now()+23, place:"Riverbank house - Pedestrian Gate", code:"1955" },
+        { id: Date.now()+24, place:"Rosedale Castaheany", code:"9745" },
+        { id: Date.now()+25, place:"Whitworth hall d7", code:"1974" }
+      ];
+
+      try{ localStorage.setItem(GATE_KEY, JSON.stringify(seed)); }catch{}
+    }
+
+    function loadGates(){
+      try{
+        const raw = localStorage.getItem(GATE_KEY);
+        return raw ? JSON.parse(raw) : [];
+      }catch{ return []; }
+    }
+    function saveGates(items){
+      localStorage.setItem(GATE_KEY, JSON.stringify(items || []));
+    }
+
+    function renderGates(containerId){
+      const box = $(containerId);
+      if(!box) return;
+
+      const items = loadGates();
+      if(!items.length){
+        box.innerHTML = `<div class="muted" style="margin-top:6px;">No gate codes yet.</div>`;
         return;
       }
 
-      const items = loadPhones();
-      items.unshift({ id: Date.now(), label, phone });
-      savePhones(items);
+      box.innerHTML = `<div class="listCard"><div style="font-weight:1000;">Saved gate codes</div></div>`;
+      const card = box.querySelector(".listCard");
 
-      $("phLabel").value = "";
-      $("phNumber").value = "";
-      $("phMsg").textContent = "Added.";
-      renderPhones();
-    });
+      for(const it of items){
+        const row = document.createElement("div");
+        row.className = "itemRow";
+        row.innerHTML = `
+          <div style="min-width:200px; flex:1;">
+            <div class="t1">${esc(it.place)}</div>
+            <div class="t2">${esc(it.code)}</div>
+          </div>
+          <div class="actions">
+            <button class="btnX blue" type="button">Edit</button>
+            <button class="btnX danger" type="button">Delete</button>
+          </div>
+        `;
+
+        const [btnEdit, btnDel] = row.querySelectorAll("button");
+
+        btnDel.addEventListener("click", () => {
+          const next = loadGates().filter(x => x.id !== it.id);
+          saveGates(next);
+          renderGates(containerId);
+        });
+
+        btnEdit.addEventListener("click", () => {
+          const editBody = `
+            <div class="grid2">
+              <label class="field">
+                <span>Place</span>
+                <input id="edit_place" type="text" value="${esc(it.place)}" />
+              </label>
+              <label class="field">
+                <span>Code</span>
+                <input id="edit_code" type="text" value="${esc(it.code)}" />
+              </label>
+            </div>
+            <div id="edit_err" class="err"></div>
+          `;
+          const editFooter = `
+            <button id="btnEditCancel" class="btnX ghost" type="button">Cancel</button>
+            <button id="btnEditSave" class="btnX blueSolid" type="button">Save</button>
+          `;
+          openModal("Edit gate code", "Update place & code", editBody, editFooter);
+
+          $("btnEditCancel").addEventListener("click", () => {
+            // reopen gates modal quickly
+            closeModal();
+            openGates();
+          });
+
+          $("btnEditSave").addEventListener("click", () => {
+            $("edit_err").textContent = "";
+            const place = ($("edit_place").value || "").trim();
+            const code  = ($("edit_code").value || "").trim();
+            if(!place || !code){
+              $("edit_err").textContent = "Place and code are required.";
+              return;
+            }
+            const items = loadGates().map(x => x.id === it.id ? { ...x, place, code } : x);
+            saveGates(items);
+            closeModal();
+            openGates();
+          });
+        });
+
+        card.appendChild(row);
+      }
+    }
+
+    function openGates(){
+      defaultGatesIfEmpty();
+
+      const body = `
+        <div class="grid2">
+          <label class="field">
+            <span>Place</span>
+            <input id="m_gate_place" type="text" placeholder="e.g. Brabazon Hall" />
+          </label>
+          <label class="field">
+            <span>Code</span>
+            <input id="m_gate_code" type="text" placeholder="e.g. 5917 / *2665# / notes" />
+          </label>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+          <button id="btnGateAdd" class="btnX blueSolid" type="button">Add</button>
+        </div>
+
+        <div id="m_gate_list" style="margin-top:12px;"></div>
+        <div id="m_gate_ok" class="ok"></div>
+        <div id="m_gate_err" class="err"></div>
+      `;
+
+      const footer = `<button id="btnGateClose" class="btnX ghost" type="button">Close</button>`;
+
+      openModal("Gate Codes", "Places & codes", body, footer);
+      renderGates("m_gate_list");
+
+      $("btnGateClose").addEventListener("click", closeModal);
+      $("btnGateAdd").addEventListener("click", () => {
+        $("m_gate_ok").textContent = "";
+        $("m_gate_err").textContent = "";
+        const place = ($("m_gate_place").value || "").trim();
+        const code  = ($("m_gate_code").value || "").trim();
+        if(!place || !code){
+          $("m_gate_err").textContent = "Fill place and code.";
+          return;
+        }
+        const items = loadGates();
+        items.unshift({ id: Date.now(), place, code });
+        saveGates(items);
+        $("m_gate_place").value = "";
+        $("m_gate_code").value = "";
+        $("m_gate_ok").textContent = "Added.";
+        renderGates("m_gate_list");
+      });
+    }
+
+    // -----------------------------
+    // LOGOUT
+    // -----------------------------
+    async function doLogout(){
+      // confirm
+      const ok = confirm("Logout now?");
+      if(!ok) return;
+
+      try{
+        await api("/api/logout", { method:"POST" });
+      }catch{}
+
+      // optional: clear local-only user hints
+      try{
+        localStorage.removeItem(LS_AVATAR_URL);
+        localStorage.removeItem(LS_USER_NAME);
+      }catch{}
+
+      location.href = "/";
+    }
 
     // -----------------------------
     // NAV
@@ -596,11 +939,17 @@
     $("btnHome").addEventListener("click", () => location.href = "/");
     $("btnBack").addEventListener("click", () => history.length > 1 ? history.back() : (location.href = "/"));
 
+    // menu bindings
+    $("mAccount").addEventListener("click", openAccount);
+    $("mPay").addEventListener("click", openPay);
+    $("mPhones").addEventListener("click", openPhones);
+    $("mGates").addEventListener("click", openGates);
+    $("mLogout").addEventListener("click", doLogout);
+
     // init
     (async function init(){
       try{
         await loadMe();
-        renderPhones();
       }catch(e){
         location.href = "/";
       }
