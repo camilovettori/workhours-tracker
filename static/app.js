@@ -776,6 +776,98 @@ async function refreshAll() {
 /* =========================
    Overtime prompt (Yes/No)
 ========================= */
+
+/* =========================
+   Custom Yes/No Modal (Promise)
+========================= */
+let __whModalEl = null;
+
+function ensureYesNoModal() {
+  if (__whModalEl) return __whModalEl;
+
+  const overlay = document.createElement("div");
+  overlay.className = "whModalOverlay hidden";
+  overlay.id = "whYesNoOverlay";
+
+  overlay.innerHTML = `
+    <div class="whModal" role="dialog" aria-modal="true" aria-labelledby="whYesNoTitle">
+      <div class="whModalHeader">
+        <div class="whModalIcon" id="whYesNoIcon">⏱</div>
+        <div class="whModalTitle" id="whYesNoTitle">Confirm</div>
+      </div>
+      <div class="whModalBody" id="whYesNoMsg"></div>
+      <div class="whModalHint" id="whYesNoHint"></div>
+      <div class="whModalFooter">
+  <button type="button" class="btnX btnGhost" id="whYesNoNo">No</button>
+  <button type="button" class="btnX btnBlue" id="whYesNoYes">Yes</button>
+</div>
+
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  __whModalEl = overlay;
+  return overlay;
+}
+
+function showYesNoModal({ title, message, icon = "⏱", yesText = "Yes", noText = "No", hint = "" }) {
+  const overlay = ensureYesNoModal();
+
+  const titleEl = overlay.querySelector("#whYesNoTitle");
+  const msgEl   = overlay.querySelector("#whYesNoMsg");
+  const iconEl  = overlay.querySelector("#whYesNoIcon");
+  const yesBtn  = overlay.querySelector("#whYesNoYes");
+  const noBtn   = overlay.querySelector("#whYesNoNo");
+  const hintEl  = overlay.querySelector("#whYesNoHint");
+
+  titleEl.textContent = title || "Confirm";
+  msgEl.textContent   = message || "";
+  iconEl.textContent  = icon || "⏱";
+  yesBtn.textContent  = yesText || "Yes";
+  noBtn.textContent   = noText || "No";
+  hintEl.textContent  = hint || "";
+
+  overlay.classList.remove("hidden");
+
+  // focus + keyboard
+  yesBtn.focus();
+
+  return new Promise((resolve) => {
+    let done = false;
+
+    const cleanup = (val) => {
+      if (done) return;
+      done = true;
+
+      overlay.classList.add("hidden");
+      yesBtn.removeEventListener("click", onYes);
+      noBtn.removeEventListener("click", onNo);
+      overlay.removeEventListener("click", onOverlay);
+      document.removeEventListener("keydown", onKey);
+
+      resolve(val);
+    };
+
+    const onYes = () => cleanup(true);
+    const onNo  = () => cleanup(false);
+
+    const onOverlay = (e) => {
+      // clique fora do card = No (mais seguro)
+      if (e.target === overlay) cleanup(false);
+    };
+
+    const onKey = (e) => {
+      if (e.key === "Escape") cleanup(false);
+      if (e.key === "Enter") cleanup(true);
+    };
+
+    yesBtn.addEventListener("click", onYes);
+    noBtn.addEventListener("click", onNo);
+    overlay.addEventListener("click", onOverlay);
+    document.addEventListener("keydown", onKey);
+  });
+}
+
 async function handleOvertimePrompt(resObj) {
   const reason = resObj.reason || "";
   const kind = resObj.kind || "";
@@ -783,34 +875,64 @@ async function handleOvertimePrompt(resObj) {
 
   const text =
     reason === "DAY_OFF"
-      ? "You are off today.\nOvertime Authorized? (Yes / No)"
-      : "Overtime Authorized? (Yes / No)";
+      ? "You are OFF today.\nAuthorize overtime for this shift?"
+      : "Authorize overtime?";
 
-  const yes = window.confirm(text);
+  const yes = await showYesNoModal({
+    title: "Overtime",
+    message: text,
+    icon: "⏱",
+    yesText: "Yes",
+    noText: "No",
+    hint: "Tip: Enter = Yes • Esc = No"
+  });
+
+  await api("/api/clock/extra-confirm", {
+    method: "POST",
+    body: JSON.stringify({ work_date, authorized: !!yes }),
+  });
 
   if (yes) {
-    await api("/api/clock/extra-confirm", {
-      method: "POST",
-      body: JSON.stringify({ work_date, authorized: true }),
-    });
     return { proceed: true, authorized: true, reason };
-  } else {
-    await api("/api/clock/extra-confirm", {
-      method: "POST",
-      body: JSON.stringify({ work_date, authorized: false }),
-    });
-
-    if (reason === "DAY_OFF") {
-      alert("Overtime not authorized.");
-      return { proceed: false, authorized: false, reason };
-    }
-
-    if (kind === "IN") alert("You are early (or late). You will not get paid.");
-    else alert("Outside roster time. Extra will not be paid.");
-
-    return { proceed: true, authorized: false, reason };
   }
+
+  // No
+  if (reason === "DAY_OFF") {
+    // não deixa bater ponto em day off sem overtime
+    await showYesNoModal({
+      title: "Not authorized",
+      message: "Overtime not authorized. Nothing will be recorded.",
+      icon: "⛔",
+      yesText: "OK",
+      noText: "OK",
+      hint: ""
+    });
+    return { proceed: false, authorized: false, reason };
+  }
+
+  if (kind === "IN") {
+    await showYesNoModal({
+      title: "Info",
+      message: "Not authorized.\nIf you are early, extra time will not be paid.",
+      icon: "ℹ️",
+      yesText: "OK",
+      noText: "OK",
+      hint: ""
+    });
+  } else {
+    await showYesNoModal({
+      title: "Info",
+      message: "Not authorized.\nExtra time outside roster will not be paid.",
+      icon: "ℹ️",
+      yesText: "OK",
+      noText: "OK",
+      hint: ""
+    });
+  }
+
+  return { proceed: true, authorized: false, reason };
 }
+
 
 /* =========================
    Clock actions

@@ -28,7 +28,9 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 DB_PATH = DATA_DIR / "workhours.db"
 
-AVATARS_DIR = STATIC_DIR / "avatars"
+AVATARS_DIR = DATA_DIR / "avatars"
+AVATARS_DIR.mkdir(parents=True, exist_ok=True)
+
 AVATARS_DIR.mkdir(parents=True, exist_ok=True)
 
 APP_SECRET = os.environ.get("WORKHOURS_SECRET", "dev-secret-change-me").encode("utf-8")
@@ -723,12 +725,23 @@ async def upload_avatar(req: Request, file: UploadFile = File(...)):
     fname = f"user_{uid}.{ext}"
     (AVATARS_DIR / fname).write_bytes(data)
 
-    url = f"/static/avatars/{fname}"
+    url = f"/uploads/avatars/{fname}"
+
     with db() as conn:
         conn.execute("UPDATE users SET avatar_path=? WHERE id=?", (url, uid))
         conn.commit()
 
     return {"ok": True, "avatar_url": url}
+@app.get("/uploads/avatars/{fname}")
+def get_avatar(fname: str, req: Request):
+    require_user(req)
+    p = (AVATARS_DIR / fname).resolve()
+    if not str(p).startswith(str(AVATARS_DIR.resolve())):
+        raise HTTPException(400, "Invalid file")
+    if not p.exists():
+        raise HTTPException(404, "Not found")
+    return FileResponse(p)
+
 
 
 # ======================================================
