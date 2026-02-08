@@ -121,7 +121,29 @@ function ymdAddDays(ymd, add) {
 }
 function weekdayShort(dt) {
   return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dt.getDay()];
+
 }
+
+function setTopAvatar(me){
+  const img = document.getElementById("topAvatarImg");
+  const btn = document.getElementById("btnProfileAvatar");
+  if(!img && !btn) return;
+
+  const url =
+    localStorage.getItem("wh_avatar_url") || // prioridade: o que você salva no profile
+    me?.avatar_url ||
+    "";
+
+  if (img) {
+    img.src = url ? (url + (url.includes("?") ? "&" : "?") + "v=" + Date.now()) : "/static/logo.png";
+  }
+
+  if (btn && !btn.dataset.bound) {
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => location.href = "/profile");
+  }
+}
+
 
 /* =========================
    Bank Holiday lookup (cached)
@@ -167,6 +189,7 @@ async function ensureWeekExistsForClock() {
   });
 
   return await api("/api/clock/today");
+
 }
 
 /* =========================
@@ -1307,30 +1330,12 @@ let dayWatcherStarted = false;
 
   try {
     ME = await api("/api/me");
+
+    // ✅ seta o avatar do topo sempre que eu tiver ME
+    setTopAvatar(ME);
+
     await routeAfterAuth();
   } catch (e) {
-    // If index views exist -> show login
     if (hasIndexViews()) await enterLogin();
-    function setTopAvatar(me){
-  const img = document.getElementById("topAvatarImg");
-  const btn = document.getElementById("btnProfileAvatar");
-  if(!img || !btn) return;
-
-  // tenta pegar do backend (adapte se seu campo tiver outro nome)
-  const url =
-    me?.avatar_url ||
-    me?.photo_url ||
-    me?.profile_photo ||
-    me?.avatar ||
-    "";
-
-  img.src = url ? url : "/static/avatars/default.png";
-
-  // ao clicar, vai pro profile (ajusta a rota se for outra)
-  btn.addEventListener("click", () => {
-    location.href = "/profile";
-  });
-}
-
   }
 })();
