@@ -924,3 +924,23 @@ body{
 #btnProfileAvatar{
   border: 2px solid rgba(37,99,235,.35);
 }
+
+#btnSaveCapture{
+  background: linear-gradient(180deg, var(--blue), var(--blue2)) !important;
+  color: #fff !important;
+  border: 1px solid rgba(37,99,235,.35) !important;
+  box-shadow: 0 16px 35px rgba(37,99,235,.25) !important;
+}
+#btnSaveCapture{
+  font-size: 15px;
+  padding: 12px 18px;
+}
+button[id^="btnSave"]{
+  background: linear-gradient(180deg, var(--blue), var(--blue2));
+  color:#fff;
+}
+
+button[id^="btnSavePhoto"]{
+  background: linear-gradient(180deg, var(--blue), var(--blue2));
+  color:#fff;
+}
