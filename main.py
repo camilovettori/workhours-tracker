@@ -1078,12 +1078,38 @@ def needs_extra_confirm(real_hhmm: str, official_hhmm: str) -> bool:
     return abs(hhmm_to_min(real_hhmm) - hhmm_to_min(official_hhmm)) > TOLERANCE_MIN
 
 
-def snap_to_official_if_not_authorized(real_hhmm: str, official_hhmm: Optional[str], authorized: bool) -> str:
-    if not official_hhmm:
-        return real_hhmm
+def decide_clock_time(kind: str, real_now: str, official: Optional[str], authorized: bool):
+    if not official:
+        return real_now, False  # (store_time, needs_confirm)
+
+    real_m = hhmm_to_min(real_now)
+    off_m  = hhmm_to_min(official)
+    diff   = real_m - off_m  # + = saiu/chegou mais tarde, - = mais cedo
+
+    # dentro tolerância: snap sempre
+    if abs(diff) <= TOLERANCE_MIN:
+        return official, False
+
+    # se já autorizado, grava real sem prompt
     if authorized:
-        return real_hhmm
-    return official_hhmm
+        return real_now, False
+
+    if kind == "IN":
+        # adiantado => prompt
+        if diff < -TOLERANCE_MIN:
+            return real_now, True
+        # atrasado => grava real
+        return real_now, False
+
+    if kind == "OUT":
+        # saiu tarde => prompt
+        if diff > TOLERANCE_MIN:
+            return real_now, True
+        # saiu cedo => grava real
+        return real_now, False
+
+    return real_now, False
+
 
 
 def ensure_week_from_roster(conn: sqlite3.Connection, uid: int, week_number: int, start_date: str) -> int:
@@ -1801,16 +1827,24 @@ def clock_in(req: Request):
                 return {"ok": True, "ignored": True, "reason": "DAY_OFF", "work_date": work_date}
 
         official_in = ro["shift_in"] if ro else None
-        if official_in and needs_extra_confirm(real_now, official_in) and int(e["extra_checked"] or 0) == 0:
-            return {"ok": True, "needs_extra_confirm": True, "reason": "OUTSIDE_TOLERANCE", "kind": "IN", "work_date": work_date, "official": official_in, "real": real_now}
-
         authorized = bool(int(e["extra_authorized"] or 0) == 1)
-        store_in = snap_to_official_if_not_authorized(real_now, official_in, authorized)
+        store_in, needs_confirm = decide_clock_time("IN", real_now, official_in, authorized)
 
-        mult = multiplier_for_date(conn, uid, work_date)
-        conn.execute("UPDATE entries SET time_in=?, time_out=NULL, multiplier=? WHERE id=? AND user_id=?", (store_in, float(mult), int(e["id"]), uid))
+# Só pede confirmação quando a regra mandar e ainda não foi checado
+    if needs_confirm and int(e["extra_checked"] or 0) == 0:
+       return {
+        "ok": True,
+        "needs_extra_confirm": True,
+        "reason": "EARLY_IN",
+        "kind": "IN",
+        "work_date": work_date,
+        "official": official_in,
+        "real": real_now
+    }
+    mult = multiplier_for_date(conn, uid, work_date)
+    conn.execute("UPDATE entries SET time_in=?, time_out=NULL, multiplier=? WHERE id=? AND user_id=?", (store_in, float(mult), int(e["id"]), uid))
 
-        conn.execute(
+    conn.execute(
             """
             INSERT INTO clock_state(user_id,week_id,work_date,in_time,out_time,break_running,break_start,break_minutes,updated_at)
             VALUES (?,?,?,?,?,?,?,?,?)
@@ -1819,6 +1853,7 @@ def clock_in(req: Request):
               work_date=excluded.work_date,
               in_time=excluded.in_time,
               out_time=NULL,
+
               break_running=0,
               break_start=NULL,
               break_minutes=excluded.break_minutes,
@@ -1826,7 +1861,7 @@ def clock_in(req: Request):
             """,
             (uid, int(w["id"]), work_date, store_in, None, 0, None, int(e["break_minutes"] or 0), now()),
         )
-        conn.commit()
+    conn.commit()
 
     return {"ok": True, "work_date": work_date}
 
@@ -1852,11 +1887,22 @@ def clock_out(req: Request):
                 return {"ok": True, "ignored": True, "reason": "DAY_OFF", "work_date": work_date}
 
         official_out = ro["shift_out"] if ro else None
-        if official_out and needs_extra_confirm(real_now, official_out) and int(e["extra_checked"] or 0) == 0:
-            return {"ok": True, "needs_extra_confirm": True, "reason": "OUTSIDE_TOLERANCE", "kind": "OUT", "work_date": work_date, "official": official_out, "real": real_now}
-
         authorized = bool(int(e["extra_authorized"] or 0) == 1)
-        store_out = snap_to_official_if_not_authorized(real_now, official_out, authorized)
+
+        store_out, needs_confirm = decide_clock_time("OUT", real_now, official_out, authorized)
+
+# Só pede confirmação quando a regra mandar e ainda não foi checado
+        if needs_confirm and int(e["extra_checked"] or 0) == 0:
+         return {
+        "ok": True,
+        "needs_extra_confirm": True,
+        "reason": "LATE_OUT",
+        "kind": "OUT",
+        "work_date": work_date,
+        "official": official_out,
+        "real": real_now
+    }
+
 
         st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
         if st and int(st["break_running"] or 0) == 1 and st["break_start"]:
