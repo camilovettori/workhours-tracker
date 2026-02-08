@@ -326,7 +326,11 @@
         </div>
       </div>
 
-      <div style="display:flex; gap:10px; align-items:center;">
+       <div style="display:flex; gap:10px; align-items:center;">
+  <button id="btnEditBack" class="btn btn--pill btn--ghost" type="button">Back to weeks</button>
+  <button id="btnRosterDeleteWeek" class="btn btn--pill btn--danger" type="button">🗑 Delete week</button>
+</div>
+
         <button id="btnHome" class="btn btn--pill btn--soft" type="button">Home</button>
         <button id="btnBack" class="btn btn--pill btn--ghost" type="button">Back</button>
       </div>
@@ -356,8 +360,12 @@
         </div>
 
         <div style="display:flex; gap:10px; align-items:center;">
-          <button id="btnEditBack" class="btn btn--pill btn--ghost" type="button">Back to weeks</button>
-        </div>
+  <button id="btnEditBack" class="btn btn--pill btn--ghost" type="button">Back to weeks</button>
+  <button id="btnRosterDeleteWeek" class="btn btn--pill btn--danger" type="button">🗑 Delete week</button>
+</div>
+
+      
+
       </div>
 
       <div id="detailTotals" class="detailTotals">
@@ -467,6 +475,34 @@
   </div>
 
   <script>
+
+
+async function deleteCurrentRosterWeek(){
+  if(!currentRosterId){
+    alert("No roster selected.");
+    return;
+  }
+
+  const ok = confirm("Delete this roster week? This cannot be undone.");
+  if(!ok) return;
+
+  try{
+    await api(`/api/roster/${currentRosterId}`, { method: "DELETE" });
+    console.log("Deleting roster id:", currentRosterId);
+
+
+    // limpa cache e volta pra lista
+    rosterCache.delete(currentRosterId);
+    currentRosterId = null;
+
+    enterList();
+    await loadList();
+  }catch(e){
+    alert(e.message || "Failed to delete");
+    if(e.status === 401) location.href = "/";
+  }
+}
+
     const $ = (id) => document.getElementById(id);
     const show = (el) => el && el.classList.remove("hidden");
     const hide = (el) => el && el.classList.add("hidden");
@@ -957,6 +993,8 @@
     }
 
     // ===== Binds
+    $("btnRosterDeleteWeek").addEventListener("click", deleteCurrentRosterWeek);
+
     $("btnHome").addEventListener("click", () => location.href = "/");
     $("btnBack").addEventListener("click", () => history.length > 1 ? history.back() : (location.href = "/"));
 

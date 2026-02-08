@@ -23,7 +23,7 @@ STATIC_DIR = BASE_DIR / "static"
 if not STATIC_DIR.exists():
     raise RuntimeError(f"Missing folder: {STATIC_DIR}")
 
-DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR)))
+DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR / "data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 DB_PATH = DATA_DIR / "workhours.db"
@@ -31,7 +31,8 @@ DB_PATH = DATA_DIR / "workhours.db"
 AVATARS_DIR = DATA_DIR / "avatars"
 AVATARS_DIR.mkdir(parents=True, exist_ok=True)
 
-AVATARS_DIR.mkdir(parents=True, exist_ok=True)
+
+
 
 APP_SECRET = os.environ.get("WORKHOURS_SECRET", "dev-secret-change-me").encode("utf-8")
 COOKIE_AGE = 90 * 24 * 60 * 60  # 90 days
@@ -1193,6 +1194,26 @@ def roster_get(roster_id: int, req: Request):
                 for d in days
             ],
         }
+
+@app.delete("/api/roster/{roster_id}")
+def roster_delete(roster_id: int, req: Request):
+    uid = require_user(req)
+    with db() as conn:
+        r = conn.execute(
+            "SELECT id, week_number FROM rosters WHERE id=? AND user_id=?",
+            (roster_id, uid),
+        ).fetchone()
+        if not r:
+            raise HTTPException(404, "Roster not found")
+
+        # apaga days primeiro
+        conn.execute("DELETE FROM roster_days WHERE roster_id=? AND user_id=?", (roster_id, uid))
+        # apaga roster
+        conn.execute("DELETE FROM rosters WHERE id=? AND user_id=?", (roster_id, uid))
+
+        conn.commit()
+
+    return {"ok": True}
 
 
 @app.post("/api/roster")

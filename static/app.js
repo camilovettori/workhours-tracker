@@ -1223,12 +1223,45 @@ async function rosterShowDetail(roster) {
 
 async function rosterLoadDetail(rosterId) {
   try {
+    window.__WH_ACTIVE_ROSTER_ID = rosterId; // <<< ADICIONA ISSO
     const r = await api(`/api/roster/${rosterId}`);
     await rosterShowDetail(r);
   } catch (e) {
     alert(e.message || "Failed to load roster");
   }
 }
+
+
+async function rosterDeleteCurrentWeek() {
+  const rosterId = window.__WH_ACTIVE_ROSTER_ID;
+  const weekNo = window.__WH_ACTIVE_ROSTER_WEEKNO;
+
+  if (!rosterId) return alert("No roster selected.");
+  if (!window.confirm("Delete this roster week? This cannot be undone.")) return;
+
+  try {
+    // deleta roster
+    await api(`/api/roster/${rosterId}`, { method: "DELETE" });
+
+    // tenta deletar week correspondente pelo week_number
+    if (weekNo) {
+      try {
+        const weeks = await api("/api/weeks");
+        const wk = (weeks || []).find(x => Number(x.week_number) === Number(weekNo));
+        if (wk?.id) await api(`/api/weeks/${wk.id}`, { method: "DELETE" });
+      } catch {}
+    }
+
+    window.__WH_ACTIVE_ROSTER_ID = null;
+    window.__WH_ACTIVE_ROSTER_WEEKNO = null;
+
+    await rosterLoadList();
+    alert("Deleted.");
+  } catch (e) {
+    alert(e.message || "Failed to delete");
+  }
+}
+
 
 async function rosterLoadList() {
   const list = R("rosterWeeksList");

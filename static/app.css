@@ -1039,3 +1039,9 @@ button[id^="btnSavePhoto"]{
   font-size: 12px;
   color: #64748b;
 }
+.btnRed{
+  background:#ef4444;
+  color:#fff;
+  border:1px solid #ef4444;
+}
+.btnRed:hover{ filter:brightness(0.95); }
