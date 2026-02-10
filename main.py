@@ -229,6 +229,20 @@ def init_db() -> None:
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY(roster_id) REFERENCES rosters(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS password_resets(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL,
+                token_hash TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_password_resets_email
+            ON password_resets(email);
+
+            CREATE INDEX IF NOT EXISTS ix_password_resets_token_hash
+            ON password_resets(token_hash);
             """
         )
 
@@ -252,8 +266,6 @@ def init_db() -> None:
         ensure_clock_tables(conn)
         conn.commit()
 
-
-init_db()
 
 
 # ======================================================
@@ -548,6 +560,35 @@ def set_cookie(resp: Response, tok: str, remember: bool) -> None:
         path="/",
     )
 
+import smtplib
+from email.message import EmailMessage
+
+SMTP_HOST = os.environ.get("SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASS = os.environ.get("SMTP_PASS", "")
+SMTP_FROM = os.environ.get("SMTP_FROM", SMTP_USER or "no-reply@example.com")
+SMTP_TLS  = os.environ.get("SMTP_TLS", "1") == "1"
+
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "").rstrip("/")
+
+def send_email(to_email: str, subject: str, text: str) -> None:
+    if not SMTP_HOST or not SMTP_USER or not SMTP_PASS:
+        raise RuntimeError("SMTP not configured (missing SMTP_HOST/SMTP_USER/SMTP_PASS)")
+
+    msg = EmailMessage()
+    msg["From"] = SMTP_FROM
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg.set_content(text)
+
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
+        if SMTP_TLS:
+            s.starttls()
+        s.login(SMTP_USER, SMTP_PASS)
+        s.send_message(msg)
+
+
 
 @app.post("/api/signup")
 def signup(p: SignupIn):
@@ -670,42 +711,87 @@ def me_patch(p: MeUpdate, req: Request):
 _RESET_TOKENS: Dict[str, Dict[str, Any]] = {}
 
 
+def sha256_hex(s: str) -> str:
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
 @app.post("/api/forgot")
 def forgot(p: ForgotIn):
     email = p.email.lower().strip()
+
     with db() as conn:
         u = conn.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
         if not u:
-            return {"ok": True}  # do not reveal existence
+            return {"ok": True}
 
-    token = secrets.token_urlsafe(32)
-    _RESET_TOKENS[token] = {"email": email, "ts": datetime.utcnow().timestamp()}
-    return {"ok": True, "dev_reset_link": f"/?reset={token}"}
+        if not APP_BASE_URL:
+            raise HTTPException(500, "APP_BASE_URL not configured")
+
+        token = secrets.token_urlsafe(32)
+        token_hash = sha256_hex(token)
+        expires_at = (datetime.utcnow() + timedelta(minutes=30)).isoformat(timespec="seconds")
+
+        # opcional: limpa tokens antigos do mesmo email
+        conn.execute("DELETE FROM password_resets WHERE email=?", (email,))
+        conn.execute(
+            "INSERT INTO password_resets(email, token_hash, expires_at, created_at) VALUES (?,?,?,?)",
+            (email, token_hash, expires_at, now()),
+        )
+        conn.commit()
+
+    reset_link = f"{APP_BASE_URL}/?reset={token}"
+
+    # manda email
+    try:
+        send_email(
+            to_email=email,
+            subject="Reset your Work Hours Tracker password",
+            text=f"Use this link to reset your password (valid for 30 minutes):\n\n{reset_link}\n",
+        )
+    except Exception as e:
+        # não vaza muito detalhe pro client, mas loga no Render
+        print("EMAIL_SEND_FAILED:", repr(e))
+        raise HTTPException(500, "Failed to send reset email")
+
+    return {"ok": True}
 
 
 @app.post("/api/reset")
 def reset(p: ResetIn):
     tok = p.token.strip()
-    item = _RESET_TOKENS.get(tok)
-    if not item:
-        raise HTTPException(400, "Invalid or expired token")
-
-    if datetime.utcnow().timestamp() - float(item["ts"]) > 60 * 30:
-        _RESET_TOKENS.pop(tok, None)
-        raise HTTPException(400, "Token expired")
-
-    new_salt = secrets.token_hex(16)
-    new_hash = hash_pw(p.new_password, new_salt)
+    token_hash = sha256_hex(tok)
 
     with db() as conn:
+        row = conn.execute(
+            "SELECT email, expires_at FROM password_resets WHERE token_hash=? LIMIT 1",
+            (token_hash,),
+        ).fetchone()
+
+        if not row:
+            raise HTTPException(400, "Invalid or expired token")
+
+        # checa expiração
+        exp = datetime.fromisoformat(row["expires_at"])
+        if datetime.utcnow() > exp:
+            conn.execute("DELETE FROM password_resets WHERE token_hash=?", (token_hash,))
+            conn.commit()
+            raise HTTPException(400, "Token expired")
+
+        email = row["email"]
+
+        new_salt = secrets.token_hex(16)
+        new_hash = hash_pw(p.new_password, new_salt)
+
         conn.execute(
             "UPDATE users SET salt_hex=?, pass_hash=? WHERE email=?",
-            (new_salt, new_hash, item["email"]),
+            (new_salt, new_hash, email),
         )
+
+        # invalida token após uso
+        conn.execute("DELETE FROM password_resets WHERE token_hash=?", (token_hash,))
         conn.commit()
 
-    _RESET_TOKENS.pop(tok, None)
     return {"ok": True}
+
 
 
 # ======================================================

@@ -1045,3 +1045,57 @@ button[id^="btnSavePhoto"]{
   border:1px solid #ef4444;
 }
 .btnRed:hover{ filter:brightness(0.95); }
+
+
+/* Header mais clean (sem barra feia) */
+.modal .mHead{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  padding:16px 16px 10px 16px;
+  border-bottom: 1px solid rgba(15,23,42,.06);
+}
+
+.modal .mTitle{
+  font-weight: 900;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.modal .mSub{
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted2, rgba(15,23,42,.55));
+}
+
+.modal .mHint{
+  font-weight: 700;
+  color: var(--muted2, rgba(15,23,42,.55));
+  margin-top: 6px;
+}
+
+
+.btnx{
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 14px;
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.modal{
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 92vw);
+  background: var(--card, #fff);
+  border-radius: 18px;
+  box-shadow: 0 18px 60px rgba(0,0,0,.18);
+}
+.modal .mFoot{
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 16px 16px 16px;
+  border-top: 1px solid rgba(15,23,42,.06);
+}

@@ -312,6 +312,30 @@
       font-weight:1000;
       font-size:13px;
     }
+
+    button.btnSaveBlue{
+  background: #2563eb !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(37,99,235,.35) !important;
+  border-radius: 14px !important;
+  font-weight: 1000 !important;
+  padding: 12px 14px !important;
+  cursor: pointer !important;
+}
+
+button.btnSaveBlue:hover{
+  filter: brightness(1.03) !important;
+}
+
+button.btnSaveBlue:active{
+  transform: translateY(1px) !important;
+}
+
+button.btnSaveBlue:disabled{
+  opacity: .55 !important;
+  cursor: not-allowed !important;
+}
+
   </style>
 </head>
 
@@ -327,12 +351,20 @@
       </div>
 
        <div style="display:flex; gap:10px; align-items:center;">
-  <button id="btnEditBack" class="btn btn--pill btn--ghost" type="button">Back to weeks</button>
-  <button id="btnRosterDeleteWeek" class="btn btn--pill btn--danger" type="button">🗑 Delete week</button>
+ 
+  
 </div>
 
+
+        <div style="display:flex; gap:10px; align-items:center;">
+
+
         <button id="btnHome" class="btn btn--pill btn--soft" type="button">Home</button>
+        
         <button id="btnBack" class="btn btn--pill btn--ghost" type="button">Back</button>
+        
+
+
       </div>
     </div>
 
