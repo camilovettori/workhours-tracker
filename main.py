@@ -246,7 +246,30 @@ def init_db() -> None:
             """
         )
 
+        def ensure_password_resets_table(conn: sqlite3.Connection) -> None:
+         conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS password_resets(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL,
+            token_hash TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_password_resets_email
+        ON password_resets(email);
+
+        CREATE INDEX IF NOT EXISTS ix_password_resets_token_hash
+        ON password_resets(token_hash);
+        """
+    )
+
+
         # safe/idempotent migrations
+        ensure_password_resets_table(conn)
+        conn.commit()
+
         ensure_user_columns(conn)
         add_col_if_missing(conn, "users", "salt_hex", "TEXT")
         add_col_if_missing(conn, "users", "pass_hash", "TEXT")
@@ -830,6 +853,20 @@ def get_avatar(fname: str, req: Request):
     if not p.exists():
         raise HTTPException(404, "Not found")
     return FileResponse(p)
+@app.get("/uploads/avatars/{fname}")
+def get_avatar(fname: str, req: Request):
+    require_user(req)
+    p = (AVATARS_DIR / fname).resolve()
+    if not str(p).startswith(str(AVATARS_DIR.resolve())):
+        raise HTTPException(400, "Invalid file")
+    if not p.exists():
+        raise HTTPException(404, "Not found")
+
+    resp = FileResponse(p)
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 

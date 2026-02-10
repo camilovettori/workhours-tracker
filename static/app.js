@@ -24,6 +24,34 @@ function pathIs(p) { return window.location.pathname === p; }
 /* =========================
    API + format
 ========================= */
+async function loadMeAndRender() {
+  const r = await fetch("/api/me", { cache: "no-store" });
+  if (!r.ok) return null;
+
+  const data = await r.json();
+  if (!data || !data.ok) return null;
+
+  // Nome
+  const nameEl = document.getElementById("welcomeName"); // ajuste o id se for outro
+  if (nameEl) {
+    const fn = (data.first_name || "").trim();
+    const ln = (data.last_name || "").trim();
+    nameEl.textContent = (fn + " " + ln).trim() || "User";
+  }
+
+  // Avatar
+  const img = document.getElementById("dashAvatar");
+  if (img) {
+    if (data.avatar_url) {
+      img.src = data.avatar_url + "?v=" + Date.now(); // evita cache
+    } else {
+      img.src = "/static/avatar/default.png";
+    }
+  }
+
+  return data;
+}
+
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     credentials: "include",
