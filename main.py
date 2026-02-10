@@ -570,7 +570,9 @@ SMTP_PASS = os.environ.get("SMTP_PASS", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", SMTP_USER or "no-reply@example.com")
 SMTP_TLS  = os.environ.get("SMTP_TLS", "1") == "1"
 
-APP_BASE_URL = os.environ.get("APP_BASE_URL", "").rstrip("/")
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "").strip().rstrip("/")
+print("APP_BASE_URL =", APP_BASE_URL)
+
 
 def send_email(to_email: str, subject: str, text: str) -> None:
     if not SMTP_HOST or not SMTP_USER or not SMTP_PASS:
