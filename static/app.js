@@ -384,26 +384,11 @@ function readCachedMe() {
   }
 }
 
-async function refreshMe(force = false) {
-  if (!force) {
-    const cached = readCachedMe();
-    if (cached && cached.ok) applyMeToUI(cached);
-  }
-
-  const me = await api("/api/me");
-  const adminBtn = document.getElementById("openAdmin");
+const adminBtn = document.getElementById("openAdmin");
 if (adminBtn) {
-  const isAdmin = Number(ME?.is_admin || 0) === 1;
+  const isAdmin = Number(me?.is_admin || 0) === 1;
   adminBtn.classList.toggle("hidden", !isAdmin);
   adminBtn.onclick = () => (location.href = "/admin");
-}
-
-  try { localStorage.setItem(LS_ME, JSON.stringify(me)); } catch {}
-  if (me?.avatar_url) {
-    try { localStorage.setItem(LS_AVATAR, me.avatar_url); } catch {}
-  }
-  applyMeToUI(me);
-  return me;
 }
 
 function applyAdminUI(){

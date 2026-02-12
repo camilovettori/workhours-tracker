@@ -747,8 +747,12 @@ def me(req: Request):
             (uid,),
         ).fetchone()
 
+        
+
         if not u:
             raise HTTPException(401, "Not logged")
+        
+        
 
         return {
             "ok": True,
