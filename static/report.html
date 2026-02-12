@@ -97,32 +97,32 @@
   </style>
 </head>
 
-<!-- DAY DETAILS MODAL -->
-<div id="dayModal" class="modal hidden">
-  <div class="modalCard">
-    <div class="modalHeader" style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
-      <h2 id="ddTitle" style="margin:0;">Day details</h2>
-      <button class="modalClose" type="button" onclick="closeDayModal()">✕</button>
-    </div>
+<body>
+  <!-- DAY DETAILS MODAL -->
+  <div id="dayModal" class="modal hidden">
+    <div class="modalCard">
+      <div class="modalHeader" style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <h2 id="ddTitle" style="margin:0;">Day details</h2>
+        <button class="modalClose" type="button" id="btnCloseDayModal">✕</button>
+      </div>
 
-    <div class="modalSection" style="margin-top:10px;">
-      <h4 style="margin:0 0 6px;">🕒 Clocked</h4>
-      <div id="ddClocked"></div>
-    </div>
+      <div class="modalSection" style="margin-top:10px;">
+        <h4 style="margin:0 0 6px;">🕒 Clocked</h4>
+        <div id="ddClocked"></div>
+      </div>
 
-    <div class="modalSection" style="margin-top:10px;">
-      <h4 style="margin:0 0 6px;">🏢 Tesco rules</h4>
-      <div id="ddTesco"></div>
-    </div>
+      <div class="modalSection" style="margin-top:10px;">
+        <h4 style="margin:0 0 6px;">🏢 Tesco rules</h4>
+        <div id="ddTesco"></div>
+      </div>
 
-    <div class="modalSection highlight" style="margin-top:10px;">
-      <h4 style="margin:0 0 6px;">📊 Result</h4>
-      <div id="ddResult"></div>
+      <div class="modalSection highlight" style="margin-top:10px;">
+        <h4 style="margin:0 0 6px;">📊 Result</h4>
+        <div id="ddResult"></div>
+      </div>
     </div>
   </div>
-</div>
 
-<body>
   <main class="reportWrap">
     <div class="topbarRow">
       <div class="brandRow">
@@ -196,8 +196,6 @@
         <div>
           <div class="label">Total hours</div>
           <div id="totalHHMM" class="big">00:00</div>
-          
-          
         </div>
         <div style="text-align:right;">
           <div class="label">Gross pay</div>
@@ -288,12 +286,12 @@
 
 <script>
 /* =========================
-   Work Hours Tracker - report.html script (v2)
+   Work Hours Tracker - report.html script (v3)
    FIXES:
-   ✅ Week list shows correct pay (applies Sunday/BH premium)
-   ✅ No duplicate function names
-   ✅ Safe BH cache + limited API calls
-   ✅ Detail view still uses front-end "truth" calculation
+   ✅ No crash (removed broken totals function + correct IDs)
+   ✅ Totals always update (#totalHHMM / #totalPay)
+   ✅ Week list pay corrected with premium (Sunday/BH)
+   ✅ Safer BH cache, fewer calls
 ========================= */
 
 const $ = (id) => document.getElementById(id);
@@ -304,6 +302,12 @@ function fmtEUR(n){
   const v = Number(n || 0);
   try { return v.toLocaleString(undefined, { style:"currency", currency:"EUR" }); }
   catch { return "€" + v.toFixed(2); }
+}
+function fmtHHMMFromMinutes(mins){
+  const m = Math.max(0, Math.floor(Number(mins || 0)));
+  const hh = Math.floor(m / 60);
+  const mm = m % 60;
+  return String(hh).padStart(2,"0") + ":" + String(mm).padStart(2,"0");
 }
 
 async function api(path, opts = {}){
@@ -406,20 +410,19 @@ function isoWeekNumber(d = new Date()) {
   const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
   return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
 }
-function mondayOfThisWeek(d = new Date()) {
+// IMPORTANT: your app uses week start as SUNDAY in other pages
+function sundayOfThisWeek(d = new Date()){
   const x = new Date(d);
-  const day = x.getDay();
-  const diff = (day === 0 ? -6 : 1 - day);
-  x.setDate(x.getDate() + diff);
+  x.setDate(x.getDate() - x.getDay()); // back to Sunday
   const y = x.getFullYear();
-  const m = String(x.getMonth() + 1).padStart(2, "0");
-  const dd = String(x.getDate()).padStart(2, "0");
+  const m = String(x.getMonth()+1).padStart(2,"0");
+  const dd = String(x.getDate()).padStart(2,"0");
   return `${y}-${m}-${dd}`;
 }
 function openAddWeekModal2(defaultRate = 0){
   $("addWeekErr2").textContent = "";
   $("aw2WeekNumber").value = String(isoWeekNumber(new Date()));
-  $("aw2StartDate").value = mondayOfThisWeek(new Date());
+  $("aw2StartDate").value = sundayOfThisWeek(new Date());
   $("aw2HourlyRate").value = String(Number(defaultRate || 0).toFixed(2));
   show($("addWeekModal2"));
 }
@@ -460,60 +463,52 @@ function closeEditModal(){
 /* =========================
    Day details modal
 ========================= */
-function openDayDetails(entryId) {
-  const modal = $("dayModal");
+async function openDayDetails(entryId) {
   const ddTitle = $("ddTitle");
   const ddClocked = $("ddClocked");
   const ddTesco = $("ddTesco");
   const ddResult = $("ddResult");
 
-  api(`/api/day-details/${entryId}`)
-    .then(d => {
-      ddTitle.textContent = `${d.weekday} • ${d.date}`;
+  try{
+    const d = await api(`/api/day-details/${entryId}`);
 
-      ddClocked.innerHTML = `
-        <strong>IN:</strong> ${d.clocked.in || "—"}<br>
-        <strong>OUT:</strong> ${d.clocked.out || "—"}<br>
-        <strong>Break real:</strong> ${d.clocked.break_real ?? 0} min
-      `;
+    ddTitle.textContent = `${d.weekday} • ${d.date}`;
 
-      ddTesco.innerHTML = `
-        <strong>Shift:</strong> ${d.tesco.shift || "—"}<br>
-        <strong>Tolerance:</strong> ${d.tesco.tolerance || "—"}<br>
-        <strong>Fixed break:</strong> ${d.tesco.break_fixed ?? 60} min
-      `;
+    ddClocked.innerHTML = `
+      <strong>IN:</strong> ${d.clocked?.in || "—"}<br>
+      <strong>OUT:</strong> ${d.clocked?.out || "—"}<br>
+      <strong>Break real:</strong> ${d.clocked?.break_real ?? 0} min
+    `;
 
-      ddResult.innerHTML = `
-        <strong>Hours made:</strong> ${d.result.hours_made || "00:00"}<br>
-        <strong>Hours paid:</strong> ${d.result.hours_paid || "00:00"}<br>
-        <strong>Pay:</strong> €${Number(d.result.pay ?? 0).toFixed(2)}
-      `;
+    ddTesco.innerHTML = `
+      <strong>Shift:</strong> ${d.tesco?.shift || "—"}<br>
+      <strong>Tolerance:</strong> ${d.tesco?.tolerance || "—"}<br>
+      <strong>Fixed break:</strong> ${d.tesco?.break_fixed ?? 60} min
+    `;
 
-      show(modal);
-    })
-    .catch(err => alert(err.message || "Failed to load day details"));
+    ddResult.innerHTML = `
+      <strong>Hours made:</strong> ${d.result?.hours_made || "00:00"}<br>
+      <strong>Hours paid:</strong> ${d.result?.hours_paid || "00:00"}<br>
+      <strong>Pay:</strong> ${fmtEUR(Number(d.result?.pay ?? 0))}
+    `;
+
+    show($("dayModal"));
+  }catch(err){
+    alert(err.message || "Failed to load day details");
+  }
 }
 function closeDayModal() {
   hide($("dayModal"));
 }
-(() => {
-  const m = $("dayModal");
-  if (!m) return;
-  m.addEventListener("click", (e) => {
-    if (e.target === m) closeDayModal();
-  });
-})();
 
 /* =========================
-   ✅ Core fix: calculate week pay with premium
-   Used for LIST view so it matches DETAIL view.
+   Calculate week pay with premium (LIST view)
 ========================= */
 async function calcWeekPayWithPremium(weekObj, fallbackRate = 0){
   const rate = Number(weekObj?.hourly_rate || 0) || Number(fallbackRate || 0);
   const entries = Array.isArray(weekObj?.entries) ? weekObj.entries : [];
   let total = 0;
 
-  // prefetch BH for unique dates to reduce calls
   const uniqueDates = [...new Set(entries.map(e => e.work_date).filter(Boolean))];
   await Promise.all(uniqueDates.map(d => bhLookup(d).catch(()=>null)));
 
@@ -522,7 +517,6 @@ async function calcWeekPayWithPremium(weekObj, fallbackRate = 0){
     if (!mins) continue;
 
     let mult = Number(e.multiplier || 1);
-
     if (e.work_date) {
       const prem = await premiumForDateYmd(e.work_date);
       mult = Math.max(mult, prem);
@@ -530,7 +524,6 @@ async function calcWeekPayWithPremium(weekObj, fallbackRate = 0){
 
     total += (mins / 60) * rate * mult;
   }
-
   return total;
 }
 
@@ -556,7 +549,6 @@ async function loadList(){
 
     $("listMsg").textContent = "";
 
-    // Render fast first, then correct pay (async update)
     for(const w of weeks){
       const item = document.createElement("div");
       item.className = "weekItem";
@@ -574,7 +566,7 @@ async function loadList(){
       item.addEventListener("click", () => goWeek(w.id));
       $("weeksList").appendChild(item);
 
-      // ✅ FIX: fetch full week and recalc premium pay to match detail
+      // update pay (premium) without blocking UI
       (async () => {
         try{
           const full = await api("/api/weeks/" + w.id, { method:"GET" });
@@ -622,7 +614,7 @@ async function loadDetail(weekId){
 
     const entries = Array.isArray(w.entries) ? w.entries : [];
 
-    // prefetch BH for all unique dates
+    // prefetch BH for unique dates
     const uniqueDates = [...new Set(entries.map(x => x.work_date).filter(Boolean))];
     await Promise.all(uniqueDates.map(d => bhLookup(d).catch(()=>null)));
 
@@ -638,7 +630,6 @@ async function loadDetail(weekId){
         const mins = minutesFromHHMM(e.worked_hhmm || "00:00");
         totalMin += mins;
 
-        // multiplier: backend OR Sunday/BH premium (max)
         let mult = Number(e.multiplier || 1);
         if (e.work_date) {
           const prem = await premiumForDateYmd(e.work_date);
@@ -689,14 +680,8 @@ async function loadDetail(weekId){
       }
     }
 
-    // totals
-    const paidHH = String(Math.floor(totalMin / 60)).padStart(2, "0");
-    const paidMM = String(totalMin % 60).padStart(2, "0");
-    $("totalHHMM").textContent = `${paidHH}:${paidMM}`;
+    $("totalHHMM").textContent = fmtHHMMFromMinutes(totalMin);
     $("totalPay").textContent  = fmtEUR(totalPay);
-
-    const madePaidEl = $("totalMadeVsPaid");
-    if (madePaidEl) madePaidEl.textContent = `Paid: ${paidHH}:${paidMM} • (Details per day: View)`;
 
   }catch(e){
     $("detailErr").textContent = "Error loading report: " + (e.message || "failed");
@@ -716,6 +701,9 @@ $("editModal").addEventListener("click", (e)=>{ if(e.target === $("editModal")) 
 
 $("btnCloseAddWeek2").addEventListener("click", closeAddWeekModal2);
 $("addWeekModal2").addEventListener("click", (e)=>{ if(e.target === $("addWeekModal2")) closeAddWeekModal2(); });
+
+$("btnCloseDayModal").addEventListener("click", closeDayModal);
+$("dayModal").addEventListener("click", (e)=>{ if(e.target === $("dayModal")) closeDayModal(); });
 
 $("btnAddWeekHere").addEventListener("click", async () => {
   let defaultRate = 0;
@@ -839,9 +827,13 @@ $("btnDeleteDay").addEventListener("click", async () => {
    Init
 ========================= */
 (async function init(){
-  const id = getWeekId();
-  if(id) await loadDetail(id);
-  else await loadList();
+  try{
+    const id = getWeekId();
+    if(id) await loadDetail(id);
+    else await loadList();
+  }catch{
+    location.href = "/";
+  }
 })();
 </script>
 

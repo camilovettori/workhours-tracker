@@ -176,10 +176,56 @@
       box-shadow: 0 10px 30px rgba(37,99,235,.22);
     }
     .modalPrimaryBtn:active{ transform: translateY(1px); }
+
+
+    .topbarRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap; /* 🔥 ESSENCIAL */
+}
+
+.brandRow {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.topbarActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 480px) {
+  .topbarRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .topbarActions {
+    justify-content: space-between;
+  }
+}
+
+
   </style>
 </head>
 
 <body>
+
+  <div class="topbarRow">
+  <div class="brandRow">
+    ...
+  </div>
+
+  <div class="topbarActions">
+    <select>...</select>
+    <button>Home</button>
+    <button>Back</button>
+  </div>
+</div>
+
   <main class="wrap">
     <div class="top">
       <div class="brand">

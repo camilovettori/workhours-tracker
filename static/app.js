@@ -29,6 +29,13 @@ function fmtEUR(v) {
   return `€${n.toFixed(2)}`;
 }
 
+function fmtHHMMFromMinutes(mins){
+  const m = Math.max(0, Math.floor(Number(mins || 0)));
+  const hh = String(Math.floor(m / 60)).padStart(2, "0");
+  const mm = String(m % 60).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 function ymdTodayLocal(){
   const d = new Date();
   const y = d.getFullYear();
@@ -49,6 +56,18 @@ function inWeekRange(todayYmd, weekStartYmd){
   const e = new Date(s);
   e.setDate(e.getDate() + 6);
   return t >= s && t <= e;
+}
+function ymd(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+
+function sundayOfThisWeek(d=new Date()){
+  const x = new Date(d);
+  x.setDate(x.getDate() - x.getDay()); // Sunday
+  return ymd(x);
 }
 
 
@@ -412,8 +431,9 @@ const btnOpenProfile = $("btnOpenProfile");
 const btnAddWeek = $("btnAddWeek");
 
 const cwWeekNo = $("cwWeekNo");
-const cwHHMM = $("cwHHMM");
-const cwPay  = $("cwPay");
+const cwHHMM = $("cwHHMM") || $("cwHours");
+const cwPay  = $("cwPay")  || $("cwGross");
+
 
 const btnIn    = $("btnIn");
 const btnOut   = $("btnOut");
@@ -540,6 +560,8 @@ function resetTodayVisual() {
   setBreakButtonRunning(false);
   stopBreakCountdown(false);
 }
+
+
 
 /* =========================
    Day change watcher
@@ -814,23 +836,39 @@ async function refreshClock() {
 async function refreshCurrentWeekTotalsSafe() {
   try {
     const rep = await api("/api/report/week/current");
-    if (!rep?.has_week) {
+
+    // se não tem semana
+    if (rep?.has_week === false || rep?.ok === false) {
       if (cwHHMM) cwHHMM.textContent = "00:00";
       if (cwPay)  cwPay.textContent  = fmtEUR(0);
       return;
     }
-    if (cwHHMM) cwHHMM.textContent = rep?.totals?.hhmm ?? "00:00";
-    if (cwPay)  cwPay.textContent  = fmtEUR(rep?.totals?.pay_eur ?? 0);
+
+    // pega hhmm de vários formatos possíveis
+    const hhmm =
+      rep?.totals?.hhmm ??
+      rep?.totals?.hours_hhmm ??
+      rep?.hhmm ??
+      rep?.hours_hhmm ??
+      "00:00";
+
+    // pega pay de vários formatos possíveis
+    const pay =
+      rep?.totals?.pay_eur ??
+      rep?.totals?.gross_pay ??
+      rep?.pay_eur ??
+      rep?.gross_pay ??
+      rep?.pay ??
+      0;
+
+    if (cwHHMM) cwHHMM.textContent = String(hhmm || "00:00");
+    if (cwPay)  cwPay.textContent  = fmtEUR(pay);
   } catch {
-    // fallback
     if (cwHHMM) cwHHMM.textContent = cwHHMM.textContent || "00:00";
     if (cwPay)  cwPay.textContent  = cwPay.textContent  || fmtEUR(0);
   }
 }
 
-/* 🔥 IMPORTANT: expose globally (works even if script is module) */
-window.refreshCurrentWeekTotalsSafe = refreshCurrentWeekTotalsSafe;
-window.refreshCurrentWeekTotals = refreshCurrentWeekTotalsSafe;
 
 /* =========================
    Refresh all (dashboard + clock)
@@ -869,6 +907,7 @@ async function refreshAll() {
   if (CLOCK?.has_week && CLOCK?.in_time && !CLOCK?.out_time && !CLOCK?.break_running) startLiveTicker();
   else stopLiveTicker();
 }
+
 
 /* =========================
    Custom Yes/No Modal (Promise)

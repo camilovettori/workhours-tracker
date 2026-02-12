@@ -1133,3 +1133,64 @@ button[id^="btnSavePhoto"]{
   opacity:.6;
   cursor:not-allowed;
 }
+/* ===== Mobile header fix (Bank Holidays + others) ===== */
+.pageHeader,
+.topHeader,
+.headerBar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* bloco do título pode encolher sem estourar */
+.pageHeader .titleBlock,
+.topHeader .titleBlock,
+.headerBar .titleBlock {
+  min-width: 0;
+}
+
+/* bloco de botões / ações pode quebrar linha */
+.pageHeader .headerActions,
+.topHeader .headerActions,
+.headerBar .headerActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 420px) {
+  .pageHeader,
+  .topHeader,
+  .headerBar {
+    flex-wrap: wrap;          /* 🔥 isso evita “sair da tela” */
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  /* força as ações irem pra 2ª linha se precisar */
+  .pageHeader .headerActions,
+  .topHeader .headerActions,
+  .headerBar .headerActions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  /* título menor no mobile */
+  .pageHeader h1,
+  .topHeader h1,
+  .headerBar h1 {
+    font-size: 34px;
+    line-height: 1.05;
+    margin: 0;
+  }
+
+  /* botões menores no topo */
+  .pageHeader .headerActions .btn,
+  .topHeader .headerActions .btn,
+  .headerBar .headerActions .btn {
+    padding: 10px 14px;
+    border-radius: 16px;
+  }
+}

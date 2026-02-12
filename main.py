@@ -1766,16 +1766,36 @@ def dashboard(req: Request):
 
 
 # ======================================================
-# REPORT CURRENT WEEK
+# REPORT CURRENT WEEK  ✅ FIXED
+# - picks the week that CONTAINS today (start_date .. start_date+6)
+# - if none contains today, fallback to latest week
 # ======================================================
 @app.get("/api/report/week/current")
 def report_current_week(req: Request):
     uid = require_user(req)
+    today = date.today().isoformat()  # "YYYY-MM-DD"
+
     with db() as conn:
+        # 1) Try to find the week that contains today (start_date <= today <= start_date+6)
         w = conn.execute(
-            "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC LIMIT 1",
-            (uid,),
+            """
+            SELECT *
+            FROM weeks
+            WHERE user_id = ?
+              AND date(start_date) <= date(?)
+              AND date(start_date, '+6 day') >= date(?)
+            ORDER BY start_date DESC
+            LIMIT 1
+            """,
+            (uid, today, today),
         ).fetchone()
+
+        # 2) Fallback: if none contains today, use latest (keeps app usable)
+        if not w:
+            w = conn.execute(
+                "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC LIMIT 1",
+                (uid,),
+            ).fetchone()
 
         if not w:
             return {
@@ -1786,9 +1806,15 @@ def report_current_week(req: Request):
                 "totals": {"hhmm": "00:00", "pay_eur": 0.0},
             }
 
-        rate = float(w["hourly_rate"] or 0)
+        rate = float(w["hourly_rate"] or 0.0)
+
         rows = conn.execute(
-            "SELECT * FROM entries WHERE user_id=? AND week_id=? ORDER BY work_date ASC",
+            """
+            SELECT *
+            FROM entries
+            WHERE user_id=? AND week_id=?
+            ORDER BY work_date ASC
+            """,
             (uid, int(w["id"])),
         ).fetchall()
 
@@ -1797,13 +1823,21 @@ def report_current_week(req: Request):
         total_pay = 0.0
 
         for r in rows:
-            m = minutes_between(r["work_date"], r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
+            m = minutes_between(
+                r["work_date"],
+                r["time_in"],
+                r["time_out"],
+                int(r["break_minutes"] or 0),
+            )
             mult = float(r["multiplier"] or 1.0)
+
             total_min += m
             total_pay += (m / 60.0) * rate * mult
 
             d = parse_ymd(r["work_date"])
-            break_eff = effective_break_minutes(r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
+            break_eff = effective_break_minutes(
+                r["time_in"], r["time_out"], int(r["break_minutes"] or 0)
+            )
 
             entries.append(
                 {
@@ -1829,9 +1863,11 @@ def report_current_week(req: Request):
                 "hourly_rate": rate,
             },
             "entries": entries,
-            "totals": {"hhmm": f"{total_min//60:02d}:{total_min%60:02d}", "pay_eur": round(total_pay, 2)},
+            "totals": {
+                "hhmm": f"{total_min//60:02d}:{total_min%60:02d}",
+                "pay_eur": round(total_pay, 2),
+            },
         }
-
 
 # ======================================================
 # CLOCK (IN / OUT / BREAK) + EXTRA CONFIRM
