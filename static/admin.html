@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>Admin • Users</title>
+
+  <link rel="icon" href="/static/logo.png" />
+  <link rel="stylesheet" href="/static/app.css?v=17" />
+</head>
+
+<body>
+  <main class="app">
+    <section class="homeView">
+      <header class="topbar">
+        <div>
+          <h1 class="h1" style="font-size:38px;">Admin</h1>
+          <div class="subtitle">Users list</div>
+        </div>
+
+        <div style="display:flex; gap:10px;">
+          <button id="btnAdminBack" class="btn btn--pill btn--ghost" type="button">Back</button>
+          <button id="btnAdminHome" class="btn btn--pill btn--soft" type="button">Home</button>
+        </div>
+      </header>
+
+      <section class="card card--big">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px;">
+          <div style="font-weight:1000;">Registered users</div>
+          <button id="btnAdminReload" class="btn btn--pill btn--ghost" type="button">Reload</button>
+        </div>
+
+        <div id="adminMsg" class="msg" style="min-height:18px;"></div>
+        <div id="adminUsersList" style="display:flex; flex-direction:column; gap:10px;"></div>
+      </section>
+
+      <div class="safeSpace"></div>
+    </section>
+  </main>
+
+  <script defer src="/static/app.js?v=16"></script>
+</body>
+</html>

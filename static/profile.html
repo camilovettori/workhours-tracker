@@ -564,6 +564,15 @@ button[id^="btnSave"]{
           <div class="miRight">›</div>
         </button>
 
+        <button id="openAdmin" class="menuItem hidden" type="button">
+  <div class="miLeft">
+    <div class="t1">Admin Panel</div>
+    <div class="t2">View registered users</div>
+  </div>
+  <div class="miRight">›</div>
+</button>
+
+
         <button id="openLogout" class="menuItem menuItemDanger" type="button">
           <div class="miLeft">
             <div class="t1">Logout</div>
@@ -739,7 +748,9 @@ button[id^="btnSave"]{
     </div>
   </div>
 
-  <!-- LOGOUT MODAL -->
+
+ 
+ <!-- LOGOUT MODAL -->
 <div id="bdLogout" class="backdrop hidden" aria-hidden="true">
   <div class="modal" role="dialog" aria-modal="true">
     <div class="mHead">
@@ -758,6 +769,8 @@ button[id^="btnSave"]{
     <div class="mFoot">
       <button class="btnX btnGhost" data-close="bdLogout" type="button">Cancel</button>
       <button id="btnLogout" class="btnX btnDangerSolid" type="button">Logout</button>
+     
+
     </div>
   </div>
 </div>
@@ -861,6 +874,21 @@ button[id^="btnSave"]{
         return false;
       }
     }
+
+    function applyAdminUIProfile(){
+  const btn = $("openAdmin");
+  if (!btn) return;
+
+  const isAdmin = !!(ME && Number(ME.is_admin || 0) === 1);
+
+  btn.classList.toggle("hidden", !isAdmin);
+
+  if (isAdmin && !btn.dataset.bound){
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => (location.href = "/admin"));
+  }
+}
+
 
     function renderAvatar(url, firstName, lastName){
       const box = $("avatar");
@@ -1345,12 +1373,21 @@ button[id^="btnSave"]{
       renderPhones();
       openModal("bdPhones");
     });
+  
     $("openGates").addEventListener("click", ()=>{
       seedGatesIfEmpty();
       renderGates();
       openModal("bdGates");
     });
     $("openLogout").addEventListener("click", ()=> openModal("bdLogout"));
+    const openAdminBtn = $("openAdmin");
+
+if (openAdminBtn) {
+  openAdminBtn.addEventListener("click", () => {
+    location.href = "/admin";
+  });
+}
+
 
     // Logout
     $("btnLogout").addEventListener("click", async ()=>{
@@ -1370,6 +1407,8 @@ button[id^="btnSave"]{
         seedPhonesIfEmpty();
         seedGatesIfEmpty();
         await loadMe();
+applyAdminUIProfile();
+
       }catch(e){
         location.href = "/";
       }

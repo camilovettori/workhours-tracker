@@ -20,6 +20,70 @@ const hide = (el) => el && el.classList.add("hidden");
 function go(path) { window.location.href = path; }
 function pathIs(p) { return window.location.pathname === p; }
 
+
+async function initAdminPage(){
+  const btnBack = document.getElementById("btnAdminBack");
+  const btnHome = document.getElementById("btnAdminHome");
+  const btnReload = document.getElementById("btnAdminReload");
+
+  if (btnBack) btnBack.onclick = () => history.back();
+  if (btnHome) btnHome.onclick = () => (window.location.href = "/");
+  if (btnReload) btnReload.onclick = () => loadAdminUsers();
+
+  await loadAdminUsers();
+}
+
+async function initAdminPage() {
+  const btnBack = document.getElementById("btnAdminBack");
+  const btnHome = document.getElementById("btnAdminHome");
+  const btnReload = document.getElementById("btnAdminReload");
+
+  if (btnBack) btnBack.onclick = () => history.back();
+  if (btnHome) btnHome.onclick = () => (window.location.href = "/");
+  if (btnReload) btnReload.onclick = () => loadAdminUsers();
+
+  await loadAdminUsers();
+}
+
+async function loadAdminUsers(){
+  const msg  = document.getElementById("adminMsg");
+  const list = document.getElementById("adminUsersList");
+  if (msg) msg.textContent = "";
+  if (list) list.innerHTML = "";
+
+  try{
+    const res = await api("/api/admin/users");
+    const users = res?.users || [];
+
+    if (!users.length){
+      if (list) list.innerHTML = `<div class="muted">No users found.</div>`;
+      return;
+    }
+
+    if (list){
+      list.innerHTML = users.map(u => {
+        const name = `${(u.first_name||"").trim()} ${(u.last_name||"").trim()}`.trim() || "—";
+        const badge = u.is_admin ? `<span class="todayPill" style="margin-left:0;">ADMIN</span>` : "";
+        return `
+          <div class="rpRow">
+            <div class="left">
+              <div class="d1">${name} ${badge}</div>
+              <div class="d2">${u.email}</div>
+            </div>
+            <div class="right">#${u.id}</div>
+          </div>
+        `;
+      }).join("");
+    }
+  }catch(e){
+    if (msg) msg.textContent = e?.message || "Failed to load users";
+  }
+}
+
+
+
+
+
 /* =========================
    Format helpers
 ========================= */
@@ -295,6 +359,20 @@ function applyMeToUI(me) {
     btn.addEventListener("click", () => go("/profile"));
   }
 }
+function initProfileAdminButton(){
+  const btn = document.getElementById("openAdmin");
+  if (!btn) return;
+
+  const isAdmin = !!(ME && Number(ME.is_admin || 0) === 1);
+
+  btn.classList.toggle("hidden", !isAdmin);
+
+  if (isAdmin){
+    btn.onclick = () => (window.location.href = "/admin");
+  }
+}
+
+
 
 function readCachedMe() {
   try {
@@ -319,6 +397,18 @@ async function refreshMe(force = false) {
   }
   applyMeToUI(me);
   return me;
+}
+
+function applyAdminUI(){
+  const b = document.getElementById("btnAdminPanel");
+  if (!b) return;
+
+  const isAdmin = !!(ME && Number(ME.is_admin || 0) === 1);
+
+  if (isAdmin) b.classList.remove("hidden");
+  else b.classList.add("hidden");
+
+  b.onclick = () => (window.location.href = "/admin");
 }
 
 /* =========================
@@ -644,8 +734,10 @@ async function enterHome() {
   show(viewHome);
 
   ME = await refreshMe(true);
-  await refreshAll();
-  resumeBreakCountdownIfAny();
+initProfileAdminButton();
+applyAdminUI(); // opcional, mas bom
+await refreshAll();
+
 }
 
 /* =========================
@@ -1560,17 +1652,22 @@ async function enterRoster() {
   await rosterLoadList();
 }
 
-/* =========================
-   Route after auth (multi-page safe)
-========================= */
 async function routeAfterAuth() {
   if (!ME) {
     try { ME = await refreshMe(false); } catch {}
-  } else {
-    applyMeToUI(ME);
+  }
+  if (ME) applyMeToUI(ME);
+
+  if (pathIs("/admin")) { 
+    await initAdminPage(); 
+    return; 
   }
 
-  if (pathIs("/roster")) { await enterRoster(); return; }
+  if (pathIs("/roster")) { 
+    await enterRoster(); 
+    return; 
+  }
+
   if (pathIs("/holidays") || pathIs("/report") || pathIs("/profile")) return;
 
   if (!hasIndexViews()) return;
@@ -1587,6 +1684,8 @@ async function routeAfterAuth() {
 
   await enterHome();
 }
+
+
 
 /* =========================
    Navigation (data-route)

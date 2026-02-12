@@ -103,6 +103,19 @@ def ensure_user_columns(conn: sqlite3.Connection) -> None:
     add_col_if_missing(conn, "users", "pass_hash", "TEXT")
     add_col_if_missing(conn, "users", "created_at", "TEXT")
 
+def ensure_user_columns(conn: sqlite3.Connection) -> None:
+    # compatibilidade com DBs antigos
+    add_col_if_missing(conn, "users", "first_name", "TEXT")
+    add_col_if_missing(conn, "users", "last_name", "TEXT")
+    add_col_if_missing(conn, "users", "hourly_rate", "REAL DEFAULT 0")
+    add_col_if_missing(conn, "users", "avatar_path", "TEXT")
+    add_col_if_missing(conn, "users", "salt_hex", "TEXT")
+    add_col_if_missing(conn, "users", "pass_hash", "TEXT")
+    add_col_if_missing(conn, "users", "created_at", "TEXT")
+
+    # ✅ NEW
+    add_col_if_missing(conn, "users", "is_admin", "INTEGER NOT NULL DEFAULT 0")
+
 
 def ensure_clock_tables(conn: sqlite3.Connection) -> None:
     conn.executescript(
@@ -230,6 +243,20 @@ def init_db() -> None:
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY(roster_id) REFERENCES rosters(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS users(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    first_name TEXT,
+    last_name TEXT,
+    email TEXT UNIQUE,
+    salt_hex TEXT,
+    pass_hash TEXT,
+    hourly_rate REAL DEFAULT 0,
+    avatar_path TEXT,
+    created_at TEXT,
+    is_admin INTEGER NOT NULL DEFAULT 0
+);
+
             """
         )
 
@@ -246,6 +273,7 @@ def init_db() -> None:
         add_col_if_missing(conn, "bank_holidays", "paid_date", "TEXT")
         add_col_if_missing(conn, "bank_holidays", "paid_week", "INTEGER")
         add_col_if_missing(conn, "bank_holidays", "applicable", "INTEGER NOT NULL DEFAULT 1")
+        
 
         ensure_bh_indexes(conn)
         ensure_clock_tables(conn)
@@ -593,6 +621,49 @@ def send_email(to_email: str, subject: str, text: str) -> None:
 # ======================================================
 # AUTH API
 # ======================================================
+from fastapi import HTTPException, Request
+
+@app.get("/api/admin/users")
+def admin_users(request: Request):
+    uid = require_user(request)
+
+    with db() as conn:
+        me = conn.execute(
+            "SELECT is_admin FROM users WHERE id = ?",
+            (uid,)
+        ).fetchone()
+
+        if not me or not int(me["is_admin"] or 0):
+            raise HTTPException(status_code=403, detail="Admin only")
+
+        rows = conn.execute("""
+            SELECT id, first_name, last_name, email, created_at, is_admin
+            FROM users
+            ORDER BY id DESC
+        """).fetchall()
+
+    return {
+        "ok": True,
+        "users": [
+            {
+                "id": int(r["id"]),
+                "first_name": r["first_name"] or "",
+                "last_name": r["last_name"] or "",
+                "email": r["email"] or "",
+                "created_at": r["created_at"] or "",
+                "is_admin": int(r["is_admin"] or 0),
+            }
+            for r in rows
+        ],
+    }
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page(req: Request):
+    require_user(req)  # precisa estar logado
+    return FileResponse(STATIC_DIR / "admin.html")
+
+
 @app.post("/api/signup")
 def signup(p: SignupIn):
     salt_hex = secrets.token_hex(16)
@@ -668,9 +739,14 @@ def me(req: Request):
     uid = require_user(req)
     with db() as conn:
         u = conn.execute(
-            "SELECT id,email,first_name,last_name,hourly_rate,avatar_path FROM users WHERE id=?",
+            """
+            SELECT id, email, first_name, last_name, hourly_rate, avatar_path, is_admin
+            FROM users
+            WHERE id=?
+            """,
             (uid,),
         ).fetchone()
+
         if not u:
             raise HTTPException(401, "Not logged")
 
@@ -682,7 +758,9 @@ def me(req: Request):
             "last_name": u["last_name"] or "",
             "hourly_rate": float(u["hourly_rate"] or 0),
             "avatar_url": u["avatar_path"] or "",
+            "is_admin": int(u["is_admin"] or 0),
         }
+
 
 
 @app.patch("/api/me")
