@@ -23,10 +23,34 @@ function pathIs(p) { return window.location.pathname === p; }
 /* =========================
    Format helpers
 ========================= */
-function fmtEUR(n) {
-  const v = Number(n || 0);
-  return new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(v);
+function fmtEUR(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "€0.00";
+  return `€${n.toFixed(2)}`;
 }
+
+function ymdTodayLocal(){
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+
+function ymdToDateLocal(ymd){
+  // "2026-02-15" -> Date local (00:00 local)
+  const [y,m,d] = ymd.split("-").map(Number);
+  return new Date(y, m-1, d);
+}
+
+function inWeekRange(todayYmd, weekStartYmd){
+  const t = ymdToDateLocal(todayYmd);
+  const s = ymdToDateLocal(weekStartYmd);
+  const e = new Date(s);
+  e.setDate(e.getDate() + 6);
+  return t >= s && t <= e;
+}
+
 
 function secondsToHHMMSS(totalSec) {
   const s = Math.max(0, Math.floor(Number(totalSec || 0)));
@@ -121,6 +145,49 @@ function ymdAddDays(ymd, add) {
   const dd = String(dt.getDate()).padStart(2, "0");
   return `${yy}-${mm}-${dd}`;
 }
+function applyTodayHighlight() {
+  const today = ymdTodayLocal();
+  const cards = document.querySelectorAll("[data-day-date]");
+
+  // debug rápido: se der 0, teu HTML não tem data-day-date
+  // console.log("applyTodayHighlight cards:", cards.length, "today:", today);
+
+  cards.forEach(card => {
+    const d = card.getAttribute("data-day-date");
+    const isToday = (d === today);
+
+    card.classList.toggle("is-today", isToday);
+
+    // Cria/Remove pill "Today" sem depender de .day-title
+    let pill = card.querySelector(".today-pill");
+    if (isToday) {
+      if (!pill) {
+        pill = document.createElement("span");
+        pill.className = "today-pill";
+        pill.textContent = "Today";
+
+        // tenta colocar no topo do card
+        // prioridade: header -> h4/h3/strong -> primeiro elemento
+        const header =
+          card.querySelector(".day-title") ||
+          card.querySelector(".day-header") ||
+          card.querySelector("h4, h3, strong") ||
+          card.firstElementChild;
+
+        if (header) {
+          header.appendChild(pill);
+        } else {
+          card.prepend(pill);
+        }
+      }
+    } else {
+      if (pill) pill.remove();
+    }
+  });
+}
+
+
+
 function weekdayShort(dt) {
   return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dt.getDay()];
 }
@@ -1093,7 +1160,8 @@ async function rosterRenderPreview() {
   const hhmm = `${String(Math.floor(mins/60)).padStart(2,"0")}:${String(mins%60).padStart(2,"0")}`;
 
   const pay = await rosterCalcExpectedPay(ROSTER.picked, ROSTER.startDate, ROSTER.hourlyRate);
-  totals.textContent = `Expected: ${hhmm} • ${fmtEUR(pay)}`;
+totals.textContent = `Expected: ${hhmm} • ${fmtEUR(Number.isFinite(pay) ? pay : 0)}`;
+
 
   for (let i = 0; i < ROSTER.picked.length; i++) {
     const code = ROSTER.picked[i];
@@ -1303,8 +1371,10 @@ async function enterRoster() {
   try { ME = await refreshMe(false); } catch {}
 
   ROSTER.hourlyRate =
-    Number(ME?.hourly_rate || 0) ||
-    Number(getSavedRate() || 0);
+  Number(ME?.hourly_rate ?? 0) ||
+  Number(getSavedRate() ?? 0) ||
+  18.24;
+
 
   try {
     const weeks = await api("/api/weeks");

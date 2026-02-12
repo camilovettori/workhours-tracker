@@ -1100,4 +1100,36 @@ button[id^="btnSavePhoto"]{
   border-top: 1px solid rgba(15,23,42,.06);
 }
 
-/* ==== REMOVE avatar gigante no topo (mesmo se for background-image) ==== */
+.is-today{
+  background: rgba(59,130,246,.14);
+  border: 1px solid rgba(59,130,246,.45) !important;
+}
+
+.today-pill{
+  display:inline-block;
+  margin-left:8px;
+  padding:2px 8px;
+  font-size:12px;
+  border-radius:999px;
+  background: rgba(59,130,246,.18);
+  border:1px solid rgba(59,130,246,.35);
+}
+
+.btn--danger{
+  background: rgba(239,68,68,1) !important;
+  color:#fff !important;
+  border: 1px solid rgba(239,68,68,.45) !important;
+}
+
+.btn--danger:hover{
+  filter: brightness(1.05);
+}
+
+.btn--danger:active{
+  transform: translateY(1px);
+}
+
+.btn--danger:disabled{
+  opacity:.6;
+  cursor:not-allowed;
+}

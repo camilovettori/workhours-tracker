@@ -1235,22 +1235,43 @@ def roster_list(req: Request):
     uid = require_user(req)
     with db() as conn:
         rows = conn.execute(
-            "SELECT id, week_number, start_date FROM rosters WHERE user_id=? ORDER BY start_date DESC",
+            """
+            SELECT id, week_number, start_date
+            FROM rosters
+            WHERE user_id=?
+            ORDER BY CAST(week_number AS INTEGER) DESC, date(start_date) DESC, id DESC
+            """,
             (uid,),
         ).fetchall()
-        return [{"id": int(r["id"]), "week_number": int(r["week_number"]), "start_date": r["start_date"]} for r in rows]
+
+        return [
+            {
+                "id": int(r["id"]),
+                "week_number": int(r["week_number"]),
+                "start_date": r["start_date"],
+            }
+            for r in rows
+        ]
 
 
 @app.get("/api/roster/{roster_id}")
 def roster_get(roster_id: int, req: Request):
     uid = require_user(req)
     with db() as conn:
-        r = conn.execute("SELECT * FROM rosters WHERE id=? AND user_id=?", (roster_id, uid)).fetchone()
+        r = conn.execute(
+            "SELECT * FROM rosters WHERE id=? AND user_id=?",
+            (roster_id, uid),
+        ).fetchone()
         if not r:
             raise HTTPException(404, "Roster not found")
 
         days = conn.execute(
-            "SELECT * FROM roster_days WHERE roster_id=? AND user_id=? ORDER BY work_date ASC",
+            """
+            SELECT *
+            FROM roster_days
+            WHERE roster_id=? AND user_id=?
+            ORDER BY date(work_date) ASC, id ASC
+            """,
             (roster_id, uid),
         ).fetchall()
 
@@ -1298,9 +1319,15 @@ def roster_create(p: RosterCreate, req: Request):
 
     with db() as conn:
         dup = conn.execute(
-            "SELECT id FROM rosters WHERE user_id=? AND week_number=? AND start_date=? LIMIT 1",
+            """
+            SELECT id
+            FROM rosters
+            WHERE user_id=? AND week_number=? AND start_date=?
+            LIMIT 1
+            """,
             (uid, int(p.week_number), p.start_date),
         ).fetchone()
+
         if dup:
             wk = conn.execute(
                 "SELECT id FROM weeks WHERE user_id=? AND week_number=? LIMIT 1",
@@ -1351,12 +1378,19 @@ def roster_day_patch(roster_id: int, p: RosterDayPatch, req: Request):
         raise HTTPException(400, "Invalid code (use A, B, OFF)")
 
     with db() as conn:
-        r = conn.execute("SELECT id FROM rosters WHERE id=? AND user_id=?", (roster_id, uid)).fetchone()
+        r = conn.execute(
+            "SELECT id FROM rosters WHERE id=? AND user_id=?",
+            (roster_id, uid),
+        ).fetchone()
         if not r:
             raise HTTPException(404, "Roster not found")
 
         d = conn.execute(
-            "SELECT id FROM roster_days WHERE roster_id=? AND user_id=? AND work_date=?",
+            """
+            SELECT id
+            FROM roster_days
+            WHERE roster_id=? AND user_id=? AND work_date=?
+            """,
             (roster_id, uid, p.work_date),
         ).fetchone()
         if not d:
@@ -1376,6 +1410,7 @@ def roster_day_patch(roster_id: int, p: RosterDayPatch, req: Request):
         conn.commit()
 
     return {"ok": True}
+
 
 
 # ======================================================
@@ -1627,41 +1662,68 @@ def dashboard(req: Request):
     uid = require_user(req)
 
     with db() as conn:
+        # All weeks (ASC helps our selector)
         weeks = conn.execute(
-            "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC",
+            "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date ASC",
             (uid,),
         ).fetchall()
-        most_recent = weeks[0] if weeks else None
 
+        # ✅ Correct "current week" selector (contains today; else latest past; else earliest future)
+        current_week = get_week_for_today_strict(conn, uid)
+
+        # Totals (all time)
         total_min_all = 0
         total_pay_all = 0.0
 
         for w in weeks:
             rate = float(w["hourly_rate"] or 0)
             rows = conn.execute(
-                "SELECT work_date,time_in,time_out,break_minutes,multiplier FROM entries WHERE user_id=? AND week_id=?",
-                (uid, w["id"]),
+                """
+                SELECT work_date,time_in,time_out,break_minutes,multiplier
+                FROM entries
+                WHERE user_id=? AND week_id=?
+                """,
+                (uid, int(w["id"])),
             ).fetchall()
+
             for r in rows:
-                m = minutes_between(r["work_date"], r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
+                m = minutes_between(
+                    r["work_date"],
+                    r["time_in"],
+                    r["time_out"],
+                    int(r["break_minutes"] or 0),
+                )
                 mult = float(r["multiplier"] or 1.0)
                 total_min_all += m
                 total_pay_all += (m / 60.0) * rate * mult
 
+        # Totals (this week = current_week)
         this_week_min = 0
         this_week_pay = 0.0
-        if most_recent:
-            rate = float(most_recent["hourly_rate"] or 0)
+
+        if current_week:
+            rate = float(current_week["hourly_rate"] or 0)
             rows = conn.execute(
-                "SELECT work_date,time_in,time_out,break_minutes,multiplier FROM entries WHERE user_id=? AND week_id=?",
-                (uid, most_recent["id"]),
+                """
+                SELECT work_date,time_in,time_out,break_minutes,multiplier
+                FROM entries
+                WHERE user_id=? AND week_id=?
+                """,
+                (uid, int(current_week["id"])),
             ).fetchall()
+
             for r in rows:
-                m = minutes_between(r["work_date"], r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
+                m = minutes_between(
+                    r["work_date"],
+                    r["time_in"],
+                    r["time_out"],
+                    int(r["break_minutes"] or 0),
+                )
                 mult = float(r["multiplier"] or 1.0)
                 this_week_min += m
                 this_week_pay += (m / 60.0) * rate * mult
 
+        # Bank holidays
         supported_years = [y for y in (2025, 2026) if irish_bank_holidays(y)]
         bh_years_out = []
         total_allowance = 0
@@ -1692,14 +1754,15 @@ def dashboard(req: Request):
 
         return {
             "this_week": {
-                "week_number": (int(most_recent["week_number"]) if most_recent else None),
-                "hourly_rate": (float(most_recent["hourly_rate"] or 0) if most_recent else 0),
+                "week_number": (int(current_week["week_number"]) if current_week else None),
+                "hourly_rate": (float(current_week["hourly_rate"] or 0) if current_week else 0),
                 "hhmm": f"{this_week_min//60:02d}:{this_week_min%60:02d}",
                 "pay_eur": round(this_week_pay, 2),
             },
             "bank_holidays_years": bh_years_out,
             "bank_holidays": {"allowance": total_allowance, "paid": total_paid, "remaining": total_remaining},
         }
+
 
 
 # ======================================================
@@ -1774,11 +1837,22 @@ def report_current_week(req: Request):
 # CLOCK (IN / OUT / BREAK) + EXTRA CONFIRM
 # ======================================================
 def get_current_week(conn: sqlite3.Connection, uid: int) -> Optional[sqlite3.Row]:
+    return get_week_for_today_strict(conn, uid)
+
+
+
+def get_week_for_today_strict(conn: sqlite3.Connection, uid: int) -> Optional[sqlite3.Row]:
     today = date.today()
-    weeks = conn.execute("SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC", (uid,)).fetchall()
+
+    weeks = conn.execute(
+        "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date ASC",
+        (uid,),
+    ).fetchall()
+
     if not weeks:
         return None
 
+    # 1) Prefer: week that contains today
     for w in weeks:
         try:
             start = parse_ymd(w["start_date"])
@@ -1787,7 +1861,24 @@ def get_current_week(conn: sqlite3.Connection, uid: int) -> Optional[sqlite3.Row
         end = start + timedelta(days=6)
         if start <= today <= end:
             return w
+
+    # 2) Else: latest week that started in the past (start <= today)
+    past = []
+    for w in weeks:
+        try:
+            start = parse_ymd(w["start_date"])
+        except Exception:
+            continue
+        if start <= today:
+            past.append((start, w))
+
+    if past:
+        past.sort(key=lambda x: x[0])
+        return past[-1][1]
+
+    # 3) Else: all weeks are future -> pick the earliest future
     return weeks[0]
+
 
 
 def get_or_create_today_entry(conn: sqlite3.Connection, uid: int, week_id: int, work_date: str) -> sqlite3.Row:

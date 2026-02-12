@@ -313,28 +313,54 @@
       font-size:13px;
     }
 
-    button.btnSaveBlue{
+    /* highlight week card */
+    .is-current-week{
+      background: rgba(59,130,246,.10);
+      border: 1px solid rgba(59,130,246,.35) !important;
+      box-shadow: 0 10px 30px rgba(59,130,246,.10);
+    }
+
+    /* highlight day card */
+    .is-today{
+      background: rgba(59,130,246,.14);
+      border: 1px solid rgba(59,130,246,.45) !important;
+    }
+
+    .today-pill{
+      display:inline-block;
+      margin-left:8px;
+      padding:2px 8px;
+      font-size:12px;
+      border-radius:999px;
+      background: rgba(59,130,246,.18);
+      border:1px solid rgba(59,130,246,.35);
+    }
+
+    #btnRosterDeleteWeek{
+  background: rgba(239,68,68,1) !important;
+  color:#fff !important;
+  border: 1px solid rgba(239,68,68,.45) !important;
+}
+
+#btnRosterDeleteWeek{
+  font-weight: 600 !important; /* ou 700/600 se quiser mais leve */
+}
+
+#btnRosterDeleteWeek:hover{ filter: brightness(1.05); }
+#btnRosterDeleteWeek:active{ transform: translateY(1px); }
+
+#btnSave{
   background: #2563eb !important;
-  color: #ffffff !important;
+  color: #fff !important;
   border: 1px solid rgba(37,99,235,.35) !important;
   border-radius: 14px !important;
-  font-weight: 1000 !important;
-  padding: 12px 14px !important;
-  cursor: pointer !important;
+  font-weight: 900 !important;
 }
 
-button.btnSaveBlue:hover{
-  filter: brightness(1.03) !important;
-}
+#btnSave:hover{ filter: brightness(1.05) !important; }
+#btnSave:active{ transform: translateY(1px) !important; }
+#btnSave:disabled{ opacity:.55 !important; cursor:not-allowed !important; }
 
-button.btnSaveBlue:active{
-  transform: translateY(1px) !important;
-}
-
-button.btnSaveBlue:disabled{
-  opacity: .55 !important;
-  cursor: not-allowed !important;
-}
 
   </style>
 </head>
@@ -350,21 +376,9 @@ button.btnSaveBlue:disabled{
         </div>
       </div>
 
-       <div style="display:flex; gap:10px; align-items:center;">
- 
-  
-</div>
-
-
-        <div style="display:flex; gap:10px; align-items:center;">
-
-
+      <div style="display:flex; gap:10px; align-items:center;">
         <button id="btnHome" class="btn btn--pill btn--soft" type="button">Home</button>
-        
         <button id="btnBack" class="btn btn--pill btn--ghost" type="button">Back</button>
-        
-
-
       </div>
     </div>
 
@@ -392,12 +406,9 @@ button.btnSaveBlue:disabled{
         </div>
 
         <div style="display:flex; gap:10px; align-items:center;">
-  <button id="btnEditBack" class="btn btn--pill btn--ghost" type="button">Back to weeks</button>
-  <button id="btnRosterDeleteWeek" class="btn btn--pill btn--danger" type="button">🗑 Delete week</button>
-</div>
-
-      
-
+          <button id="btnEditBack" class="btn btn--pill btn--ghost" type="button">Back to weeks</button>
+          <button id="btnRosterDeleteWeek" class="btn btn--pill btn--danger" type="button">🗑 Delete week</button>
+        </div>
       </div>
 
       <div id="detailTotals" class="detailTotals">
@@ -507,33 +518,27 @@ button.btnSaveBlue:disabled{
   </div>
 
   <script>
+    async function deleteCurrentRosterWeek(){
+      if(!currentRosterId){
+        alert("No roster selected.");
+        return;
+      }
+      const ok = confirm("Delete this roster week? This cannot be undone.");
+      if(!ok) return;
 
+      try{
+        await api(`/api/roster/${currentRosterId}`, { method: "DELETE" });
 
-async function deleteCurrentRosterWeek(){
-  if(!currentRosterId){
-    alert("No roster selected.");
-    return;
-  }
+        rosterCache.delete(currentRosterId);
+        currentRosterId = null;
 
-  const ok = confirm("Delete this roster week? This cannot be undone.");
-  if(!ok) return;
-
-  try{
-    await api(`/api/roster/${currentRosterId}`, { method: "DELETE" });
-    console.log("Deleting roster id:", currentRosterId);
-
-
-    // limpa cache e volta pra lista
-    rosterCache.delete(currentRosterId);
-    currentRosterId = null;
-
-    enterList();
-    await loadList();
-  }catch(e){
-    alert(e.message || "Failed to delete");
-    if(e.status === 401) location.href = "/";
-  }
-}
+        enterList();
+        await loadList();
+      }catch(e){
+        alert(e.message || "Failed to delete");
+        if(e.status === 401) location.href = "/";
+      }
+    }
 
     const $ = (id) => document.getElementById(id);
     const show = (el) => el && el.classList.remove("hidden");
@@ -608,6 +613,57 @@ async function deleteCurrentRosterWeek(){
       return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
     }
 
+    // ===== Highlight helpers (safe)
+    function ymdTodayLocal(){
+      const d = new Date();
+      const y = d.getFullYear();
+      const m = String(d.getMonth()+1).padStart(2,'0');
+      const day = String(d.getDate()).padStart(2,'0');
+      return `${y}-${m}-${day}`;
+    }
+    function ymdToDateLocal(ymd){
+      const [y,m,d] = ymd.split("-").map(Number);
+      return new Date(y, m-1, d);
+    }
+    function inWeekRange(todayYmd, weekStartYmd){
+      const t = ymdToDateLocal(todayYmd);
+      const s = ymdToDateLocal(weekStartYmd);
+      const e = new Date(s);
+      e.setDate(e.getDate() + 6);
+      return t >= s && t <= e;
+    }
+    function applyCurrentWeekHighlight(){
+      const today = ymdTodayLocal();
+      document.querySelectorAll(".weekItem[data-week-start]").forEach(card => {
+        const start = card.getAttribute("data-week-start");
+        card.classList.toggle("is-current-week", !!start && inWeekRange(today, start));
+      });
+    }
+    function applyTodayHighlight(){
+      const today = ymdTodayLocal();
+      document.querySelectorAll(".dayCard[data-day-date]").forEach(card => {
+        const d = card.getAttribute("data-day-date");
+        const isToday = (d === today);
+
+        card.classList.toggle("is-today", isToday);
+
+        const header = card.querySelector(".w");
+        if(!header) return;
+
+        let pill = header.querySelector(".today-pill");
+        if(isToday){
+          if(!pill){
+            pill = document.createElement("span");
+            pill.className = "today-pill";
+            pill.textContent = "Today";
+            header.appendChild(pill);
+          }
+        }else{
+          if(pill) pill.remove();
+        }
+      });
+    }
+
     // ===== Business rules
     const SHIFT_PAID_MIN = 495; // 8h15 fixed
     const SUNDAY_MULTIPLIER = 1.5;
@@ -622,14 +678,10 @@ async function deleteCurrentRosterWeek(){
     function expectedMinutesFromDays(days){
       return (days||[]).reduce((acc, x)=> (x && !x.day_off ? acc + SHIFT_PAID_MIN : acc), 0);
     }
-
     function isBhTrue(bh){
       if(!bh) return false;
-      // suporte a variações do backend
       return bh.is_bh === true || bh.is_bank_holiday === true || bh.isBH === true;
     }
-
-    // premium multiplier only if worked; if both apply, do NOT stack -> use max(1.5, 1.5)=1.5
     async function dayMultiplierIfWorked(work_date_ymd){
       const dt = ymdToDateObj(work_date_ymd);
       const isSunday = dt.getDay() === 0;
@@ -642,7 +694,6 @@ async function deleteCurrentRosterWeek(){
       const mBh  = isBH ? BH_MULTIPLIER : 1;
       return Math.max(1, mSun, mBh);
     }
-
     async function expectedPayFromDays(days, hourlyRate){
       const rate = Number(hourlyRate || 0);
       if(!rate) return 0;
@@ -650,7 +701,6 @@ async function deleteCurrentRosterWeek(){
       let total = 0;
       for(const day of (days || [])){
         if(!day || day.day_off) continue;
-
         const base = (SHIFT_PAID_MIN / 60) * rate;
         const mult = await dayMultiplierIfWorked(day.work_date);
         total += base * mult;
@@ -709,9 +759,8 @@ async function deleteCurrentRosterWeek(){
 
       $("wizardErr").textContent = "";
       renderWizardDay();
-      renderPreview(); // async
+      renderPreview();
     }
-
     function renderWizardDay(){
       $("dayTitle").textContent = dayNames[wizardIndex];
       const start = ($("startDate").value || "").trim();
@@ -726,7 +775,6 @@ async function deleteCurrentRosterWeek(){
       if(c==="B") $("btnB").classList.add("active");
       if(c==="OFF") $("btnOFF").classList.add("active");
     }
-
     async function renderPreview(){
       const start = ($("startDate").value || "").trim();
       const preview = $("rosterPreview");
@@ -775,13 +823,12 @@ async function deleteCurrentRosterWeek(){
 
       totals.textContent = `So far: ${fmtHHMMFromMinutes(totalMinutes)} • ${fmtEUR(totalPay)}`;
     }
-
     function pick(code){
       $("wizardErr").textContent = "";
       wizardDays[wizardIndex] = code;
 
       renderWizardDay();
-      renderPreview(); // async (fire and forget ok)
+      renderPreview();
 
       if(wizardIndex < 6){
         wizardIndex += 1;
@@ -790,7 +837,6 @@ async function deleteCurrentRosterWeek(){
       }
       $("wizardErr").textContent = "All days selected. Click “Save week”.";
     }
-
     async function saveWizard(){
       $("wizardErr").textContent = "";
 
@@ -821,16 +867,14 @@ async function deleteCurrentRosterWeek(){
     }
 
     // ===== List
-   async function loadHourlyRate(){
-  hourlyRate = 0;
-  try{
-    const me = await api("/api/me");
-    hourlyRate = Number(me.hourly_rate || 0);
-  }catch{}
-  $("rateHint").textContent = `Hourly rate: ${hourlyRate ? fmtEUR(hourlyRate) + " / hour" : "—"}`;
-}
-
-
+    async function loadHourlyRate(){
+      hourlyRate = 0;
+      try{
+        const me = await api("/api/me");
+        hourlyRate = Number(me.hourly_rate || 0);
+      }catch{}
+      $("rateHint").textContent = `Hourly rate: ${hourlyRate ? fmtEUR(hourlyRate) + " / hour" : "—"}`;
+    }
 
     async function fetchRosterDetail(id){
       if(rosterCache.has(id)) return rosterCache.get(id);
@@ -855,6 +899,8 @@ async function deleteCurrentRosterWeek(){
         for(const r of rows){
           const item = document.createElement("div");
           item.className = "weekItem";
+          item.setAttribute("data-week-start", r.start_date);
+
           item.innerHTML = `
             <div>
               <div class="t1">Week ${r.week_number}</div>
@@ -879,12 +925,13 @@ async function deleteCurrentRosterWeek(){
               const d = await fetchRosterDetail(r.id);
               const mins = expectedMinutesFromDays(d.days);
               const pay = await expectedPayFromDays(d.days, hourlyRate);
-
               item.querySelector(".hhmm").textContent = fmtHHMMFromMinutes(mins);
               item.querySelector(".eur").textContent = fmtEUR(pay);
             }catch{}
           })();
         }
+
+        applyCurrentWeekHighlight();
       }catch(e){
         $("listMsg").textContent = "";
         $("listErr").textContent = "Error: " + (e.message || "failed");
@@ -892,7 +939,7 @@ async function deleteCurrentRosterWeek(){
       }
     }
 
-    // ===== Detail header (hours unchanged; pay with premium)
+    // ===== Detail header
     async function setDetailHeader(d){
       $("detailTitle").textContent = `Week ${d.week_number}`;
       $("detailSub").textContent = `Start: ${d.start_date}`;
@@ -927,14 +974,12 @@ async function deleteCurrentRosterWeek(){
           const isOff = !!x.day_off;
           const shift = isOff ? "OFF" : (x.shift_in + " → " + x.shift_out);
 
-          // BH lookup
           let bh = null;
           try { bh = await bhLookup(x.work_date); } catch { bh = null; }
           const isBH = isBhTrue(bh);
           const bhName = isBH ? (bh.name || "") : "";
           const isPaid = isBH ? !!bh.paid : false;
 
-          // premium badge x1.5 only if worked (Sunday OR BH)
           let premiumMult = 1;
           if(!isOff){
             premiumMult = await dayMultiplierIfWorked(x.work_date);
@@ -942,6 +987,8 @@ async function deleteCurrentRosterWeek(){
 
           const card = document.createElement("div");
           card.className = "dayCard";
+          card.setAttribute("data-day-date", x.work_date);
+
           card.innerHTML = `
             <div class="w">
               ${weekdayShort(dt)}
@@ -957,6 +1004,8 @@ async function deleteCurrentRosterWeek(){
           card.addEventListener("click", () => openEditDayModal(rosterId, x.work_date, dayToCode(x)));
           grid.appendChild(card);
         }
+
+        applyTodayHighlight();
       }catch(e){
         $("detailErr").textContent = e.message || "Failed to load roster";
         if(e.status === 401) location.href = "/";
@@ -1043,7 +1092,7 @@ async function deleteCurrentRosterWeek(){
       wizardDays = ["", "", "", "", "", "", ""];
       $("wizardErr").textContent = "";
       renderWizardDay();
-      renderPreview(); // async
+      renderPreview();
     });
 
     $("btnEditBack").addEventListener("click", async () => { enterList(); await loadList(); });
