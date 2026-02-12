@@ -1231,3 +1231,24 @@ button[id^="btnSavePhoto"]{
   /* opcional: deixa o select menos “gordo” no mobile */
   .yearSel{ padding: 8px 12px; }
 }
+/* Today Earnings LIVE border pulse */
+.teCard {
+  border: 2px solid transparent;
+  transition: border-color 0.3s ease;
+}
+
+.teCard.is-live {
+  animation: teBorderPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes teBorderPulse {
+  0% {
+    border-color: rgba(34,197,94,0.6);
+  }
+  50% {
+    border-color: rgba(34,197,94,0.1);
+  }
+  100% {
+    border-color: rgba(34,197,94,0.6);
+  }
+}

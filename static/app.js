@@ -733,36 +733,26 @@ async function sendReset() {
   }
 }
 
-/* =========================
-   Live ticker + Today earnings (HH:MM:SS)
-========================= */
-let LIVE_TIMER = null;
-let LIVE_LAST_TS = 0;
-
-function stopLiveTicker() {
-  if (LIVE_TIMER) clearInterval(LIVE_TIMER);
-  LIVE_TIMER = null;
-}
-
-function startLiveTicker() {
-  stopLiveTicker();
-  LIVE_TIMER = setInterval(() => {
-    if (!CLOCK?.has_week) return;
-
-    const now = Date.now();
-    if (now - LIVE_LAST_TS < 950) return; // ~1x/seg
-    LIVE_LAST_TS = now;
-
-    updateTodayEarningsUI();
-  }, 200);
-}
-
 function updateTodayEarningsUI() {
-  const tHHMM = $("todayEarnHHMM");
-  const tPAY  = $("todayEarnPay");
+  const tHHMM  = $("todayEarnHHMM");
+  const tPAY   = $("todayEarnPay");
   const tSTATE = $("todayEarnState");
+  const tCard  = document.getElementById("todayEarnCard");
+
+  // calcula LIVE primeiro (pra não depender do resto)
+  const isLive =
+    !!CLOCK?.has_week &&
+    !!CLOCK?.in_time &&
+    !CLOCK?.out_time &&
+    !CLOCK?.break_running;
+
+  // aplica/remove a classe SEMPRE, mesmo se faltar algum elemento
+  if (tCard) tCard.classList.toggle("is-live", isLive);
+
+  // se não tem os campos, não tem o que renderizar
   if (!tHHMM || !tPAY) return;
 
+  // OFF (sem semana ou sem IN)
   if (!CLOCK?.has_week || !CLOCK?.in_time) {
     tHHMM.textContent = "--:--:--";
     tPAY.textContent  = "€-.--";
@@ -771,6 +761,7 @@ function updateTodayEarningsUI() {
     return;
   }
 
+  // rate
   const rate =
     Number(ME?.hourly_rate ?? 0) ||
     Number(LAST_DASH?.this_week?.hourly_rate ?? 0) ||
@@ -784,6 +775,7 @@ function updateTodayEarningsUI() {
     return;
   }
 
+  // label do estado (e evita recalcular em break)
   if (CLOCK.break_running) {
     if (tSTATE) tSTATE.textContent = "BREAK";
     return;
@@ -796,7 +788,9 @@ function updateTodayEarningsUI() {
     if (tSTATE) tSTATE.textContent = "LIVE";
   }
 
+  // calcula segundos trabalhados hoje
   const now = new Date();
+
   const [ih, im] = String(CLOCK.in_time).split(":").map(Number);
   const inDt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), ih || 0, im || 0, 0);
 
@@ -807,6 +801,7 @@ function updateTodayEarningsUI() {
   }
 
   let workedSec = Math.max(0, Math.floor((endDt - inDt) / 1000));
+
   const brMin = Number(CLOCK.break_minutes || 0);
   workedSec = Math.max(0, workedSec - brMin * 60);
 
@@ -815,6 +810,40 @@ function updateTodayEarningsUI() {
   tHHMM.textContent = secondsToHHMMSS(workedSec);
   tPAY.textContent  = fmtEUR(eur);
 }
+
+// =========================
+// Live ticker (Today earnings) - GLOBAL
+// =========================
+let LIVE_TIMER = null;
+
+function stopLiveTicker() {
+  if (LIVE_TIMER) clearInterval(LIVE_TIMER);
+  LIVE_TIMER = null;
+}
+
+function startLiveTicker() {
+  if (LIVE_TIMER) return;
+
+  LIVE_TIMER = setInterval(() => {
+    const shouldLive =
+      !!CLOCK?.has_week &&
+      !!CLOCK?.in_time &&
+      !CLOCK?.out_time &&
+      !CLOCK?.break_running;
+
+    if (!shouldLive) {
+      stopLiveTicker();
+      if (typeof updateTodayEarningsUI === "function") updateTodayEarningsUI();
+      return;
+    }
+
+    if (typeof updateTodayEarningsUI === "function") updateTodayEarningsUI();
+  }, 1000);
+}
+
+// expõe no global (pra qualquer lugar que chame)
+window.startLiveTicker = startLiveTicker;
+window.stopLiveTicker = stopLiveTicker;
 
 /* =========================
    Clock refresh
