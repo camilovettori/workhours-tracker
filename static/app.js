@@ -956,6 +956,15 @@ function showYesNoModal({ title, message, icon = "⏱", yesText = "Yes", noText 
   iconEl.textContent  = icon || "⏱";
   yesBtn.textContent  = yesText || "Yes";
   noBtn.textContent   = noText || "No";
+  // Se for modal informativo (mesmo texto ou só um botão)
+if (!noText || yesText === noText) {
+  noBtn.style.display = "none";
+  yesBtn.style.marginLeft = "auto";
+} else {
+  noBtn.style.display = "";
+  yesBtn.style.marginLeft = "";
+}
+
   hintEl.textContent  = hint || "";
 
   overlay.classList.remove("hidden");

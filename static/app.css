@@ -1194,3 +1194,40 @@ button[id^="btnSavePhoto"]{
     border-radius: 16px;
   }
 }
+/* Top actions layout */
+.actions{
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
+
+.navWrap{
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
+
+.yearWrap{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+}
+
+/* MOBILE: stack actions, year below buttons */
+@media (max-width: 480px){
+  .top{
+    align-items:flex-start;
+  }
+
+  .actions{
+    flex-direction:column;
+    align-items:flex-end;
+    gap:8px;
+  }
+
+  .navWrap{ order:1; }
+  .yearWrap{ order:2; }
+
+  /* opcional: deixa o select menos “gordo” no mobile */
+  .yearSel{ padding: 8px 12px; }
+}
