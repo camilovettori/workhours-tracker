@@ -1,14 +1,15 @@
 /* =========================
-   Work Hours Tracker - app.js (v16)
-   FIX: Avatar/Profile not loading on login
-   - Single ME fetch + single UI applier
-   - Applies avatar to ALL known image ids
-   - Uses cache-bust (?v=) + localStorage warm cache
-   - Refreshes ME on load + pageshow (back/forward) + after login
-   - Keeps your existing features (clock, roster, holidays, etc.)
+   Work Hours Tracker - app.js (v17)
+   FIX PACK:
+   - refreshCurrentWeekTotals global (works with type="module")
+   - fmtEUR added
+   - Remove CURRENT_WEEK_ID bug (use DASH_WEEK_ID)
+   - One secondsToHHMMSS() only
+   - Today earnings shows HH:MM:SS
+   - Current week totals use /api/report/week/current
 ========================= */
 
-console.log("app.js loaded ✅ v16");
+console.log("app.js loaded ✅ v17");
 
 /* =========================
    Small DOM helpers
@@ -16,16 +17,42 @@ console.log("app.js loaded ✅ v16");
 const $ = (id) => document.getElementById(id);
 const show = (el) => el && el.classList.remove("hidden");
 const hide = (el) => el && el.classList.add("hidden");
-
 function go(path) { window.location.href = path; }
 function pathIs(p) { return window.location.pathname === p; }
 
+/* =========================
+   Format helpers
+========================= */
+function fmtEUR(n) {
+  const v = Number(n || 0);
+  return new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(v);
+}
+
+function secondsToHHMMSS(totalSec) {
+  const s = Math.max(0, Math.floor(Number(totalSec || 0)));
+  const hh = String(Math.floor(s / 3600)).padStart(2, "0");
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+}
+
+function pad2(n) { return String(n).padStart(2, "0"); }
+function fmtMMSS(totalSec) {
+  const sec = Math.max(0, Math.floor(Number(totalSec || 0)));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${pad2(m)}:${pad2(s)}`;
+}
+
+/* =========================
+   API helper
+========================= */
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     cache: "no-store",
     headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
     ...opts,
-    credentials: "include", // <- deixa por último
+    credentials: "include",
   });
 
   const ct = res.headers.get("content-type") || "";
@@ -83,18 +110,6 @@ function mondayOfThisWeek(d = new Date()) {
 }
 function weekStartMondayISO(d = new Date()) { return mondayOfThisWeek(d); }
 
-function hhmmToMinutes(hhmm) {
-  if (!hhmm || typeof hhmm !== "string" || !hhmm.includes(":")) return 0;
-  const [h, m] = hhmm.split(":").map((x) => parseInt(x, 10));
-  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
-}
-function minutesToHHMM(mins) {
-  const m = Math.max(0, Math.floor(Number(mins || 0)));
-  const hh = String(Math.floor(m / 60)).padStart(2, "0");
-  const mm = String(m % 60).padStart(2, "0");
-  return `${hh}:${mm}`;
-}
-
 /* ===== roster date helpers ===== */
 function ymdAddDays(ymd, add) {
   if (!ymd) return "";
@@ -137,11 +152,9 @@ function applyMeToUI(me) {
   const rawUrl = (localStorage.getItem(LS_AVATAR) || me.avatar_url || "").trim();
   const finalUrl = rawUrl ? cacheBust(rawUrl) : "";
 
-  // Update ALL possible avatar ids you used across pages
   const avatarIds = [
-    "topAvatarImg",     // top header avatar (your setTopAvatar)
-    "btnProfileAvatar", // button wrapper (no src)
-    "dashAvatar",       // your home dashboard img (you used in loadMeAndRender)
+    "topAvatarImg",
+    "dashAvatar",
     "dashAvatarImg",
     "dashboardAvatar",
     "avatarImg",
@@ -153,13 +166,11 @@ function applyMeToUI(me) {
     const el = document.getElementById(id);
     if (!el) return;
 
-    // If it's an <img>, set src
     if (el.tagName && el.tagName.toLowerCase() === "img") {
       if (finalUrl) {
         el.src = finalUrl;
         el.style.display = "";
       } else {
-        // fallback image (adjust if you want)
         el.src = "/static/logo.png";
       }
     }
@@ -184,7 +195,6 @@ function readCachedMe() {
 }
 
 async function refreshMe(force = false) {
-  // Warm UI from cache instantly (fixes “only appears after clicking profile”)
   if (!force) {
     const cached = readCachedMe();
     if (cached && cached.ok) applyMeToUI(cached);
@@ -237,11 +247,7 @@ async function ensureWeekExistsForClock() {
     hourly_rate: getSavedRate(),
   };
 
-  await api("/api/weeks", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-
+  await api("/api/weeks", { method: "POST", body: JSON.stringify(payload) });
   return await api("/api/clock/today");
 }
 
@@ -303,14 +309,8 @@ const viewLogin   = $("viewLogin");
 const viewHome    = $("viewHome");
 const viewAddWeek = $("viewAddWeek");
 
-function hasIndexViews() {
-  return !!(viewLogin || viewHome || viewAddWeek);
-}
-function hideAllViews() {
-  hide(viewLogin);
-  hide(viewHome);
-  hide(viewAddWeek);
-}
+function hasIndexViews() { return !!(viewLogin || viewHome || viewAddWeek); }
+function hideAllViews() { hide(viewLogin); hide(viewHome); hide(viewAddWeek); }
 
 /* =========================
    Login UI
@@ -337,35 +337,9 @@ const forgotMsg     = $("forgotMsg");
 const btnShowSignup = $("btnShowSignup");
 const btnShowLogin  = $("btnShowLogin");
 
-function clearAuthMsgs() {
-  if (loginMsg) loginMsg.textContent = "";
-  if (signupMsg) signupMsg.textContent = "";
-  if (forgotMsg) forgotMsg.textContent = "";
-  if (forgotMsg) forgotMsg.style.color = "";
-}
-function showLogin() {
-  show(loginForm);
-  hide(signupForm);
-  hide(forgotPanel);
-  clearAuthMsgs();
-}
-function showSignup() {
-  hide(loginForm);
-  show(signupForm);
-  hide(forgotPanel);
-  clearAuthMsgs();
-}
-function toggleForgot() {
-  if (!forgotPanel) return;
-  forgotPanel.classList.toggle("hidden");
-  clearAuthMsgs();
-  if (forgotEmail) forgotEmail.value = (loginEmail?.value || "").trim();
-}
-
 /* =========================
    Home UI
 ========================= */
-const welcomeName = $("welcomeName");
 const btnLogout = $("btnLogout");
 const btnOpenProfile = $("btnOpenProfile");
 const btnAddWeek = $("btnAddWeek");
@@ -410,13 +384,12 @@ const addWeekMsg = $("addWeekMsg");
 ========================= */
 let UI_DAY = todayYMD();
 
-let TODAY_WEEK_ID = null;   // week_id vindo do /api/clock/today (pra ações do clock)
-let DASH_WEEK_ID  = null;   // id da this_week vindo do /api/dashboard (pra totals do card)
+let TODAY_WEEK_ID = null;
+let DASH_WEEK_ID  = null;
 
 let CLOCK = null;
 let LAST_DASH = null;
 let ME = null;
-
 
 /* =========================
    Break countdown (UI)
@@ -429,13 +402,6 @@ const BREAK_DEFAULT_SEC = 60 * 60;
 const LS_BREAK_END = "wh_break_end_epoch";
 const LS_BREAK_DAY = "wh_break_day";
 
-function pad2(n) { return String(n).padStart(2, "0"); }
-function fmtMMSS(totalSec) {
-  const sec = Math.max(0, Math.floor(totalSec));
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${pad2(m)}:${pad2(s)}`;
-}
 function setBreakButtonRunning(running) {
   if (!btnBreak) return;
   btnBreak.innerHTML = running
@@ -522,23 +488,47 @@ function watchDayChange() {
 }
 
 /* =========================
-   Auth entry / routing (index only)
+   Auth / routing (index only)
 ========================= */
+function clearAuthMsgs() {
+  if (loginMsg) loginMsg.textContent = "";
+  if (signupMsg) signupMsg.textContent = "";
+  if (forgotMsg) forgotMsg.textContent = "";
+  if (forgotMsg) forgotMsg.style.color = "";
+}
+function showLogin() {
+  show(loginForm);
+  hide(signupForm);
+  hide(forgotPanel);
+  clearAuthMsgs();
+}
+function showSignup() {
+  hide(loginForm);
+  show(signupForm);
+  hide(forgotPanel);
+  clearAuthMsgs();
+}
+function toggleForgot() {
+  if (!forgotPanel) return;
+  forgotPanel.classList.toggle("hidden");
+  clearAuthMsgs();
+  if (forgotEmail) forgotEmail.value = (loginEmail?.value || "").trim();
+}
+
 async function enterLogin() {
   if (!hasIndexViews()) return;
   hideAllViews();
   show(viewLogin);
   showLogin();
 }
+
 async function enterHome() {
   if (!hasIndexViews()) return;
 
   hideAllViews();
   show(viewHome);
 
-  // FIX: always refresh ME + apply avatar when entering home
   ME = await refreshMe(true);
-
   await refreshAll();
   resumeBreakCountdownIfAny();
 }
@@ -560,14 +550,13 @@ async function doLogin(ev) {
       }),
     });
 
-    // FIX: refresh ME immediately after login so avatar appears without going profile
     ME = await refreshMe(true);
-
     await routeAfterAuth();
   } catch (e) {
     if (loginMsg) loginMsg.textContent = e.message || "Login failed";
   }
 }
+
 async function doSignup(ev) {
   ev.preventDefault();
   clearAuthMsgs();
@@ -589,17 +578,18 @@ async function doSignup(ev) {
     if (signupMsg) signupMsg.textContent = e.message || "Sign up failed";
   }
 }
+
 async function doLogout() {
   try { await api("/api/logout", { method: "POST" }); } catch {}
 
-  // clear local cache
   try { localStorage.removeItem(LS_ME); } catch {}
   try { localStorage.removeItem(LS_AVATAR); } catch {}
 
   ME = null;
   LAST_DASH = null;
   CLOCK = null;
-  CURRENT_WEEK_ID = null;
+  TODAY_WEEK_ID = null;
+  DASH_WEEK_ID = null;
 
   stopLiveTicker();
   stopBreakCountdown(false);
@@ -618,15 +608,10 @@ async function sendReset() {
   }
 
   try {
-    const r = await api("/api/forgot", {
-      method: "POST",
-      body: JSON.stringify({ email }),
-    });
-
+    await api("/api/forgot", { method: "POST", body: JSON.stringify({ email }) });
     if (forgotMsg) {
       forgotMsg.style.color = "#0f172a";
-      if (r && r.dev_reset_link) forgotMsg.textContent = `Reset link (dev): ${r.dev_reset_link}`;
-      else forgotMsg.textContent = "If the email exists, you’ll receive a reset link.";
+      forgotMsg.textContent = "If the email exists, you’ll receive a reset link.";
     }
   } catch (e) {
     if (forgotMsg) forgotMsg.textContent = e.message || "Failed";
@@ -634,7 +619,7 @@ async function sendReset() {
 }
 
 /* =========================
-   Dashboard / Clock + live ticker
+   Live ticker + Today earnings (HH:MM:SS)
 ========================= */
 let LIVE_TIMER = null;
 let LIVE_LAST_TS = 0;
@@ -643,17 +628,18 @@ function stopLiveTicker() {
   if (LIVE_TIMER) clearInterval(LIVE_TIMER);
   LIVE_TIMER = null;
 }
+
 function startLiveTicker() {
   stopLiveTicker();
   LIVE_TIMER = setInterval(() => {
     if (!CLOCK?.has_week) return;
 
     const now = Date.now();
-    if (now - LIVE_LAST_TS < 900) return;
+    if (now - LIVE_LAST_TS < 950) return; // ~1x/seg
     LIVE_LAST_TS = now;
 
     updateTodayEarningsUI();
-  }, 250);
+  }, 200);
 }
 
 function updateTodayEarningsUI() {
@@ -663,7 +649,7 @@ function updateTodayEarningsUI() {
   if (!tHHMM || !tPAY) return;
 
   if (!CLOCK?.has_week || !CLOCK?.in_time) {
-    tHHMM.textContent = "--:--";
+    tHHMM.textContent = "--:--:--";
     tPAY.textContent  = "€-.--";
     if (tSTATE) tSTATE.textContent = "OFF";
     stopLiveTicker();
@@ -676,7 +662,7 @@ function updateTodayEarningsUI() {
     Number(getSavedRate() ?? 0);
 
   if (!Number.isFinite(rate) || rate <= 0) {
-    tHHMM.textContent = "--:--";
+    tHHMM.textContent = "--:--:--";
     tPAY.textContent  = "€-.--";
     if (tSTATE) tSTATE.textContent = "RATE?";
     stopLiveTicker();
@@ -705,22 +691,24 @@ function updateTodayEarningsUI() {
     endDt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), oh || 0, om || 0, 0);
   }
 
-  let workedMin = Math.max(0, Math.floor((endDt - inDt) / 60000));
-  const br = Number(CLOCK.break_minutes || 0);
-  workedMin = Math.max(0, workedMin - br);
+  let workedSec = Math.max(0, Math.floor((endDt - inDt) / 1000));
+  const brMin = Number(CLOCK.break_minutes || 0);
+  workedSec = Math.max(0, workedSec - brMin * 60);
 
-  const eur = (workedMin / 60) * rate * Number(window.TODAY_MULT || 1);
+  const eur = (workedSec / 3600) * rate * Number(window.TODAY_MULT || 1);
 
-  tHHMM.textContent = minutesToHHMM(workedMin);
+  tHHMM.textContent = secondsToHHMMSS(workedSec);
   tPAY.textContent  = fmtEUR(eur);
 }
 
+/* =========================
+   Clock refresh
+========================= */
 async function refreshClock() {
   try {
     const c = await api("/api/clock/today");
     CLOCK = c;
 
-    // week id do clock (pode ser null quando OFF dependendo da tua API)
     TODAY_WEEK_ID = c?.has_week ? (c.week_id ?? null) : null;
 
     if (!c.has_week) {
@@ -752,14 +740,43 @@ async function refreshClock() {
   }
 }
 
+/* =========================
+   Current week totals (SAFE)
+   Uses /api/report/week/current (source of truth)
+========================= */
+async function refreshCurrentWeekTotalsSafe() {
+  try {
+    const rep = await api("/api/report/week/current");
+    if (!rep?.has_week) {
+      if (cwHHMM) cwHHMM.textContent = "00:00";
+      if (cwPay)  cwPay.textContent  = fmtEUR(0);
+      return;
+    }
+    if (cwHHMM) cwHHMM.textContent = rep?.totals?.hhmm ?? "00:00";
+    if (cwPay)  cwPay.textContent  = fmtEUR(rep?.totals?.pay_eur ?? 0);
+  } catch {
+    // fallback
+    if (cwHHMM) cwHHMM.textContent = cwHHMM.textContent || "00:00";
+    if (cwPay)  cwPay.textContent  = cwPay.textContent  || fmtEUR(0);
+  }
+}
 
+/* 🔥 IMPORTANT: expose globally (works even if script is module) */
+window.refreshCurrentWeekTotalsSafe = refreshCurrentWeekTotalsSafe;
+window.refreshCurrentWeekTotals = refreshCurrentWeekTotalsSafe;
+
+/* =========================
+   Refresh all (dashboard + clock)
+========================= */
 async function refreshAll() {
   try {
     const dash = await api("/api/dashboard");
-    let TODAY_WEEK_ID = null;
-
     LAST_DASH = dash;
-    CURRENT_WEEK_ID = LAST_DASH?.this_week?.id || LAST_DASH?.this_week?.week_id || null;
+
+    DASH_WEEK_ID =
+      LAST_DASH?.this_week?.id ||
+      LAST_DASH?.this_week?.week_id ||
+      null;
 
   } catch (e) {
     if (e?.status === 401) { await enterLogin(); return; }
@@ -767,7 +784,10 @@ async function refreshAll() {
 
   await refreshTodayMultiplier();
 
-  if (cwWeekNo) cwWeekNo.textContent = LAST_DASH?.this_week?.week_number ? String(LAST_DASH.this_week.week_number) : "--";
+  if (cwWeekNo) {
+    cwWeekNo.textContent =
+      LAST_DASH?.this_week?.week_number ? String(LAST_DASH.this_week.week_number) : "--";
+  }
 
   const paid = Number(LAST_DASH?.bank_holidays?.paid ?? 0);
   const remaining = Number(LAST_DASH?.bank_holidays?.remaining ?? 0);
@@ -775,7 +795,7 @@ async function refreshAll() {
   if (bhRemain) bhRemain.textContent = String(remaining);
 
   await refreshClock();
-  await refreshCurrentWeekTotals();
+  await refreshCurrentWeekTotalsSafe();
 
   updateTodayEarningsUI();
 
@@ -872,7 +892,6 @@ function showYesNoModal({ title, message, icon = "⏱", yesText = "Yes", noText 
 
 async function handleOvertimePrompt(resObj) {
   const reason = resObj.reason || "";
-  const kind = resObj.kind || "";
   const work_date = resObj.work_date || todayYMD();
 
   const text =
@@ -1071,7 +1090,7 @@ async function rosterRenderPreview() {
   list.innerHTML = "";
 
   const mins = rosterExpectedMinutesFromCodes(ROSTER.picked);
-  const hhmm = minutesToHHMM(mins);
+  const hhmm = `${String(Math.floor(mins/60)).padStart(2,"0")}:${String(mins%60).padStart(2,"0")}`;
 
   const pay = await rosterCalcExpectedPay(ROSTER.picked, ROSTER.startDate, ROSTER.hourlyRate);
   totals.textContent = `Expected: ${hhmm} • ${fmtEUR(pay)}`;
@@ -1180,7 +1199,7 @@ async function rosterShowDetail(roster) {
   );
 
   const mins = rosterExpectedMinutesFromCodes(codes);
-  const hhmm = minutesToHHMM(mins);
+  const hhmm = `${String(Math.floor(mins/60)).padStart(2,"0")}:${String(mins%60).padStart(2,"0")}`;
 
   const pay = await rosterCalcExpectedPay(codes, roster.start_date, ROSTER.hourlyRate);
   if (totals) totals.textContent = `Expected: ${hhmm} • ${fmtEUR(pay)}`;
@@ -1281,7 +1300,6 @@ async function rosterSaveWeek() {
 }
 
 async function enterRoster() {
-  // make sure ME/avatar is applied here too
   try { ME = await refreshMe(false); } catch {}
 
   ROSTER.hourlyRate =
@@ -1351,7 +1369,6 @@ async function enterRoster() {
    Route after auth (multi-page safe)
 ========================= */
 async function routeAfterAuth() {
-  // ensure ME/avatar is applied on every route
   if (!ME) {
     try { ME = await refreshMe(false); } catch {}
   } else {
@@ -1441,11 +1458,9 @@ let dayWatcherStarted = false;
     setInterval(watchDayChange, 5000);
   }
 
-  // Warm from cache immediately (fixes “only after clicking profile”)
   const cached = readCachedMe();
   if (cached?.ok) applyMeToUI(cached);
 
-  // Also refresh ME on back/forward cache navigation
   window.addEventListener("pageshow", () => {
     refreshMe(false).catch(() => {});
   });
