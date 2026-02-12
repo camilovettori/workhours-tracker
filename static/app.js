@@ -112,9 +112,35 @@ async function api(path, opts = {}) {
   return data;
 }
 
+function ymdLocal(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function fmtHHMM(t) {
+  // aceita "09:45", "09:45:00"
+  if (!t) return "";
+  return String(t).slice(0, 5);
+}
+
 /* =========================
    Date helpers
 ========================= */
+
+function ymdLocal(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function fmtHHMM(t) {
+  if (!t) return "";
+  return String(t).slice(0, 5); // "09:45:00" -> "09:45"
+}
+
 function todayYMD() {
   const t = new Date();
   const y = t.getFullYear();
@@ -821,13 +847,35 @@ async function refreshClock() {
       if (!c.in_time) cwStatusText.textContent = "Tap IN to start.";
       else if (c.break_running) cwStatusText.textContent = "Break running…";
       else if (!c.out_time) cwStatusText.textContent = "Tracking live…";
-      else cwStatusText.textContent = "Done for today ✅";
+      else {
+        // ✅ terminou hoje -> mostrar info de amanhã puxando do roster
+        cwStatusText.textContent = "Done for today ✅"; // fallback rápido
+
+        try {
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          const date_ymd = ymdLocal(tomorrow);
+
+          const r = await api(`/api/roster/day?date_ymd=${encodeURIComponent(date_ymd)}`);
+
+          if (!r || r.day_off === true || !r.shift_in || !r.shift_out) {
+            cwStatusText.textContent = "You are off tomorrow — enjoy your day! 😎";
+          } else {
+            const s = fmtHHMM(r.shift_in);
+            const e = fmtHHMM(r.shift_out);
+            cwStatusText.textContent = `You work tomorrow ${s}–${e} 💪`;
+          }
+        } catch (err) {
+          // se falhar, mantém fallback
+        }
+      }
     }
   } catch (e) {
     if (e.status === 401) await enterLogin();
     stopLiveTicker();
   }
 }
+
 
 /* =========================
    Current week totals (SAFE)
@@ -1590,3 +1638,4 @@ let dayWatcherStarted = false;
     if (hasIndexViews()) await enterLogin();
   }
 })();
+

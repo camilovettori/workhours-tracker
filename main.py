@@ -1253,6 +1253,33 @@ def roster_list(req: Request):
             for r in rows
         ]
 
+from fastapi import Query
+
+@app.get("/api/roster/day")
+def roster_day_lookup(req: Request, date_ymd: str = Query(..., description="YYYY-MM-DD")):
+    uid = require_user(req)
+
+    # valida formato
+    try:
+        parse_ymd(date_ymd)
+    except Exception:
+        raise HTTPException(400, "Invalid date (use YYYY-MM-DD)")
+
+    with db() as conn:
+        ro = roster_for_date(conn, uid, date_ymd)
+
+        if not ro:
+            # sem roster cadastrado pra amanhã -> trata como OFF
+            return {"has_roster": False, "day_off": True, "shift_in": None, "shift_out": None}
+
+        day_off = bool(int(ro["day_off"] or 0))
+        return {
+            "has_roster": True,
+            "day_off": day_off,
+            "shift_in": ro["shift_in"],
+            "shift_out": ro["shift_out"],
+        }
+
 
 @app.get("/api/roster/{roster_id}")
 def roster_get(roster_id: int, req: Request):
