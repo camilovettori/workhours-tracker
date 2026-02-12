@@ -19,6 +19,45 @@ const show = (el) => el && el.classList.remove("hidden");
 const hide = (el) => el && el.classList.add("hidden");
 function go(path) { window.location.href = path; }
 function pathIs(p) { return window.location.pathname === p; }
+// ===== ME cache =====
+
+
+function readCachedMe(){
+  try { return JSON.parse(localStorage.getItem(LS_ME) || "null"); }
+  catch { return null; }
+}
+
+async function refreshMe(force = false) {
+  if (!force) {
+    const cached = readCachedMe();
+    if (cached && cached.ok) {
+      ME = cached;
+      if (typeof applyMeToUI === "function") applyMeToUI(ME);
+    }
+  }
+
+  const me = await api("/api/me");
+  ME = me;
+
+  // cache
+  try { localStorage.setItem(LS_ME, JSON.stringify(me)); } catch {}
+
+  // aplica na UI se existir
+  if (typeof applyMeToUI === "function") applyMeToUI(ME);
+
+  // mostra/esconde botão Admin se existir na página
+  const adminBtn = document.getElementById("openAdmin");
+  if (adminBtn) {
+    const isAdmin = Number(ME?.is_admin || 0) === 1;
+    adminBtn.classList.toggle("hidden", !isAdmin);
+    adminBtn.onclick = () => (window.location.href = "/admin");
+  }
+
+  return ME;
+}
+
+// garante global (se algum HTML chama refreshMe direto)
+window.refreshMe = refreshMe;
 
 
 
