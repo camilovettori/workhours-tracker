@@ -21,17 +21,6 @@ function go(path) { window.location.href = path; }
 function pathIs(p) { return window.location.pathname === p; }
 
 
-async function initAdminPage(){
-  const btnBack = document.getElementById("btnAdminBack");
-  const btnHome = document.getElementById("btnAdminHome");
-  const btnReload = document.getElementById("btnAdminReload");
-
-  if (btnBack) btnBack.onclick = () => history.back();
-  if (btnHome) btnHome.onclick = () => (window.location.href = "/");
-  if (btnReload) btnReload.onclick = () => loadAdminUsers();
-
-  await loadAdminUsers();
-}
 
 async function initAdminPage() {
   const btnBack = document.getElementById("btnAdminBack");
