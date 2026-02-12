@@ -409,10 +409,14 @@ const addWeekMsg = $("addWeekMsg");
    State
 ========================= */
 let UI_DAY = todayYMD();
-let CURRENT_WEEK_ID = null;
+
+let TODAY_WEEK_ID = null;   // week_id vindo do /api/clock/today (pra ações do clock)
+let DASH_WEEK_ID  = null;   // id da this_week vindo do /api/dashboard (pra totals do card)
+
 let CLOCK = null;
 let LAST_DASH = null;
 let ME = null;
+
 
 /* =========================
    Break countdown (UI)
@@ -716,9 +720,10 @@ async function refreshClock() {
     const c = await api("/api/clock/today");
     CLOCK = c;
 
-    if (!c.has_week) {
-      CURRENT_WEEK_ID = null;
+    // week id do clock (pode ser null quando OFF dependendo da tua API)
+    TODAY_WEEK_ID = c?.has_week ? (c.week_id ?? null) : null;
 
+    if (!c.has_week) {
       if (cwIn) cwIn.textContent = "--:--";
       if (cwOut) cwOut.textContent = "--:--";
       if (cwBreak) cwBreak.textContent = "0m";
@@ -728,9 +733,6 @@ async function refreshClock() {
       stopLiveTicker();
       return;
     }
-
-    TODAY_WEEK_ID = c.week_id;
-
 
     if (cwIn) cwIn.textContent = c.in_time || "--:--";
     if (cwOut) cwOut.textContent = c.out_time || "--:--";
@@ -750,60 +752,6 @@ async function refreshClock() {
   }
 }
 
-async function refreshCurrentWeekTotals() {
-  if (!CURRENT_WEEK_ID) {
-    if (cwHHMM) cwHHMM.textContent = "--:--";
-    if (cwPay)  cwPay.textContent  = "€-.--";
-    return;
-  }
-
-  try {
-    const week = await api(`/api/weeks/${CURRENT_WEEK_ID}`);
-
-    if (cwWeekNo) cwWeekNo.textContent = week?.week_number ? String(week.week_number) : "--";
-
-    const rate = Number(week?.hourly_rate || 0);
-    const entries = Array.isArray(week?.entries) ? week.entries : [];
-
-    let totalMin = 0;
-    let totalPay = 0;
-
-    for (const e of entries) {
-      const mins = hhmmToMinutes(e.worked_hhmm);
-      totalMin += mins;
-
-      let mult = Number(e.multiplier || 1);
-
-      let isSun = false;
-      if (e.work_date) {
-        const dt = ymdToDateObj(e.work_date);
-        isSun = dt.getDay() === 0;
-      } else {
-        isSun = String(e.weekday || "").toLowerCase().startsWith("sun");
-      }
-
-      let isBH = false;
-      if (e.work_date) {
-        try {
-          const bh = await bhLookup(e.work_date);
-          isBH = isBhTrue(bh);
-        } catch {}
-      }
-
-      const premium = (isSun || isBH) ? 1.5 : 1;
-      mult = Math.max(mult, premium);
-
-      totalPay += (mins / 60) * rate * mult;
-    }
-
-    if (cwHHMM) cwHHMM.textContent = minutesToHHMM(totalMin);
-    if (cwPay)  cwPay.textContent  = fmtEUR(totalPay);
-  } catch (e) {
-    if (cwHHMM) cwHHMM.textContent = "--:--";
-    if (cwPay)  cwPay.textContent  = "€-.--";
-    if (e?.status === 401) await enterLogin();
-  }
-}
 
 async function refreshAll() {
   try {
