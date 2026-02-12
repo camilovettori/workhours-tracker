@@ -729,7 +729,8 @@ async function refreshClock() {
       return;
     }
 
-    CURRENT_WEEK_ID = c.week_id;
+    TODAY_WEEK_ID = c.week_id;
+
 
     if (cwIn) cwIn.textContent = c.in_time || "--:--";
     if (cwOut) cwOut.textContent = c.out_time || "--:--";
@@ -807,7 +808,11 @@ async function refreshCurrentWeekTotals() {
 async function refreshAll() {
   try {
     const dash = await api("/api/dashboard");
+    let TODAY_WEEK_ID = null;
+
     LAST_DASH = dash;
+    CURRENT_WEEK_ID = LAST_DASH?.this_week?.id || LAST_DASH?.this_week?.week_id || null;
+
   } catch (e) {
     if (e?.status === 401) { await enterLogin(); return; }
   }
