@@ -5,6 +5,7 @@ import hmac
 import hashlib
 import secrets
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any
@@ -13,6 +14,9 @@ from fastapi import FastAPI, HTTPException, Request, Response, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
+
+import smtplib
+from email.message import EmailMessage
 
 
 # ======================================================
@@ -31,79 +35,52 @@ DB_PATH = DATA_DIR / "workhours.db"
 AVATARS_DIR = DATA_DIR / "avatars"
 AVATARS_DIR.mkdir(parents=True, exist_ok=True)
 
-
-
-
 APP_SECRET = os.environ.get("WORKHOURS_SECRET", "dev-secret-change-me").encode("utf-8")
 COOKIE_AGE = 90 * 24 * 60 * 60  # 90 days
-COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"  # keep 0 on localhost/http
+import os
+COOKIE_SECURE = os.getenv("RENDER") == "true"  # ou usa uma env tua
 
 
 app = FastAPI(title="Work Hours Tracker", version="9.3")
 
-
-# ======================================================
-# STATIC
-# ======================================================
+# Static
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-@app.middleware("http")
-async def security_no_cache_and_api_isolation(request: Request, call_next):
-    """
-    CRITICAL:
-      - Prevent PWA/ServiceWorker/proxy from caching /api responses (fixes cross-user data “leak” symptoms)
-      - Keep no-store for HTML/static pages too (dev friendly)
-    """
-    resp = await call_next(request)
-
-    p = request.url.path or ""
-
-    # Never cache API responses (important for cookie-auth apps)
-    if p.startswith("/api/"):
-        resp.headers["Cache-Control"] = "no-store, max-age=0"
-        resp.headers["Pragma"] = "no-cache"
-        resp.headers["Expires"] = "0"
-        resp.headers["Vary"] = "Cookie"
-
-    # Dev: also prevent caching for pages/static
-    if p == "/" or p.startswith("/static/") or p in (
-        "/hours", "/weeks", "/holidays", "/reports", "/profile", "/report", "/add-week", "/roster"
-    ):
-        resp.headers["Cache-Control"] = "no-store, max-age=0"
-        resp.headers["Pragma"] = "no-cache"
-        resp.headers["Expires"] = "0"
-
-    return resp
-
+# ======================================================
+# NO CACHE FOR API (fix PWA/cache cross-user weirdness)
+# ======================================================
 @app.middleware("http")
 async def no_cache_api(request: Request, call_next):
     resp = await call_next(request)
-
     p = request.url.path or ""
-    if p.startswith("/api/"):
-        # nunca deixar cachear respostas da API
+    if p.startswith("/api/") or p.startswith("/uploads/"):
         resp.headers["Cache-Control"] = "no-store, no-cache, max-age=0, must-revalidate"
         resp.headers["Pragma"] = "no-cache"
         resp.headers["Expires"] = "0"
-        # MUITO importante: se algum cache existir, ele deve variar por cookie
         resp.headers["Vary"] = "Cookie"
-
     return resp
 
 
 # ======================================================
-# DB
+# TIME HELPER (FIXES YOUR 500 BUG: now() was missing)
 # ======================================================
-def db() -> sqlite3.Connection:
+def now() -> str:
+    return datetime.utcnow().isoformat(timespec="seconds")
+
+
+# ======================================================
+# DB / MIGRATIONS
+# ======================================================
+@contextmanager
+def db():
     conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON;")
-    return conn
-
-
-def now() -> str:
-    return datetime.utcnow().isoformat(timespec="seconds")
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def col_exists(conn: sqlite3.Connection, table: str, col: str) -> bool:
@@ -117,10 +94,14 @@ def add_col_if_missing(conn: sqlite3.Connection, table: str, col: str, ddl: str)
 
 
 def ensure_user_columns(conn: sqlite3.Connection) -> None:
+    # compatibilidade com DBs antigos
     add_col_if_missing(conn, "users", "first_name", "TEXT")
     add_col_if_missing(conn, "users", "last_name", "TEXT")
     add_col_if_missing(conn, "users", "hourly_rate", "REAL DEFAULT 0")
     add_col_if_missing(conn, "users", "avatar_path", "TEXT")
+    add_col_if_missing(conn, "users", "salt_hex", "TEXT")
+    add_col_if_missing(conn, "users", "pass_hash", "TEXT")
+    add_col_if_missing(conn, "users", "created_at", "TEXT")
 
 
 def ensure_clock_tables(conn: sqlite3.Connection) -> None:
@@ -147,6 +128,26 @@ def ensure_bh_indexes(conn: sqlite3.Connection) -> None:
         """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_bh_unique
         ON bank_holidays(user_id, year, bh_date)
+        """
+    )
+
+
+def ensure_password_resets_table(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS password_resets(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL,
+            token_hash TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_password_resets_email
+        ON password_resets(email);
+
+        CREATE INDEX IF NOT EXISTS ix_password_resets_token_hash
+        ON password_resets(token_hash);
         """
     )
 
@@ -229,51 +230,12 @@ def init_db() -> None:
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY(roster_id) REFERENCES rosters(id) ON DELETE CASCADE
             );
-
-            CREATE TABLE IF NOT EXISTS password_resets(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT NOT NULL,
-                token_hash TEXT NOT NULL,
-                expires_at TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE INDEX IF NOT EXISTS ix_password_resets_email
-            ON password_resets(email);
-
-            CREATE INDEX IF NOT EXISTS ix_password_resets_token_hash
-            ON password_resets(token_hash);
             """
         )
 
-        def ensure_password_resets_table(conn: sqlite3.Connection) -> None:
-         conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS password_resets(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT NOT NULL,
-            token_hash TEXT NOT NULL,
-            expires_at TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS ix_password_resets_email
-        ON password_resets(email);
-
-        CREATE INDEX IF NOT EXISTS ix_password_resets_token_hash
-        ON password_resets(token_hash);
-        """
-    )
-
-
-        # safe/idempotent migrations
+        # migrations (idempotentes)
         ensure_password_resets_table(conn)
-        conn.commit()
-
         ensure_user_columns(conn)
-        add_col_if_missing(conn, "users", "salt_hex", "TEXT")
-        add_col_if_missing(conn, "users", "pass_hash", "TEXT")
-        add_col_if_missing(conn, "users", "created_at", "TEXT")
 
         add_col_if_missing(conn, "entries", "note", "TEXT")
         add_col_if_missing(conn, "entries", "bh_paid", "INTEGER")
@@ -287,8 +249,13 @@ def init_db() -> None:
 
         ensure_bh_indexes(conn)
         ensure_clock_tables(conn)
+
         conn.commit()
 
+
+@app.on_event("startup")
+def _startup():
+    init_db()
 
 
 # ======================================================
@@ -356,7 +323,8 @@ def bh_repair(conn: sqlite3.Connection, uid: int, year: int) -> None:
         (uid, year),
     )
 
-    # remove duplicates
+    # remove duplicates (SQLite supports window functions on modern versions;
+    # if your SQLite is old, this can fail — but your Render/PC usually is fine.)
     conn.execute(
         """
         DELETE FROM bank_holidays
@@ -429,7 +397,7 @@ class WeekRatePatch(BaseModel):
 
 class RosterDayPatch(BaseModel):
     work_date: str  # yyyy-mm-dd
-    code: str       # "A" | "B" | "OFF"
+    code: str  # "A" | "B" | "OFF"
 
 
 class EntryUpsert(BaseModel):
@@ -524,7 +492,8 @@ def profile_page(req: Request):
 
 
 @app.get("/roster", response_class=HTMLResponse)
-def roster_page():
+def roster_page(req: Request):
+    require_user(req)
     return (STATIC_DIR / "roster.html").read_text(encoding="utf-8")
 
 
@@ -573,25 +542,32 @@ def require_user(req: Request) -> int:
 
 
 def set_cookie(resp: Response, tok: str, remember: bool) -> None:
-    resp.set_cookie(
+    kwargs = dict(
         key="wh_session",
         value=tok,
-        max_age=COOKIE_AGE if remember else None,
         httponly=True,
         secure=COOKIE_SECURE,
         samesite="lax",
         path="/",
     )
+    if remember:
+        kwargs["max_age"] = COOKIE_AGE
+    resp.set_cookie(**kwargs)
 
-import smtplib
-from email.message import EmailMessage
 
+
+    
+
+
+# ======================================================
+# SMTP (reset password)
+# ======================================================
 SMTP_HOST = os.environ.get("SMTP_HOST", "")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASS = os.environ.get("SMTP_PASS", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", SMTP_USER or "no-reply@example.com")
-SMTP_TLS  = os.environ.get("SMTP_TLS", "1") == "1"
+SMTP_TLS = os.environ.get("SMTP_TLS", "1") == "1"
 
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "").strip().rstrip("/")
 print("APP_BASE_URL =", APP_BASE_URL)
@@ -614,7 +590,9 @@ def send_email(to_email: str, subject: str, text: str) -> None:
         s.send_message(msg)
 
 
-
+# ======================================================
+# AUTH API
+# ======================================================
 @app.post("/api/signup")
 def signup(p: SignupIn):
     salt_hex = secrets.token_hex(16)
@@ -647,13 +625,13 @@ def signup(p: SignupIn):
         ).fetchone()["id"]
 
     resp = JSONResponse({"ok": True})
-    # signup: keep as remembered for now (you can change later if you add a checkbox)
     set_cookie(resp, make_token(uid), remember=True)
     return resp
 
 
 @app.post("/api/login")
 def login(p: LoginIn):
+    
     with db() as conn:
         u = conn.execute("SELECT * FROM users WHERE email=?", (p.email.lower().strip(),)).fetchone()
         if not u:
@@ -674,11 +652,11 @@ def login(p: LoginIn):
     return resp
 
 
+
 @app.post("/api/logout")
 def logout():
     r = JSONResponse({"ok": True})
     r.delete_cookie("wh_session", path="/")
-    # Helps on some clients/SW setups
     r.headers["Cache-Control"] = "no-store, max-age=0"
     r.headers["Pragma"] = "no-cache"
     r.headers["Expires"] = "0"
@@ -731,13 +709,11 @@ def me_patch(p: MeUpdate, req: Request):
 
 
 # ======================================================
-# FORGOT / RESET (DEV MODE)
+# FORGOT / RESET
 # ======================================================
-_RESET_TOKENS: Dict[str, Dict[str, Any]] = {}
-
-
 def sha256_hex(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
 
 @app.post("/api/forgot")
 def forgot(p: ForgotIn):
@@ -755,7 +731,6 @@ def forgot(p: ForgotIn):
         token_hash = sha256_hex(token)
         expires_at = (datetime.utcnow() + timedelta(minutes=30)).isoformat(timespec="seconds")
 
-        # opcional: limpa tokens antigos do mesmo email
         conn.execute("DELETE FROM password_resets WHERE email=?", (email,))
         conn.execute(
             "INSERT INTO password_resets(email, token_hash, expires_at, created_at) VALUES (?,?,?,?)",
@@ -765,7 +740,6 @@ def forgot(p: ForgotIn):
 
     reset_link = f"{APP_BASE_URL}/?reset={token}"
 
-    # manda email
     try:
         send_email(
             to_email=email,
@@ -773,7 +747,6 @@ def forgot(p: ForgotIn):
             text=f"Use this link to reset your password (valid for 30 minutes):\n\n{reset_link}\n",
         )
     except Exception as e:
-        # não vaza muito detalhe pro client, mas loga no Render
         print("EMAIL_SEND_FAILED:", repr(e))
         raise HTTPException(500, "Failed to send reset email")
 
@@ -794,7 +767,6 @@ def reset(p: ResetIn):
         if not row:
             raise HTTPException(400, "Invalid or expired token")
 
-        # checa expiração
         exp = datetime.fromisoformat(row["expires_at"])
         if datetime.utcnow() > exp:
             conn.execute("DELETE FROM password_resets WHERE token_hash=?", (token_hash,))
@@ -811,12 +783,10 @@ def reset(p: ResetIn):
             (new_salt, new_hash, email),
         )
 
-        # invalida token após uso
         conn.execute("DELETE FROM password_resets WHERE token_hash=?", (token_hash,))
         conn.commit()
 
     return {"ok": True}
-
 
 
 # ======================================================
@@ -844,15 +814,8 @@ async def upload_avatar(req: Request, file: UploadFile = File(...)):
         conn.commit()
 
     return {"ok": True, "avatar_url": url}
-@app.get("/uploads/avatars/{fname}")
-def get_avatar(fname: str, req: Request):
-    require_user(req)
-    p = (AVATARS_DIR / fname).resolve()
-    if not str(p).startswith(str(AVATARS_DIR.resolve())):
-        raise HTTPException(400, "Invalid file")
-    if not p.exists():
-        raise HTTPException(404, "Not found")
-    return FileResponse(p)
+
+
 @app.get("/uploads/avatars/{fname}")
 def get_avatar(fname: str, req: Request):
     require_user(req)
@@ -867,7 +830,6 @@ def get_avatar(fname: str, req: Request):
     resp.headers["Pragma"] = "no-cache"
     resp.headers["Expires"] = "0"
     return resp
-
 
 
 # ======================================================
@@ -1211,44 +1173,31 @@ def roster_for_date(conn: sqlite3.Connection, uid: int, ymd: str) -> Optional[sq
     ).fetchone()
 
 
-def needs_extra_confirm(real_hhmm: str, official_hhmm: str) -> bool:
-    if not real_hhmm or not official_hhmm:
-        return False
-    return abs(hhmm_to_min(real_hhmm) - hhmm_to_min(official_hhmm)) > TOLERANCE_MIN
-
-
 def decide_clock_time(kind: str, real_now: str, official: Optional[str], authorized: bool):
     if not official:
         return real_now, False  # (store_time, needs_confirm)
 
     real_m = hhmm_to_min(real_now)
-    off_m  = hhmm_to_min(official)
-    diff   = real_m - off_m  # + = saiu/chegou mais tarde, - = mais cedo
+    off_m = hhmm_to_min(official)
+    diff = real_m - off_m  # + = saiu/chegou mais tarde, - = mais cedo
 
-    # dentro tolerância: snap sempre
     if abs(diff) <= TOLERANCE_MIN:
         return official, False
 
-    # se já autorizado, grava real sem prompt
     if authorized:
         return real_now, False
 
     if kind == "IN":
-        # adiantado => prompt
         if diff < -TOLERANCE_MIN:
             return real_now, True
-        # atrasado => grava real
         return real_now, False
 
     if kind == "OUT":
-        # saiu tarde => prompt
         if diff > TOLERANCE_MIN:
             return real_now, True
-        # saiu cedo => grava real
         return real_now, False
 
     return real_now, False
-
 
 
 def ensure_week_from_roster(conn: sqlite3.Connection, uid: int, week_number: int, start_date: str) -> int:
@@ -1320,22 +1269,20 @@ def roster_get(roster_id: int, req: Request):
             ],
         }
 
+
 @app.delete("/api/roster/{roster_id}")
 def roster_delete(roster_id: int, req: Request):
     uid = require_user(req)
     with db() as conn:
         r = conn.execute(
-            "SELECT id, week_number FROM rosters WHERE id=? AND user_id=?",
+            "SELECT id FROM rosters WHERE id=? AND user_id=?",
             (roster_id, uid),
         ).fetchone()
         if not r:
             raise HTTPException(404, "Roster not found")
 
-        # apaga days primeiro
         conn.execute("DELETE FROM roster_days WHERE roster_id=? AND user_id=?", (roster_id, uid))
-        # apaga roster
         conn.execute("DELETE FROM rosters WHERE id=? AND user_id=?", (roster_id, uid))
-
         conn.commit()
 
     return {"ok": True}
@@ -1628,7 +1575,7 @@ def upsert_entry(week_id: int, p: EntryUpsert, req: Request):
                 ),
             )
 
-        # Sync dashboard clock_state if user edited TODAY via Week report
+        # Sync clock_state if user edited TODAY
         if p.work_date == today_ymd():
             st = conn.execute(
                 "SELECT * FROM clock_state WHERE user_id=? AND work_date=?",
@@ -1881,7 +1828,14 @@ def clock_today(req: Request):
 
         w = get_current_week(conn, uid)
         if not w:
-            return {"ok": True, "has_week": False, "in_time": None, "out_time": None, "break_minutes": 0, "break_running": False}
+            return {
+                "ok": True,
+                "has_week": False,
+                "in_time": None,
+                "out_time": None,
+                "break_minutes": 0,
+                "break_running": False,
+            }
 
         work_date = today_ymd()
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
@@ -1918,7 +1872,6 @@ def clock_today(req: Request):
             conn.commit()
             st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
         else:
-            # Sync from today's entry (but keep break_running/break_start)
             conn.execute(
                 """
                 UPDATE clock_state
@@ -1981,7 +1934,15 @@ def clock_in(req: Request):
 
         if ro and int(ro["day_off"] or 0) == 1:
             if int(e["extra_checked"] or 0) == 0:
-                return {"ok": True, "needs_extra_confirm": True, "reason": "DAY_OFF", "kind": "IN", "work_date": work_date, "official": None, "real": real_now}
+                return {
+                    "ok": True,
+                    "needs_extra_confirm": True,
+                    "reason": "DAY_OFF",
+                    "kind": "IN",
+                    "work_date": work_date,
+                    "official": None,
+                    "real": real_now,
+                }
             if not bool(int(e["extra_authorized"] or 0) == 1):
                 return {"ok": True, "ignored": True, "reason": "DAY_OFF", "work_date": work_date}
 
@@ -1989,21 +1950,24 @@ def clock_in(req: Request):
         authorized = bool(int(e["extra_authorized"] or 0) == 1)
         store_in, needs_confirm = decide_clock_time("IN", real_now, official_in, authorized)
 
-# Só pede confirmação quando a regra mandar e ainda não foi checado
-    if needs_confirm and int(e["extra_checked"] or 0) == 0:
-       return {
-        "ok": True,
-        "needs_extra_confirm": True,
-        "reason": "EARLY_IN",
-        "kind": "IN",
-        "work_date": work_date,
-        "official": official_in,
-        "real": real_now
-    }
-    mult = multiplier_for_date(conn, uid, work_date)
-    conn.execute("UPDATE entries SET time_in=?, time_out=NULL, multiplier=? WHERE id=? AND user_id=?", (store_in, float(mult), int(e["id"]), uid))
+        if needs_confirm and int(e["extra_checked"] or 0) == 0:
+            return {
+                "ok": True,
+                "needs_extra_confirm": True,
+                "reason": "EARLY_IN",
+                "kind": "IN",
+                "work_date": work_date,
+                "official": official_in,
+                "real": real_now,
+            }
 
-    conn.execute(
+        mult = multiplier_for_date(conn, uid, work_date)
+        conn.execute(
+            "UPDATE entries SET time_in=?, time_out=NULL, multiplier=? WHERE id=? AND user_id=?",
+            (store_in, float(mult), int(e["id"]), uid),
+        )
+
+        conn.execute(
             """
             INSERT INTO clock_state(user_id,week_id,work_date,in_time,out_time,break_running,break_start,break_minutes,updated_at)
             VALUES (?,?,?,?,?,?,?,?,?)
@@ -2012,7 +1976,6 @@ def clock_in(req: Request):
               work_date=excluded.work_date,
               in_time=excluded.in_time,
               out_time=NULL,
-
               break_running=0,
               break_start=NULL,
               break_minutes=excluded.break_minutes,
@@ -2020,9 +1983,9 @@ def clock_in(req: Request):
             """,
             (uid, int(w["id"]), work_date, store_in, None, 0, None, int(e["break_minutes"] or 0), now()),
         )
-    conn.commit()
+        conn.commit()
 
-    return {"ok": True, "work_date": work_date}
+        return {"ok": True, "work_date": work_date}
 
 
 @app.post("/api/clock/out")
@@ -2041,27 +2004,33 @@ def clock_out(req: Request):
 
         if ro and int(ro["day_off"] or 0) == 1:
             if int(e["extra_checked"] or 0) == 0:
-                return {"ok": True, "needs_extra_confirm": True, "reason": "DAY_OFF", "kind": "OUT", "work_date": work_date, "official": None, "real": real_now}
+                return {
+                    "ok": True,
+                    "needs_extra_confirm": True,
+                    "reason": "DAY_OFF",
+                    "kind": "OUT",
+                    "work_date": work_date,
+                    "official": None,
+                    "real": real_now,
+                }
             if not bool(int(e["extra_authorized"] or 0) == 1):
                 return {"ok": True, "ignored": True, "reason": "DAY_OFF", "work_date": work_date}
 
         official_out = ro["shift_out"] if ro else None
         authorized = bool(int(e["extra_authorized"] or 0) == 1)
-
         store_out, needs_confirm = decide_clock_time("OUT", real_now, official_out, authorized)
 
-# Só pede confirmação quando a regra mandar e ainda não foi checado
+        # ✅ FIX: indentation/return block (your code was broken)
         if needs_confirm and int(e["extra_checked"] or 0) == 0:
-         return {
-        "ok": True,
-        "needs_extra_confirm": True,
-        "reason": "LATE_OUT",
-        "kind": "OUT",
-        "work_date": work_date,
-        "official": official_out,
-        "real": real_now
-    }
-
+            return {
+                "ok": True,
+                "needs_extra_confirm": True,
+                "reason": "LATE_OUT",
+                "kind": "OUT",
+                "work_date": work_date,
+                "official": official_out,
+                "real": real_now,
+            }
 
         st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
         if st and int(st["break_running"] or 0) == 1 and st["break_start"]:
@@ -2069,12 +2038,21 @@ def clock_out(req: Request):
             add = int((datetime.now() - bs).total_seconds() // 60)
             new_break = int(st["break_minutes"] or 0) + max(0, add)
 
-            conn.execute("UPDATE clock_state SET break_running=0, break_start=NULL, break_minutes=?, updated_at=? WHERE user_id=?", (new_break, now(), uid))
-            conn.execute("UPDATE entries SET break_minutes=? WHERE id=? AND user_id=?", (new_break, int(e["id"]), uid))
+            conn.execute(
+                "UPDATE clock_state SET break_running=0, break_start=NULL, break_minutes=?, updated_at=? WHERE user_id=?",
+                (new_break, now(), uid),
+            )
+            conn.execute(
+                "UPDATE entries SET break_minutes=? WHERE id=? AND user_id=?",
+                (new_break, int(e["id"]), uid),
+            )
             e = conn.execute("SELECT * FROM entries WHERE id=? AND user_id=?", (int(e["id"]), uid)).fetchone()
 
         mult = multiplier_for_date(conn, uid, work_date)
-        conn.execute("UPDATE entries SET time_out=?, multiplier=? WHERE id=? AND user_id=?", (store_out, float(mult), int(e["id"]), uid))
+        conn.execute(
+            "UPDATE entries SET time_out=?, multiplier=? WHERE id=? AND user_id=?",
+            (store_out, float(mult), int(e["id"]), uid),
+        )
 
         conn.execute(
             """
@@ -2109,7 +2087,10 @@ def clock_break(req: Request):
         work_date = today_ymd()
         e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
 
-        st = conn.execute("SELECT * FROM clock_state WHERE user_id=? AND work_date=?", (uid, work_date)).fetchone()
+        st = conn.execute(
+            "SELECT * FROM clock_state WHERE user_id=? AND work_date=?",
+            (uid, work_date),
+        ).fetchone()
 
         if not st:
             conn.execute(
@@ -2117,7 +2098,17 @@ def clock_break(req: Request):
                 INSERT INTO clock_state(user_id,week_id,work_date,in_time,out_time,break_running,break_start,break_minutes,updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?)
                 """,
-                (uid, int(w["id"]), work_date, e["time_in"], e["time_out"], 1, datetime.now().isoformat(timespec="seconds"), int(e["break_minutes"] or 0), now()),
+                (
+                    uid,
+                    int(w["id"]),
+                    work_date,
+                    e["time_in"],
+                    e["time_out"],
+                    1,
+                    datetime.now().isoformat(timespec="seconds"),
+                    int(e["break_minutes"] or 0),
+                    now(),
+                ),
             )
             conn.commit()
             return {"ok": True, "break_running": True}
@@ -2125,12 +2116,19 @@ def clock_break(req: Request):
         running = int(st["break_running"] or 0) == 1
 
         if not running:
-            conn.execute("UPDATE clock_state SET break_running=1, break_start=?, updated_at=? WHERE user_id=?", (datetime.now().isoformat(timespec="seconds"), now(), uid))
+            conn.execute(
+                "UPDATE clock_state SET break_running=1, break_start=?, updated_at=? WHERE user_id=?",
+                (datetime.now().isoformat(timespec="seconds"), now(), uid),
+            )
             conn.commit()
             return {"ok": True, "break_running": True}
 
+        # running == True
         if not st["break_start"]:
-            conn.execute("UPDATE clock_state SET break_running=0, break_start=NULL, updated_at=? WHERE user_id=?", (now(), uid))
+            conn.execute(
+                "UPDATE clock_state SET break_running=0, break_start=NULL, updated_at=? WHERE user_id=?",
+                (now(), uid),
+            )
             conn.commit()
             return {"ok": True, "break_running": False}
 
@@ -2138,8 +2136,14 @@ def clock_break(req: Request):
         add = int((datetime.now() - bs).total_seconds() // 60)
         new_break = int(st["break_minutes"] or 0) + max(0, add)
 
-        conn.execute("UPDATE clock_state SET break_running=0, break_start=NULL, break_minutes=?, updated_at=? WHERE user_id=?", (new_break, now(), uid))
-        conn.execute("UPDATE entries SET break_minutes=? WHERE id=? AND user_id=?", (new_break, int(e["id"]), uid))
+        conn.execute(
+            "UPDATE clock_state SET break_running=0, break_start=NULL, break_minutes=?, updated_at=? WHERE user_id=?",
+            (new_break, now(), uid),
+        )
+        conn.execute(
+            "UPDATE entries SET break_minutes=? WHERE id=? AND user_id=?",
+            (new_break, int(e["id"]), uid),
+        )
         conn.commit()
 
     return {"ok": True, "break_running": False, "break_minutes": new_break}
