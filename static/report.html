@@ -297,6 +297,10 @@
 const $ = (id) => document.getElementById(id);
 const show = (el) => el && el.classList.remove("hidden");
 const hide = (el) => el && el.classList.add("hidden");
+const params = new URLSearchParams(location.search);
+const weekParam = params.get("week");
+
+
 
 function fmtEUR(n){
   const v = Number(n || 0);
@@ -823,18 +827,45 @@ $("btnDeleteDay").addEventListener("click", async () => {
   }
 });
 
+async function openCurrentWeek(){
+  // jeito mais confiável: usa o dashboard que sempre sabe qual é a semana atual
+  const dash = await api("/api/dashboard", { method: "GET" });
+
+  const id =
+    dash?.this_week?.id ||
+    dash?.this_week?.week_id ||
+    null;
+
+  if (!id) {
+    // se não tem semana atual, volta pra lista
+    await loadList();
+    return;
+  }
+
+  // abre direto o detail
+  await loadDetail(Number(id));
+}
+
 /* =========================
    Init
 ========================= */
 (async function init(){
   try{
+    // ✅ se veio do dashboard pedindo "current"
+    if (weekParam === "current") {
+      await openCurrentWeek();
+      return;
+    }
+
     const id = getWeekId();
-    if(id) await loadDetail(id);
+    if (id) await loadDetail(id);
     else await loadList();
-  }catch{
+  }catch(e){
+    console.warn(e);
     location.href = "/";
   }
 })();
+
 </script>
 
 </body>

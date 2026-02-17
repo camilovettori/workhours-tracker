@@ -588,6 +588,16 @@ const bhRemain = $("bhRemain");
 
 const cardHolidays = $("cardHolidays");
 const cardReports  = $("cardReports");
+const cardCurrentWeek = document.getElementById("cardCurrentWeek");
+
+cardCurrentWeek?.addEventListener("click", (ev) => {
+  // se clicou em botão/link/input dentro do card, NÃO navega
+  if (ev.target.closest("button, a, input, select, textarea, [data-no-nav]")) return;
+
+  go("/report?week=current");
+});
+
+
 
 const navHome    = $("navHome");
 const navHistory = $("navHistory");
@@ -1972,6 +1982,7 @@ function bind() {
 
   cardHolidays?.addEventListener("click", () => go("/holidays"));
   cardReports?.addEventListener("click", () => go("/report"));
+  
 
   btnAddWeek?.addEventListener("click", () => go("/add-week"));
 

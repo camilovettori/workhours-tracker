@@ -1378,3 +1378,6 @@ button[id^="btnSavePhoto"]{
 .status--paid{ background: rgba(16,185,129,.22); border-color: rgba(16,185,129,.26); }
 .status--notpaid{ background: rgba(239,68,68,.22); border-color: rgba(239,68,68,.26); }
 .status--na{ background: rgba(100,116,139,.14); border-color: rgba(100,116,139,.18); }
+
+#cardCurrentWeek { cursor: pointer; }
+#cardCurrentWeek:active { transform: translateY(1px); }
