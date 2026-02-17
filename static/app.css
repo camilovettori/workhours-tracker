@@ -1231,24 +1231,150 @@ button[id^="btnSavePhoto"]{
   /* opcional: deixa o select menos “gordo” no mobile */
   .yearSel{ padding: 8px 12px; }
 }
-/* Today Earnings LIVE border pulse */
-.teCard {
-  border: 2px solid transparent;
-  transition: border-color 0.3s ease;
+/* Today Earnings LIVE - strong glow pulse */
+#todayEarnCard{
+  position: relative;
 }
 
-.teCard.is-live {
-  animation: teBorderPulse 1.4s ease-in-out infinite;
+#todayEarnCard.is-live{
+  animation: teGlowPulse 1.15s ease-in-out infinite;
+  outline: 2px solid rgba(34,197,94,.55);
+  outline-offset: 0px;
 }
 
-@keyframes teBorderPulse {
-  0% {
-    border-color: rgba(34,197,94,0.6);
+@keyframes teGlowPulse{
+  0%{
+    box-shadow:
+      0 10px 30px rgba(2,6,23,.08),
+      0 0 0 0 rgba(34,197,94,.45),
+      0 0 0 6px rgba(34,197,94,.10);
+    outline-color: rgba(34,197,94,.55);
   }
-  50% {
-    border-color: rgba(34,197,94,0.1);
+  50%{
+    box-shadow:
+      0 10px 30px rgba(2,6,23,.08),
+      0 0 0 3px rgba(34,197,94,.22),
+      0 0 0 14px rgba(34,197,94,.00);
+    outline-color: rgba(34,197,94,.25);
   }
-  100% {
-    border-color: rgba(34,197,94,0.6);
+  100%{
+    box-shadow:
+      0 10px 30px rgba(2,6,23,.08),
+      0 0 0 0 rgba(34,197,94,.45),
+      0 0 0 6px rgba(34,197,94,.10);
+    outline-color: rgba(34,197,94,.55);
   }
 }
+
+/* acessibilidade */
+@media (prefers-reduced-motion: reduce){
+  #todayEarnCard.is-live{ animation: none; }
+}
+
+/* ===== Holidays - Summary + Tabs + Single Status Button ===== */
+
+.summaryPills{
+  display:flex;
+  gap:12px;
+  padding:14px;
+  margin:10px 0 12px;
+  background: rgba(255,255,255,.6);
+  border:1px solid rgba(15,23,42,.08);
+  border-radius: 22px;
+  box-shadow: 0 10px 30px rgba(2,6,23,.08);
+}
+
+.pill{
+  flex:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  padding:12px 10px;
+  border-radius:999px;
+  border:1px solid rgba(15,23,42,.08);
+  background: rgba(255,255,255,.7);
+  font-weight: 800;
+}
+
+.pill .dot{
+  width:26px;
+  height:26px;
+  border-radius:999px;
+  display:grid;
+  place-items:center;
+  font-weight: 900;
+}
+
+.pillPaid{ background: rgba(16,185,129,.12); }
+.pillPaid .dot{ background: rgba(16,185,129,.18); }
+
+.pillNotPaid{ background: rgba(239,68,68,.12); }
+.pillNotPaid .dot{ background: rgba(239,68,68,.18); }
+
+.pillNA{ background: rgba(100,116,139,.10); }
+.pillNA .dot{ background: rgba(100,116,139,.18); }
+
+.segTabs{
+  display:flex;
+  gap:10px;
+  padding:10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.55);
+  border:1px solid rgba(15,23,42,.08);
+  margin-bottom: 14px;
+}
+
+.segBtn{
+  flex:1;
+  padding:12px 12px;
+  border-radius: 999px;
+  border:1px solid rgba(15,23,42,.08);
+  background: rgba(255,255,255,.65);
+  font-weight: 900;
+}
+
+.segBtn--active{
+  background: rgba(59,130,246,.14);
+  border-color: rgba(59,130,246,.22);
+}
+
+.holidayList{ display:flex; flex-direction:column; gap:14px; }
+
+.holidayCard{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:18px 16px;
+  border-radius: 22px;
+  border:1px solid rgba(15,23,42,.08);
+  background: rgba(255,255,255,.72);
+  box-shadow: 0 10px 30px rgba(2,6,23,.08);
+}
+
+.holidayCard h3{ margin:0; font-size: 20px; }
+.holidayCard .date{ margin-top:6px; color: rgba(15,23,42,.6); font-weight:700; }
+
+.statusBtn{
+  min-width: 160px;
+  padding:12px 14px;
+  border-radius: 999px;
+  border:1px solid rgba(15,23,42,.08);
+  background: rgba(255,255,255,.7);
+  font-weight: 950;
+  letter-spacing:.02em;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+}
+
+.statusBtn::after{
+  content:"›";
+  font-size:22px;
+  opacity:.7;
+}
+
+.status--paid{ background: rgba(16,185,129,.22); border-color: rgba(16,185,129,.26); }
+.status--notpaid{ background: rgba(239,68,68,.22); border-color: rgba(239,68,68,.26); }
+.status--na{ background: rgba(100,116,139,.14); border-color: rgba(100,116,139,.18); }

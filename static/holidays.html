@@ -11,17 +11,11 @@
 
   <style>
     .wrap{ width:min(820px,100%); margin:0 auto; padding:22px 16px 120px; }
+
     .top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
     .brand{ display:flex; align-items:center; gap:12px; }
     .brand img{ width:44px; height:44px; border-radius:12px; object-fit:cover; }
     .muted{ color: var(--muted); font-weight:900; }
-    .cardPad{ padding:16px; }
-    .row{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:12px 12px; border-radius:14px; border:1px solid rgba(15,23,42,.08); background: rgba(255,255,255,.60); }
-    .row + .row{ margin-top:10px; }
-    .t1{ font-weight:1000; }
-    .t2{ color: var(--muted); font-weight:900; font-size:13px; margin-top:2px; }
-    .err{ color:#b91c1c; font-weight:1000; margin-top:10px; }
-
     .actions{ display:flex; gap:10px; align-items:center; }
 
     .yearSel{
@@ -34,30 +28,118 @@
       cursor: pointer;
     }
 
-    .pillGrp{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
-    .pillBtn{
-      padding:8px 12px; border-radius:999px; font-weight:1000;
-      border:1px solid rgba(15,23,42,.10);
-      background: rgba(255,255,255,.75);
-      cursor:pointer;
-      transition: .15s ease;
-      user-select:none;
-      white-space:nowrap;
+    .err{ color:#b91c1c; font-weight:1000; margin-top:10px; }
+    .hidden{ display:none !important; }
+
+    /* ===== NEW UX (Summary + Tabs + Single Status Button) ===== */
+    .summaryPills{
+      display:flex;
+      gap:12px;
+      padding:14px;
+      margin:10px 0 12px;
+      background: rgba(255,255,255,.6);
+      border:1px solid rgba(15,23,42,.08);
+      border-radius: 22px;
+      box-shadow: 0 10px 30px rgba(2,6,23,.08);
     }
-    .pillBtn:hover{ transform: translateY(-1px); }
-    .pillBtn--on{
-      border-color: rgba(37,99,235,.45);
-      background: rgba(37,99,235,.10);
+    .pill{
+      flex:1;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+      padding:12px 10px;
+      border-radius:999px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.7);
+      font-weight: 900;
+    }
+    .pill .dot{
+      width:26px;
+      height:26px;
+      border-radius:999px;
+      display:grid;
+      place-items:center;
+      font-weight: 1000;
+    }
+    .pillPaid{ background: rgba(16,185,129,.12); }
+    .pillPaid .dot{ background: rgba(16,185,129,.18); }
+
+    .pillNotPaid{ background: rgba(239,68,68,.12); }
+    .pillNotPaid .dot{ background: rgba(239,68,68,.18); }
+
+    .pillNA{ background: rgba(100,116,139,.10); }
+    .pillNA .dot{ background: rgba(100,116,139,.18); }
+
+    .segTabs{
+      display:flex;
+      gap:10px;
+      padding:10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.55);
+      border:1px solid rgba(15,23,42,.08);
+      margin-bottom: 14px;
+    }
+    .segBtn{
+      flex:1;
+      padding:12px 12px;
+      border-radius: 999px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.65);
+      font-weight: 1000;
+      cursor: pointer;
+    }
+    .segBtn--active{
+      background: rgba(37,99,235,.14);
+      border-color: rgba(37,99,235,.22);
       color: rgba(37,99,235,1);
     }
+
+    .holidayList{ display:flex; flex-direction:column; gap:14px; }
+
+    .holidayCard{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:18px 16px;
+      border-radius: 22px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.72);
+      box-shadow: 0 10px 30px rgba(2,6,23,.08);
+    }
+    .holidayCard h3{ margin:0; font-size: 20px; font-weight: 1000; letter-spacing: -.02em; }
+    .holidayCard .date{ margin-top:6px; color: rgba(15,23,42,.6); font-weight:900; font-size:13px; }
+
+    .statusBtn{
+      min-width: 165px;
+      padding:12px 14px;
+      border-radius: 999px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.7);
+      font-weight: 1000;
+      letter-spacing:.02em;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+      cursor:pointer;
+      user-select:none;
+      transition:.12s ease;
+    }
+    .statusBtn:active{ transform: translateY(1px); }
+    .statusBtn::after{ content:"›"; font-size:22px; opacity:.7; }
+
+    .status--paid{ background: rgba(16,185,129,.22); border-color: rgba(16,185,129,.26); }
+    .status--notpaid{ background: rgba(239,68,68,.22); border-color: rgba(239,68,68,.26); }
+    .status--na{ background: rgba(100,116,139,.14); border-color: rgba(100,116,139,.18); }
+
     .mini{
       font-size:12px; font-weight:900; color: var(--muted);
       margin-top:6px;
       line-height: 1.25;
     }
 
-    .hidden{ display:none !important; }
-
+    /* ===== Modal (keep yours) ===== */
     .modalBackdrop{
       position: fixed;
       inset: 0;
@@ -68,7 +150,6 @@
       padding: 18px;
       z-index: 9999;
     }
-
     .modalCard{
       width: min(520px, 100%);
       border-radius: 26px;
@@ -80,7 +161,6 @@
       max-height: calc(100vh - 36px);
       overflow: auto;
     }
-
     .modalTop{
       display:flex;
       align-items:flex-start;
@@ -88,21 +168,18 @@
       gap: 12px;
       margin-bottom: 14px;
     }
-
     .modalTitleBig{
       font-size: 28px;
       font-weight: 1000;
       letter-spacing: -.03em;
       line-height: 1.05;
     }
-
     .modalSubtitle{
       margin-top: 6px;
       font-weight: 900;
       color: var(--muted);
       font-size: 13px;
     }
-
     .modalCloseIcon{
       width: 40px;
       height: 40px;
@@ -115,20 +192,8 @@
     }
     .modalCloseIcon:active{ transform: translateY(1px); }
 
-    .modalFields{
-      display:flex;
-      flex-direction:column;
-      gap: 12px;
-      margin-top: 10px;
-    }
-
-    .modalField .label{
-      font-weight: 900;
-      color: var(--muted);
-      font-size: 12px;
-      margin-bottom: 6px;
-    }
-
+    .modalFields{ display:flex; flex-direction:column; gap: 12px; margin-top: 10px; }
+    .modalField .label{ font-weight: 900; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
     .modalField .inp{
       width:100%;
       padding: 12px 12px;
@@ -138,21 +203,8 @@
       font-weight: 900;
       outline: none;
     }
-
-    .modalTip{
-      margin-top: 12px;
-      font-size: 12px;
-      font-weight: 900;
-      color: var(--muted);
-      line-height: 1.25;
-    }
-
-    .modalBottom{
-      margin-top: 14px;
-      display:flex;
-      flex-direction:column;
-      gap: 10px;
-    }
+    .modalTip{ margin-top: 12px; font-size: 12px; font-weight: 900; color: var(--muted); line-height: 1.25; }
+    .modalBottom{ margin-top: 14px; display:flex; flex-direction:column; gap: 10px; }
 
     .modalCancelLink{
       border: 0;
@@ -163,7 +215,6 @@
       padding: 8px 4px;
       text-align:center;
     }
-
     .modalPrimaryBtn{
       width:100%;
       border: 0;
@@ -176,48 +227,50 @@
       box-shadow: 0 10px 30px rgba(37,99,235,.22);
     }
     .modalPrimaryBtn:active{ transform: translateY(1px); }
-
-
-
-
-  .topbarActions {
-    justify-content: space-between;
-  }
-
-
   </style>
 </head>
 
 <body>
-  
-        <div class="top">
-  <div class="brand">
-    <img src="/static/logo.png" alt="logo" />
-    <div>
-      <div class="bhTitle">Bank Holidays</div>
-      <div class="muted" id="subTitle">Ireland • —</div>
+  <main class="wrap">
+    <div class="top">
+      <div class="brand">
+        <img src="/static/logo.png" alt="logo" />
+        <div>
+          <div style="font-size:34px; font-weight:1000; letter-spacing:-.03em; line-height:1;">Bank Holidays</div>
+          <div class="muted" id="subTitle">Ireland • —</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <div class="navWrap">
+          <button id="btnHome" class="btn btn--pill btn--soft" type="button">Home</button>
+          <button id="btnBack" class="btn btn--pill btn--ghost" type="button">Back</button>
+        </div>
+
+        <div class="yearWrap">
+          <select id="yearSel" class="yearSel" aria-label="Select year"></select>
+        </div>
+      </div>
     </div>
-  </div>
 
-  <div class="actions">
-    <div class="navWrap">
-      <button id="btnHome" class="btn btn--pill btn--soft" type="button">Home</button>
-      <button id="btnBack" class="btn btn--pill btn--ghost" type="button">Back</button>
-    </div>
-
-    <div class="yearWrap">
-      <select id="yearSel" class="yearSel" aria-label="Select year"></select>
-    </div>
-  </div>
-</div>
-
-
-
-    <section class="card cardPad">
-      <div class="muted" id="msg">Loading...</div>
-      <div id="err" class="err"></div>
-      <div id="list" style="margin-top:12px;"></div>
+    <!-- Summary pills -->
+    <section class="summaryPills">
+      <div class="pill pillPaid"><span class="dot">✓</span> <b id="sumPaid">0</b> Paid</div>
+      <div class="pill pillNotPaid"><span class="dot">✕</span> <b id="sumNotPaid">0</b> Not Paid</div>
+      <div class="pill pillNA"><span class="dot">—</span> <b id="sumNA">0</b> N/A</div>
     </section>
+
+    <!-- Tabs -->
+    <section class="segTabs">
+      <button id="tabUpcoming" class="segBtn segBtn--active" type="button">Upcoming</button>
+      <button id="tabPast" class="segBtn" type="button">Past</button>
+    </section>
+
+    <div class="muted" id="msg">Loading...</div>
+    <div id="err" class="err"></div>
+
+    <!-- List -->
+    <section id="holidayList" class="holidayList"></section>
   </main>
 
   <!-- Modal -->
@@ -302,19 +355,75 @@
     }
 
     async function bhUpdate(id, payload){
-      // backend tem PATCH e PUT, mas PATCH é o padrão
       return await api(`/api/bank-holidays/${id}`, {
         method: "PATCH",
         body: JSON.stringify(payload)
       });
     }
 
+    // ===== State =====
     let ITEMS = [];
     let MODAL_ITEM = null;
     let CURRENT_YEAR = null;
+    let TAB = "upcoming"; // upcoming | past
 
     function setSubTitle(){
       $("subTitle").textContent = `Ireland • ${CURRENT_YEAR ?? "—"}`;
+    }
+
+    function fmtDatePretty(ymd){
+      // "2026-02-02" -> "02 Feb 2026"
+      const t = parseYMD(ymd);
+      if(!t) return ymd;
+      const d = new Date(t);
+      return d.toLocaleDateString("en-GB", { day:"2-digit", month:"short", year:"numeric" });
+    }
+
+    function isPast(ymd){
+      const t = parseYMD(ymd);
+      if(!t) return false;
+      const d = new Date(t); d.setHours(0,0,0,0);
+      const today = new Date(); today.setHours(0,0,0,0);
+      return d < today;
+    }
+
+    function getStatus(it){
+      // backend: applicable=false => N/A
+      // backend: applicable!=false && paid=true => Paid
+      // else Not Paid
+      if(it.applicable === false) return "na";
+      if(it.paid) return "paid";
+      return "not_paid";
+    }
+
+    function statusLabel(s){
+      if(s === "paid") return "PAID";
+      if(s === "not_paid") return "NOT PAID";
+      return "N/A";
+    }
+    function statusClass(s){
+      if(s === "paid") return "status--paid";
+      if(s === "not_paid") return "status--notpaid";
+      return "status--na";
+    }
+    function nextStatus(s){
+      // cycle: na -> not_paid -> paid -> na
+      if(s === "na") return "not_paid";
+      if(s === "not_paid") return "paid";
+      return "na";
+    }
+
+    function updateSummary(){
+      let paid=0, notPaid=0, na=0;
+      for(const it of ITEMS){
+        const s = getStatus(it);
+        if(s === "paid") paid++;
+        else if(s === "not_paid") notPaid++;
+        else na++;
+      }
+      $("sumPaid").textContent = String(paid);
+      $("sumNotPaid").textContent = String(notPaid);
+      $("sumNA").textContent = String(na);
     }
 
     function openPaidModal(item){
@@ -333,31 +442,6 @@
       MODAL_ITEM = null;
     }
 
-    async function setPaid(item, paid){
-      if(item.applicable === false){
-  // re-enable automatically if user tries to mark paid/not paid
-  await bhUpdate(bhId(item), { applicable: true });
-  item.applicable = true;
-}
-
-      if(!item) return;
-
-      if(paid){
-        openPaidModal(item);
-        return;
-      }
-
-      const id = bhId(item);
-      if(!id) throw new Error("BH id missing (backend data issue).");
-
-      await bhUpdate(id, { paid:false });
-
-      item.paid = false;
-      item.paid_date = null;
-      item.paid_week = null;
-      render();
-    }
-
     async function savePaidModal(){
       if(!MODAL_ITEM) return;
 
@@ -369,11 +453,13 @@
       const paid_week = paid_week_raw ? Number(paid_week_raw) : null;
 
       await bhUpdate(id, {
+        applicable: true,
         paid: true,
         paid_date: paid_date || null,
         paid_week: (Number.isFinite(paid_week) ? paid_week : null)
       });
 
+      MODAL_ITEM.applicable = true;
       MODAL_ITEM.paid = true;
       MODAL_ITEM.paid_date = paid_date || null;
       MODAL_ITEM.paid_week = (Number.isFinite(paid_week) ? paid_week : null);
@@ -382,72 +468,98 @@
       render();
     }
 
-    function render(){
-      const list = $("list");
-      list.innerHTML = "";
+    async function applyStatus(it, newStatus){
+      const id = bhId(it);
+      if(!id) throw new Error("BH id missing (backend data issue).");
 
-      for(const it of ITEMS){
-        const div = document.createElement("div");
-        div.className = "row";
-
-        let paidMeta = "";
-if(it.applicable === false){
-  paidMeta = `<div class="mini">Not applicable</div>`;
-}else{
-  paidMeta = it.paid
-    ? `<div class="mini">Paid: ${it.paid_date ? it.paid_date : "—"} • Week: ${it.paid_week ? it.paid_week : "—"}</div>`
-    : `<div class="mini">Not paid yet</div>`;
-}
-
-
-        div.innerHTML = `
-          <div style="flex:1;">
-            <div class="t1">${it.name}</div>
-            <div class="t2">${it.date}</div>
-            ${paidMeta}
-          </div>
-
-          <div class="pillGrp">
-  <div class="pillBtn ${it.applicable === false ? "pillBtn--on":""}" data-act="na">N/A</div>
-  <div class="pillBtn ${it.applicable !== false && !it.paid ? "pillBtn--on":""}" data-act="notpaid">Not paid</div>
-  <div class="pillBtn ${it.applicable !== false && it.paid ? "pillBtn--on":""}" data-act="paid">Paid</div>
-</div>
-
-        `;
-
-        div.querySelector('[data-act="paid"]').addEventListener("click", ()=> {
-          try{ setPaid(it, true); }catch(e){ alert(e.message || "Failed"); }
-        });
-
-        div.querySelector('[data-act="notpaid"]').addEventListener("click", async ()=> {
-          try{ await setPaid(it, false); }catch(e){ alert(e.message || "Failed"); }
-        });
-
-        div.querySelector('[data-act="na"]').addEventListener("click", async ()=> {
-  try{
-    const id = bhId(it);
-    await bhUpdate(id, { applicable: false });
-    it.applicable = false;
-    it.paid = false;
-    it.paid_date = null;
-    it.paid_week = null;
-    render();
-  }catch(e){
-    alert(e.message || "Failed");
-  }
-});
-
-
-        list.appendChild(div);
+      if(newStatus === "na"){
+        await bhUpdate(id, { applicable:false, paid:false, paid_date:null, paid_week:null });
+        it.applicable = false;
+        it.paid = false;
+        it.paid_date = null;
+        it.paid_week = null;
+        return;
       }
 
+      if(newStatus === "not_paid"){
+        await bhUpdate(id, { applicable:true, paid:false, paid_date:null, paid_week:null });
+        it.applicable = true;
+        it.paid = false;
+        it.paid_date = null;
+        it.paid_week = null;
+        return;
+      }
+
+      // paid -> open modal to capture date/week
+      it.applicable = true;
+      openPaidModal(it);
+    }
+
+    function render(){
       setSubTitle();
+      updateSummary();
+
+      const list = $("holidayList");
+      list.innerHTML = "";
+
+      const filtered = ITEMS.filter(it => TAB === "past" ? isPast(it.date) : !isPast(it.date));
+
+      for(const it of filtered){
+        const s = getStatus(it);
+
+        const card = document.createElement("article");
+        card.className = "holidayCard";
+        card.innerHTML = `
+          <div style="flex:1; padding-right:10px;">
+            <h3>${it.name}</h3>
+            <div class="date">${fmtDatePretty(it.date)}</div>
+            <div class="mini">${
+              (it.applicable === false)
+                ? "Not applicable"
+                : (it.paid
+                    ? `Paid: ${it.paid_date ? it.paid_date : "—"} • Week: ${it.paid_week ? it.paid_week : "—"}`
+                    : "Not paid yet")
+            }</div>
+          </div>
+          <button class="statusBtn ${statusClass(s)}" type="button">${statusLabel(s)}</button>
+        `;
+
+        const btn = card.querySelector("button.statusBtn");
+        btn.addEventListener("click", async ()=>{
+          try{
+            const cur = getStatus(it);
+            const nxt = nextStatus(cur);
+            await applyStatus(it, nxt);
+            // se abriu modal (paid), a render fica depois do save; se não, atualiza agora
+            render();
+          }catch(e){
+            alert(e.message || "Failed");
+          }
+        });
+
+        list.appendChild(card);
+      }
+    }
+
+    function bindTabs(){
+      const up = $("tabUpcoming");
+      const past = $("tabPast");
+
+      const setTab = (t)=>{
+        TAB = t;
+        up.classList.toggle("segBtn--active", t === "upcoming");
+        past.classList.toggle("segBtn--active", t === "past");
+        render();
+      };
+
+      up.addEventListener("click", ()=> setTab("upcoming"));
+      past.addEventListener("click", ()=> setTab("past"));
     }
 
     async function loadYear(year){
       $("err").textContent = "";
-      $("list").innerHTML = "";
       $("msg").textContent = "Loading...";
+      $("holidayList").innerHTML = "";
 
       try{
         const items = await api(`/api/bank-holidays/year/${year}`, { method:"GET" });
@@ -489,7 +601,6 @@ if(it.applicable === false){
         sel.appendChild(opt);
       }
 
-      // default: maior ano disponível (mais recente)
       CURRENT_YEAR = Number(years[years.length - 1] || 2026);
       sel.value = String(CURRENT_YEAR);
       setSubTitle();
@@ -500,22 +611,21 @@ if(it.applicable === false){
         await loadYear(CURRENT_YEAR);
       });
 
+      bindTabs();
       await loadYear(CURRENT_YEAR);
     }
 
+    // Nav
     $("btnHome").addEventListener("click", ()=> location.href="/");
     $("btnBack").addEventListener("click", back);
 
+    // Modal
     $("mClose").addEventListener("click", closePaidModal);
     $("mCancel").addEventListener("click", closePaidModal);
     $("mSave").addEventListener("click", async ()=>{
-      try{
-        await savePaidModal();
-      }catch(e){
-        alert(e.message || "Failed to save");
-      }
+      try{ await savePaidModal(); }
+      catch(e){ alert(e.message || "Failed to save"); }
     });
-
     $("paidModal").addEventListener("click", (ev)=>{
       if(ev.target === $("paidModal")) closePaidModal();
     });

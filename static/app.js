@@ -1792,6 +1792,133 @@ async function routeAfterAuth() {
   await enterHome();
 }
 
+// ===== Holidays UI state =====
+let HOL_TAB = "upcoming"; // "upcoming" | "past"
+
+function holidayIsPast(isoDate){
+  // isoDate = "2026-03-17"
+  const d = new Date(isoDate + "T00:00:00");
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  return d < today;
+}
+
+function nextHolidayStatus(cur){
+  // Accept: "na" | "not_paid" | "paid"
+  if(cur === "na") return "not_paid";
+  if(cur === "not_paid") return "paid";
+  return "na";
+}
+
+function statusLabel(s){
+  if(s === "paid") return "PAID";
+  if(s === "not_paid") return "NOT PAID";
+  return "N/A";
+}
+
+function statusClass(s){
+  if(s === "paid") return "status--paid";
+  if(s === "not_paid") return "status--notpaid";
+  return "status--na";
+}
+
+// Update pills counters
+function updateHolidaySummary(holidays){
+  const paid = holidays.filter(h => h.status === "paid").length;
+  const notPaid = holidays.filter(h => h.status === "not_paid").length;
+  const na = holidays.filter(h => (h.status === "na" || h.status === "n/a" || !h.status)).length;
+
+  const a = document.getElementById("sumPaid");
+  const b = document.getElementById("sumNotPaid");
+  const c = document.getElementById("sumNA");
+  if(a) a.textContent = paid;
+  if(b) b.textContent = notPaid;
+  if(c) c.textContent = na;
+}
+
+function renderHolidayCards(holidays){
+  const list = document.getElementById("holidayList");
+  if(!list) return;
+
+  // normalize status values
+  holidays.forEach(h => {
+    if(!h.status) h.status = "na";
+    if(h.status === "n/a") h.status = "na";
+  });
+
+  updateHolidaySummary(holidays);
+
+  const filtered = holidays.filter(h => {
+    const past = holidayIsPast(h.date);
+    return HOL_TAB === "past" ? past : !past;
+  });
+
+  list.innerHTML = filtered.map(h => {
+    const s = h.status || "na";
+    return `
+      <article class="holidayCard" data-id="${h.id}">
+        <div>
+          <h3>${h.name}</h3>
+          <div class="date">${h.datePretty || h.date}</div>
+        </div>
+        <button class="statusBtn ${statusClass(s)}" type="button" data-action="cycle">
+          ${statusLabel(s)}
+        </button>
+      </article>
+    `;
+  }).join("");
+
+  // click handlers (event delegation)
+  list.onclick = async (ev) => {
+    const btn = ev.target.closest('button[data-action="cycle"]');
+    if(!btn) return;
+
+    const card = ev.target.closest(".holidayCard");
+    if(!card) return;
+
+    const id = card.getAttribute("data-id");
+    const h = holidays.find(x => String(x.id) === String(id));
+    if(!h) return;
+
+    // cycle status
+    h.status = nextHolidayStatus(h.status);
+
+    // optimistic UI update
+    btn.textContent = statusLabel(h.status);
+    btn.classList.remove("status--paid","status--notpaid","status--na");
+    btn.classList.add(statusClass(h.status));
+    updateHolidaySummary(holidays);
+
+    // TODO: salvar no backend (ajusta pro seu endpoint real)
+    try{
+      await fetch(`/api/holidays/${id}/status`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ status: h.status })
+      });
+    } catch(e){
+      console.warn("Failed to save holiday status", e);
+    }
+  };
+}
+
+function bindHolidayTabs(holidays){
+  const up = document.getElementById("tabUpcoming");
+  const past = document.getElementById("tabPast");
+  if(!up || !past) return;
+
+  const setTab = (t) => {
+    HOL_TAB = t;
+    up.classList.toggle("segBtn--active", t === "upcoming");
+    past.classList.toggle("segBtn--active", t === "past");
+    renderHolidayCards(holidays);
+  };
+
+  up.onclick = () => setTab("upcoming");
+  past.onclick = () => setTab("past");
+}
+
+
 
 
 /* =========================
