@@ -641,6 +641,8 @@ const LS_BREAK_END = "wh_break_end_epoch";
 const LS_BREAK_DAY = "wh_break_day";
 const LS_BREAK_WARN5 = "wh_break_warn5_sent";
 const LS_BREAK_DONE  = "wh_break_done_sent";
+const LS_BREAK_LEFT = "wh_break_left_sec";
+
 
 
 function setBreakButtonRunning(running) {
@@ -661,6 +663,7 @@ function clearBreakStorage() {
   localStorage.removeItem(LS_BREAK_WARN5);
   localStorage.removeItem(LS_BREAK_DONE);
 }
+
 
 
 function stopBreakCountdown(vibrate = false) {
@@ -699,6 +702,9 @@ function tickBreakCountdown() {
 
   // ---- finished (only once) ----
   if (leftSec <= 0) {
+    // ✅ quando termina de verdade, limpa o "resume"
+    localStorage.removeItem(LS_BREAK_LEFT);
+
     const done = localStorage.getItem(LS_BREAK_DONE) === "1";
     if (!done) {
       localStorage.setItem(LS_BREAK_DONE, "1");
@@ -711,7 +717,6 @@ function tickBreakCountdown() {
       .catch(() => {});
   }
 }
-
 
 function startBreakCountdown(seconds = BREAK_DEFAULT_SEC) {
   breakRunningUI = true;
@@ -1384,25 +1389,44 @@ async function doClockOut() {
   }
 }
 
-async function doClockBreak() 
-{
+async function doClockBreak() {
   requestNotificationPermission();
 
   try {
     const r = await api("/api/clock/break", { method: "POST" });
 
+    // ✅ START / RESUME
     if (r && r.break_running === true) {
-      startBreakCountdown(BREAK_DEFAULT_SEC);
-    } else {
-      stopBreakCountdown(false);
+      const savedLeft = Number(localStorage.getItem(LS_BREAK_LEFT) || "0");
+
+      const resumeSec =
+        (Number.isFinite(savedLeft) && savedLeft > 0 && savedLeft <= BREAK_DEFAULT_SEC)
+          ? savedLeft
+          : BREAK_DEFAULT_SEC;
+
+      // limpa pra não sobrescrever sempre
+      localStorage.removeItem(LS_BREAK_LEFT);
+
+      startBreakCountdown(resumeSec);
       await refreshAll();
+      return;
     }
 
+    // ✅ STOP (PAUSE)
+    const endEpoch = Number(localStorage.getItem(LS_BREAK_END) || "0");
+    const leftSec = endEpoch ? Math.ceil((endEpoch - Date.now()) / 1000) : 0;
+
+    if (leftSec > 0) localStorage.setItem(LS_BREAK_LEFT, String(leftSec));
+    else localStorage.removeItem(LS_BREAK_LEFT);
+
+    stopBreakCountdown(false);
     await refreshAll();
+
   } catch (e) {
     alert(e.message || "BREAK failed");
   }
 }
+
 
 /* =========================
    Add week page
