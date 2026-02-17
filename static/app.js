@@ -1205,6 +1205,51 @@ async function refreshAll() {
 
   if (CLOCK?.has_week && CLOCK?.in_time && !CLOCK?.out_time && !CLOCK?.break_running) startLiveTicker();
   else stopLiveTicker();
+
+  // ✅ important: bind after UI exists
+  bindCurrentWeekTap();
+}
+
+/* =========================
+   Current week → open report
+========================= */
+function goCurrentWeekReport() {
+  if (DASH_WEEK_ID) {
+    go(`/report?week_id=${encodeURIComponent(DASH_WEEK_ID)}`);
+    return;
+  }
+  go("/report?week=current");
+}
+
+/* =========================
+   Tap/click on "Current week" block (mobile + desktop)
+========================= */
+function bindCurrentWeekTap() {
+  const block = document.getElementById("cwWeekBlock");
+  if (!block || block.dataset.bound) return;
+  block.dataset.bound = "1";
+
+  const ignore = (ev) =>
+    !!ev.target.closest("button,a,input,select,textarea,label");
+
+  const handler = (ev) => {
+    if (ignore(ev)) return;
+    goCurrentWeekReport();
+  };
+
+  // desktop
+  block.addEventListener("click", handler);
+
+  // mobile (avoid double-trigger)
+  block.addEventListener(
+    "touchend",
+    (ev) => {
+      if (ignore(ev)) return;
+      ev.preventDefault();
+      goCurrentWeekReport();
+    },
+    { passive: false }
+  );
 }
 
 
@@ -1366,6 +1411,27 @@ async function doClockIn() {
       if (!decision.proceed) return;
       await api("/api/clock/in", { method: "POST" });
     }
+    function uiStartNow(){
+  // zera na hora (sensação instantânea)
+  const el = document.getElementById("todayEarnHHMM");
+  if (el) el.textContent = "00:00:00";
+  const pay = document.getElementById("todayEarnPay");
+  if (pay) pay.textContent = "€0.00";
+}
+
+// exemplo dentro do IN
+async function doClockIn(){
+  try{
+    await api("/api/clock/in", { method:"POST" });
+
+    uiStartNow();       // <- aqui
+    startLiveTicker();  // se você usa ticker
+    await refreshAll(); // sincroniza com servidor
+  }catch(e){
+    alert(e.message || "IN failed");
+  }
+}
+
 
     await refreshAll();
   } catch (e) {
