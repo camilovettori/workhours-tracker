@@ -227,6 +227,18 @@
       box-shadow: 0 10px 30px rgba(37,99,235,.22);
     }
     .modalPrimaryBtn:active{ transform: translateY(1px); }
+    /* Fix alignment on mobile */
+.summaryPills{ flex-wrap: nowrap; }
+.pill{ min-width: 0; white-space: nowrap; }
+.pill b{ display:inline-block; min-width: 18px; text-align:center; }
+
+/* Mobile tuning */
+@media (max-width: 420px){
+  .summaryPills{ gap:8px; padding:12px; }
+  .pill{ padding:10px 8px; font-size:13px; }
+  .pill .dot{ width:22px; height:22px; }
+}
+
   </style>
 </head>
 
@@ -407,11 +419,13 @@
       return "status--na";
     }
     function nextStatus(s){
-      // cycle: na -> not_paid -> paid -> na
-      if(s === "na") return "not_paid";
-      if(s === "not_paid") return "paid";
-      return "na";
-    }
+  // cycle: not_paid -> na -> paid -> not_paid
+  if (s === "not_paid") return "na";
+  if (s === "na") return "paid";
+  return "not_paid";
+}
+
+    
 
     function updateSummary(){
       let paid=0, notPaid=0, na=0;

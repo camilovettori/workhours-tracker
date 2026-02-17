@@ -1063,10 +1063,21 @@ async function refreshClock() {
     }
 
     if (cwIn) cwIn.textContent = c.in_time || "--:--";
-    if (cwOut) cwOut.textContent = c.out_time || "--:--";
-    if (cwBreak) cwBreak.textContent = `${Number(c.break_minutes || 0)}m`;
+if (cwOut) cwOut.textContent = c.out_time || "--:--";
 
-    setBreakButtonRunning(!!c.break_running);
+// Se break está rodando, a UI do countdown manda no cwBreak (MM:SS)
+if (c.break_running) {
+  setBreakButtonRunning(true);
+  // garante que o countdown continua (ou retoma) sem ser sobrescrito
+  resumeBreakCountdownIfAny();
+} else {
+  // break não está rodando -> mostra minutos do backend
+  if (cwBreak) cwBreak.textContent = `${Number(c.break_minutes || 0)}m`;
+  setBreakButtonRunning(false);
+  // limpa countdown se sobrou algum timer
+  stopBreakCountdown(false);
+}
+
 
     if (cwStatusText) {
       if (!c.in_time) cwStatusText.textContent = "Tap IN to start.";
