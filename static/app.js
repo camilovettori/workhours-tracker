@@ -20,6 +20,9 @@ const hide = (el) => el && el.classList.add("hidden");
 function go(path) { window.location.href = path; }
 function pathIs(p) { return window.location.pathname === p; }
 // ===== ME cache =====
+// ===== ME cache (declare ONCE) =====
+const LS_ME = "wh_me";
+let ME = null;
 
 
 function readCachedMe(){
@@ -332,7 +335,7 @@ function weekdayShort(dt) {
 /* =========================
    FIX: ME + Avatar (single source of truth)
 ========================= */
-const LS_ME = "wh_me";
+
 const LS_AVATAR = "wh_avatar_url";
 
 function cacheBust(url) {
@@ -612,10 +615,12 @@ let DASH_WEEK_ID  = null;
 
 let CLOCK = null;
 let LAST_DASH = null;
-let ME = null;
+
 
 /* =========================
-   Break countdown (UI)
+   Break countdown (UI) — FIXED
+   - Resume does NOT overwrite endEpoch
+   - resetTodayVisual will NOT kill an active break
 ========================= */
 let breakTick = null;
 let breakRemaining = 0;
@@ -624,6 +629,9 @@ let breakRunningUI = false;
 const BREAK_DEFAULT_SEC = 60 * 60;
 const LS_BREAK_END = "wh_break_end_epoch";
 const LS_BREAK_DAY = "wh_break_day";
+const LS_BREAK_WARN5 = "wh_break_warn5_sent";
+const LS_BREAK_DONE  = "wh_break_done_sent";
+
 
 function setBreakButtonRunning(running) {
   if (!btnBreak) return;
@@ -631,14 +639,20 @@ function setBreakButtonRunning(running) {
     ? `<span class="pillIcon">⏱</span> BREAK (stop)`
     : `<span class="pillIcon">⏱</span> BREAK`;
 }
+
 function saveBreakEnd(endEpochMs) {
   localStorage.setItem(LS_BREAK_END, String(endEpochMs));
   localStorage.setItem(LS_BREAK_DAY, UI_DAY);
 }
+
 function clearBreakStorage() {
   localStorage.removeItem(LS_BREAK_END);
   localStorage.removeItem(LS_BREAK_DAY);
+  localStorage.removeItem(LS_BREAK_WARN5);
+  localStorage.removeItem(LS_BREAK_DONE);
 }
+
+
 function stopBreakCountdown(vibrate = false) {
   if (breakTick) clearInterval(breakTick);
   breakTick = null;
@@ -651,22 +665,47 @@ function stopBreakCountdown(vibrate = false) {
   if (cwBreak && CLOCK) cwBreak.textContent = `${Number(CLOCK.break_minutes || 0)}m`;
   if (vibrate && "vibrate" in navigator) navigator.vibrate([200, 100, 200]);
 }
+
 function tickBreakCountdown() {
   const endEpoch = Number(localStorage.getItem(LS_BREAK_END) || "0");
-  if (!endEpoch) { stopBreakCountdown(false); return; }
+  if (!endEpoch) {
+    stopBreakCountdown(false);
+    return;
+  }
 
   const leftSec = Math.ceil((endEpoch - Date.now()) / 1000);
   breakRemaining = leftSec;
 
-  if (cwBreak) cwBreak.textContent = fmtMMSS(leftSec);
+  if (cwBreak) cwBreak.textContent = fmtMMSS(Math.max(0, leftSec));
 
+  // ---- 5-minute warning (only once) ----
+  if (leftSec <= 300 && leftSec > 0) {
+    const warned = localStorage.getItem(LS_BREAK_WARN5) === "1";
+    if (!warned) {
+      localStorage.setItem(LS_BREAK_WARN5, "1");
+      sendBreakNotification("⏳ 5 minutes left", "Your break is almost over.");
+    }
+  }
+
+  // ---- finished (only once) ----
   if (leftSec <= 0) {
+    const done = localStorage.getItem(LS_BREAK_DONE) === "1";
+    if (!done) {
+      localStorage.setItem(LS_BREAK_DONE, "1");
+      sendBreakNotification("✅ Break finished", "Time to go back to work!");
+    }
+
     stopBreakCountdown(true);
-    api("/api/clock/break", { method: "POST" }).then(() => refreshAll()).catch(() => {});
+    api("/api/clock/break", { method: "POST" })
+      .then(() => refreshAll())
+      .catch(() => {});
   }
 }
+
+
 function startBreakCountdown(seconds = BREAK_DEFAULT_SEC) {
   breakRunningUI = true;
+
   const endEpoch = Date.now() + seconds * 1000;
   saveBreakEnd(endEpoch);
 
@@ -676,28 +715,51 @@ function startBreakCountdown(seconds = BREAK_DEFAULT_SEC) {
   if (breakTick) clearInterval(breakTick);
   breakTick = setInterval(tickBreakCountdown, 250);
 }
+
+/** Resume break WITHOUT changing endEpoch */
 function resumeBreakCountdownIfAny() {
   const savedDay = localStorage.getItem(LS_BREAK_DAY);
   const endEpoch = Number(localStorage.getItem(LS_BREAK_END) || "0");
 
+  // if no saved break or wrong day, clear leftovers
   if (!savedDay || savedDay !== UI_DAY || !endEpoch) {
     clearBreakStorage();
     return;
   }
 
   const leftSec = Math.ceil((endEpoch - Date.now()) / 1000);
-  if (leftSec > 0) startBreakCountdown(leftSec);
-  else clearBreakStorage();
+
+  if (leftSec > 0) {
+    breakRunningUI = true;
+    setBreakButtonRunning(true);
+    tickBreakCountdown();
+
+    if (breakTick) clearInterval(breakTick);
+    breakTick = setInterval(tickBreakCountdown, 250);
+  } else {
+    clearBreakStorage();
+  }
 }
+
+/** Reset UI, but DO NOT kill an active break */
 function resetTodayVisual() {
   if (cwIn) cwIn.textContent = "00:00";
   if (cwOut) cwOut.textContent = "00:00";
-  if (cwBreak) cwBreak.textContent = "0m";
-  setBreakButtonRunning(false);
-  stopBreakCountdown(false);
+
+  const endEpoch = Number(localStorage.getItem(LS_BREAK_END) || "0");
+  const leftSec = endEpoch ? Math.ceil((endEpoch - Date.now()) / 1000) : 0;
+
+  if (leftSec > 0) {
+    // break active: keep it running
+    setBreakButtonRunning(true);
+    resumeBreakCountdownIfAny();
+  } else {
+    // no break active: safe to reset visuals
+    if (cwBreak) cwBreak.textContent = "0m";
+    setBreakButtonRunning(false);
+    stopBreakCountdown(false);
+  }
 }
-
-
 
 /* =========================
    Day change watcher
@@ -711,6 +773,21 @@ function watchDayChange() {
     refreshAll().catch(() => {});
   }
 }
+/*==================================
+   Notification
+   ============================*/
+
+function sendBreakNotification(title, body) {
+  if (!("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+
+  new Notification(title, {
+    body,
+    icon: "/static/logo.png",
+    vibrate: [200, 100, 200]
+  });
+}
+
 
 /* =========================
    Auth / routing (index only)
@@ -727,6 +804,13 @@ function showLogin() {
   hide(forgotPanel);
   clearAuthMsgs();
 }
+
+function requestNotificationPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+}
+
 function showSignup() {
   hide(loginForm);
   show(signupForm);
@@ -1279,7 +1363,10 @@ async function doClockOut() {
   }
 }
 
-async function doClockBreak() {
+async function doClockBreak() 
+{
+  requestNotificationPermission();
+
   try {
     const r = await api("/api/clock/break", { method: "POST" });
 
@@ -1763,6 +1850,7 @@ function bind() {
    Init
 ========================= */
 let dayWatcherStarted = false;
+requestNotificationPermission();
 
 (async function init() {
   bind();
