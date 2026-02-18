@@ -93,15 +93,6 @@ def add_col_if_missing(conn: sqlite3.Connection, table: str, col: str, ddl: str)
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
 
 
-def ensure_user_columns(conn: sqlite3.Connection) -> None:
-    # compatibilidade com DBs antigos
-    add_col_if_missing(conn, "users", "first_name", "TEXT")
-    add_col_if_missing(conn, "users", "last_name", "TEXT")
-    add_col_if_missing(conn, "users", "hourly_rate", "REAL DEFAULT 0")
-    add_col_if_missing(conn, "users", "avatar_path", "TEXT")
-    add_col_if_missing(conn, "users", "salt_hex", "TEXT")
-    add_col_if_missing(conn, "users", "pass_hash", "TEXT")
-    add_col_if_missing(conn, "users", "created_at", "TEXT")
 
 def ensure_user_columns(conn: sqlite3.Connection) -> None:
     # compatibilidade com DBs antigos
@@ -178,7 +169,8 @@ def init_db() -> None:
                 pass_hash TEXT,
                 hourly_rate REAL DEFAULT 0,
                 avatar_path TEXT,
-                created_at TEXT
+                created_at TEXT,
+                is_admin INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS weeks(
@@ -243,22 +235,28 @@ def init_db() -> None:
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY(roster_id) REFERENCES rosters(id) ON DELETE CASCADE
             );
-
-            CREATE TABLE IF NOT EXISTS users(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    first_name TEXT,
-    last_name TEXT,
-    email TEXT UNIQUE,
-    salt_hex TEXT,
-    pass_hash TEXT,
-    hourly_rate REAL DEFAULT 0,
-    avatar_path TEXT,
-    created_at TEXT,
-    is_admin INTEGER NOT NULL DEFAULT 0
-);
-
             """
         )
+
+        # migrations (idempotentes)
+        ensure_password_resets_table(conn)
+        ensure_user_columns(conn)
+
+        add_col_if_missing(conn, "entries", "note", "TEXT")
+        add_col_if_missing(conn, "entries", "bh_paid", "INTEGER")
+        add_col_if_missing(conn, "entries", "multiplier", "REAL DEFAULT 1.0")
+        add_col_if_missing(conn, "entries", "extra_authorized", "INTEGER DEFAULT 0")
+        add_col_if_missing(conn, "entries", "extra_checked", "INTEGER DEFAULT 0")
+
+        add_col_if_missing(conn, "bank_holidays", "paid_date", "TEXT")
+        add_col_if_missing(conn, "bank_holidays", "paid_week", "INTEGER")
+        add_col_if_missing(conn, "bank_holidays", "applicable", "INTEGER NOT NULL DEFAULT 1")
+
+        ensure_bh_indexes(conn)
+        ensure_clock_tables(conn)
+
+        conn.commit()
+
 
         # migrations (idempotentes)
         ensure_password_resets_table(conn)
@@ -925,6 +923,148 @@ SHIFT_B_OUT = "20:00"
 BREAK_FIXED_MIN = 60
 TOLERANCE_MIN = 5
 
+# ====== 15-min rounding helpers ======
+ROUND_STEP_MIN = 15
+
+def round_floor(mins: int, step: int = ROUND_STEP_MIN) -> int:
+    mins = int(mins or 0)
+    return (mins // step) * step
+
+def round_ceil(mins: int, step: int = ROUND_STEP_MIN) -> int:
+    mins = int(mins or 0)
+    return ((mins + step - 1) // step) * step
+
+def compute_paid_window(
+    official_in: Optional[str],
+    official_out: Optional[str],
+    real_in: Optional[str],
+    real_out: Optional[str],
+    authorized: bool,
+) -> tuple[Optional[int], Optional[int], dict]:
+    """
+    Returns: (paid_in_min, paid_out_min, meta)
+    meta includes the reasons/snap flags for debugging/UI.
+    """
+    meta = {
+        "snap_in": False,
+        "snap_out": False,
+        "cap_in": False,
+        "cap_out": False,
+        "round_in": False,
+        "round_out": False,
+        "official_in": official_in,
+        "official_out": official_out,
+        "authorized": bool(authorized),
+    }
+
+    if not real_in or not real_out:
+        return None, None, meta
+
+    rin = hhmm_to_min(real_in)
+    rout = hhmm_to_min(real_out)
+
+    # handle overnight
+    if rout < rin:
+        rout += 24 * 60
+
+    paid_in = rin
+    paid_out = rout
+
+    # --- IN rules ---
+    if official_in:
+        off_in = hhmm_to_min(official_in)
+        # snap to official if within tolerance
+        if abs(rin - off_in) <= TOLERANCE_MIN:
+            paid_in = off_in
+            meta["snap_in"] = True
+        else:
+            # if overtime NOT authorized and arrived early -> cap to official start
+            if (not authorized) and (rin < off_in - TOLERANCE_MIN):
+                paid_in = off_in
+                meta["cap_in"] = True
+
+    # --- OUT rules ---
+    if official_out:
+        off_out = hhmm_to_min(official_out)
+        # if overnight compared to official, align official too
+        if off_out < hhmm_to_min(official_in) if official_in else False:
+            off_out += 24 * 60
+
+        # snap to official if within tolerance
+        if abs((rout) - off_out) <= TOLERANCE_MIN:
+            paid_out = off_out
+            meta["snap_out"] = True
+        else:
+            # if overtime NOT authorized and left late -> cap to official end
+            if (not authorized) and (rout > off_out + TOLERANCE_MIN):
+                paid_out = off_out
+                meta["cap_out"] = True
+
+    # --- 15-min rounding ---
+    # only round when NOT snapped to official
+    if not meta["snap_in"]:
+        # IN rounds UP
+        paid_in2 = round_ceil(paid_in)
+        meta["round_in"] = (paid_in2 != paid_in)
+        paid_in = paid_in2
+
+    if not meta["snap_out"]:
+        # OUT rounds DOWN
+        paid_out2 = round_floor(paid_out)
+        meta["round_out"] = (paid_out2 != paid_out)
+        paid_out = paid_out2
+
+    # final safety: never negative
+    if paid_out < paid_in:
+        paid_out = paid_in
+
+    return int(paid_in), int(paid_out), meta
+
+
+def minutes_paid_between(
+    conn: sqlite3.Connection,
+    uid: int,
+    work_date: str,
+    time_in_real: Optional[str],
+    time_out_real: Optional[str],
+    break_real: int,
+    authorized: bool,
+) -> tuple[int, dict]:
+    """
+    Returns (paid_minutes, meta) using roster + tolerance + 15-min rounding.
+    """
+    if not time_in_real or not time_out_real:
+        return 0, {"reason": "missing_in_or_out"}
+
+    ro = roster_for_date(conn, uid, work_date)
+    official_in = ro["shift_in"] if ro and not int(ro["day_off"] or 0) else None
+    official_out = ro["shift_out"] if ro and not int(ro["day_off"] or 0) else None
+
+    # fallback: if no roster for the day, use detect_shift based on real_in
+    if not official_in or not official_out:
+        sh = detect_shift(time_in_real)
+        if sh:
+            official_in, official_out = sh
+
+    paid_in_min, paid_out_min, meta = compute_paid_window(
+        official_in, official_out, time_in_real, time_out_real, authorized
+    )
+    if paid_in_min is None or paid_out_min is None:
+        return 0, {"reason": "no_paid_window"}
+
+    worked = max(0, paid_out_min - paid_in_min)
+    br = effective_break_minutes(time_in_real, time_out_real, break_real)
+    paid = max(0, worked - br)
+
+    meta.update({
+        "paid_in_hhmm": min_to_hhmm(paid_in_min % (24*60)),
+        "paid_out_hhmm": min_to_hhmm(paid_out_min % (24*60)),
+        "break_effective": int(br),
+        "paid_minutes": int(paid),
+    })
+    return int(paid), meta
+
+
 # Public Holiday premium (payslip). Default = 1.0787 (~€19.67/h when base is €18.24/h)
 PUBLIC_HOLIDAY_MULT = float(os.environ.get("PUBLIC_HOLIDAY_MULT", "1.0787"))
 
@@ -961,6 +1101,56 @@ def effective_break_minutes(t_in: Optional[str], t_out: Optional[str], break_rea
         return 0
     return max(BREAK_FIXED_MIN, int(break_real or 0))
 
+def clamp(v: int, lo: int, hi: int) -> int:
+    return max(lo, min(hi, v))
+
+def calc_paid_times_authorized(t_in: Optional[str], t_out: Optional[str]) -> dict:
+    """
+    Authorized overtime: keep your normal Tesco logic (detect_shift + tolerance).
+    Returns paid_in_hhmm / paid_out_hhmm (best effort).
+    """
+    if not t_in or not t_out:
+        return {"paid_in_hhmm": "", "paid_out_hhmm": ""}
+
+    shift = detect_shift(t_in)
+    if not shift:
+        return {"paid_in_hhmm": t_in, "paid_out_hhmm": t_out}
+
+    shift_in, shift_out = shift
+    paid_in_m = apply_tolerance(t_in, shift_in)
+    paid_out_m = apply_tolerance(t_out, shift_out)
+
+    return {"paid_in_hhmm": min_to_hhmm(paid_in_m), "paid_out_hhmm": min_to_hhmm(paid_out_m)}
+
+def calc_paid_times_roster(conn: sqlite3.Connection, uid: int, work_date: str,
+                           t_in: Optional[str], t_out: Optional[str]) -> dict:
+    """
+    NOT authorized: paid window comes from roster (with tolerance + clamp to roster window).
+    """
+    if not t_in or not t_out:
+        return {"paid_in_hhmm": "", "paid_out_hhmm": ""}
+
+    ro = roster_for_date(conn, uid, work_date)
+    if not ro or int(ro["day_off"] or 0) == 1 or not ro["shift_in"] or not ro["shift_out"]:
+        # fallback: use authorized-style paid times (best effort)
+        return calc_paid_times_authorized(t_in, t_out)
+
+    off_in = ro["shift_in"]
+    off_out = ro["shift_out"]
+
+    off_in_m = hhmm_to_min(off_in)
+    off_out_m = hhmm_to_min(off_out)
+
+    paid_in_m = apply_tolerance(t_in, off_in)
+    paid_out_m = apply_tolerance(t_out, off_out)
+
+    # clamp to roster window (no early/late paid time)
+    paid_in_m = clamp(paid_in_m, off_in_m, off_out_m)
+    paid_out_m = clamp(paid_out_m, off_in_m, off_out_m)
+
+    return {"paid_in_hhmm": min_to_hhmm(paid_in_m), "paid_out_hhmm": min_to_hhmm(paid_out_m)}
+
+
 
 def minutes_between(work_date: str, t_in: Optional[str], t_out: Optional[str], break_real: int) -> int:
     if not t_in or not t_out:
@@ -980,6 +1170,17 @@ def minutes_between(work_date: str, t_in: Optional[str], t_out: Optional[str], b
     worked = out_m - in_m
     br = effective_break_minutes(t_in, t_out, break_real)
     return max(0, worked - br)
+
+def minutes_between_roster(conn: sqlite3.Connection, uid: int, work_date: str,
+                          t_in: Optional[str], t_out: Optional[str], break_real: int) -> int:
+    m, _meta = minutes_paid_between(
+        conn, uid, work_date,
+        t_in, t_out,
+        int(break_real or 0),
+        authorized=False
+    )
+    return int(m)
+
 
 
 # ======================================================
@@ -1256,30 +1457,47 @@ def roster_for_date(conn: sqlite3.Connection, uid: int, ymd: str) -> Optional[sq
 
 
 def decide_clock_time(kind: str, real_now: str, official: Optional[str], authorized: bool):
+    """
+    Returns (store_time, needs_confirm)
+
+    Rule:
+    - If within tolerance -> store OFFICIAL.
+    - If authorized -> store REAL.
+    - If NOT authorized:
+        - EARLY IN  -> store OFFICIAL and ask confirm (so overtime not counted)
+        - LATE OUT  -> store OFFICIAL and ask confirm
+        - Otherwise -> store REAL (but rounding/tolerance later will handle paid calc anyway)
+    """
     if not official:
-        return real_now, False  # (store_time, needs_confirm)
+        return real_now, False  # no roster/official time available
 
     real_m = hhmm_to_min(real_now)
     off_m = hhmm_to_min(official)
-    diff = real_m - off_m  # + = saiu/chegou mais tarde, - = mais cedo
+    diff = real_m - off_m
 
+    # within tolerance => snap to official
     if abs(diff) <= TOLERANCE_MIN:
         return official, False
 
+    # if overtime authorized => keep real time
     if authorized:
         return real_now, False
 
+    # NOT authorized => clamp the “store time” to OFFICIAL when it creates overtime
     if kind == "IN":
+        # early IN creates overtime -> store official and ask confirm
         if diff < -TOLERANCE_MIN:
-            return real_now, True
+            return official, True
         return real_now, False
 
     if kind == "OUT":
+        # late OUT creates overtime -> store official and ask confirm
         if diff > TOLERANCE_MIN:
-            return real_now, True
+            return official, True
         return real_now, False
 
     return real_now, False
+
 
 
 def ensure_week_from_roster(conn: sqlite3.Connection, uid: int, week_number: int, start_date: str) -> int:
@@ -1541,18 +1759,28 @@ def list_weeks(req: Request):
         out = []
         for w in rows:
             entries = conn.execute(
-                "SELECT work_date,time_in,time_out,break_minutes,multiplier FROM entries WHERE user_id=? AND week_id=?",
-                (uid, w["id"]),
+                """
+                SELECT work_date, time_in, time_out, break_minutes, multiplier, extra_authorized
+                FROM entries
+                WHERE user_id=? AND week_id=?
+                """,
+                (uid, int(w["id"])),
             ).fetchall()
 
             total_min = 0
             total_pay = 0.0
-            rate = float(w["hourly_rate"] or 0)
+            rate = float(w["hourly_rate"] or 0.0)
 
             for e in entries:
-                m = minutes_between(e["work_date"], e["time_in"], e["time_out"], int(e["break_minutes"] or 0))
+                authorized = bool(int(e["extra_authorized"] or 0) == 1)
+                m, _meta = minutes_paid_between(
+                    conn, uid, e["work_date"],
+                    e["time_in"], e["time_out"],
+                    int(e["break_minutes"] or 0),
+                    authorized
+                )
                 mult = float(e["multiplier"] or 1.0)
-                total_min += m
+                total_min += int(m)
                 total_pay += (m / 60.0) * rate * mult
 
             out.append(
@@ -1565,7 +1793,9 @@ def list_weeks(req: Request):
                     "total_pay": round(total_pay, 2),
                 }
             )
+
         return out
+
 
 
 @app.post("/api/weeks")
@@ -1596,12 +1826,19 @@ def get_week(week_id: int, req: Request):
         entries = []
         total_min = 0
         total_pay = 0.0
-        rate = float(w["hourly_rate"] or 0)
+        rate = float(w["hourly_rate"] or 0.0)
 
         for r in rows:
-            m = minutes_between(r["work_date"], r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
+            authorized = bool(int(r["extra_authorized"] or 0) == 1)
+            m, meta = minutes_paid_between(
+                conn, uid, r["work_date"],
+                r["time_in"], r["time_out"],
+                int(r["break_minutes"] or 0),
+                authorized
+            )
+
             mult = float(r["multiplier"] or 1.0)
-            total_min += m
+            total_min += int(m)
             total_pay += (m / 60.0) * rate * mult
 
             break_eff = effective_break_minutes(r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
@@ -1614,13 +1851,21 @@ def get_week(week_id: int, req: Request):
                     "work_date": r["work_date"],
                     "weekday": weekday_short_en(d),
                     "date_ddmmyyyy": ddmmyyyy(d),
-                    "time_in": r["time_in"],
-                    "time_out": r["time_out"],
+                    "time_in": r["time_in"] or "",
+                    "time_out": r["time_out"] or "",
                     "break_minutes": int(break_eff),
                     "note": r["note"],
                     "bh_paid": (None if r["bh_paid"] is None else bool(int(r["bh_paid"]))),
                     "multiplier": float(r["multiplier"] or 1.0),
-                    "worked_hhmm": f"{m//60:02d}:{m%60:02d}",
+
+                    "worked_hhmm": f"{int(m)//60:02d}:{int(m)%60:02d}",
+
+                    "time_in_real": r["time_in"] or "",
+                    "time_out_real": r["time_out"] or "",
+                    "time_in_paid": meta.get("paid_in_hhmm") or "",
+                    "time_out_paid": meta.get("paid_out_hhmm") or "",
+
+                    "extra_authorized": 1 if authorized else 0,
                 }
             )
 
@@ -1629,9 +1874,13 @@ def get_week(week_id: int, req: Request):
             "week_number": int(w["week_number"]),
             "start_date": w["start_date"],
             "hourly_rate": float(w["hourly_rate"] or 0),
-            "totals": {"total_hhmm": f"{total_min//60:02d}:{total_min%60:02d}", "total_pay": round(total_pay, 2)},
+            "totals": {
+                "total_hhmm": f"{total_min//60:02d}:{total_min%60:02d}",
+                "total_pay": round(total_pay, 2)
+            },
             "entries": entries,
         }
+
 
 
 @app.patch("/api/weeks/{week_id}")
@@ -1771,13 +2020,11 @@ def dashboard(req: Request):
     uid = require_user(req)
 
     with db() as conn:
-        # All weeks (ASC helps our selector)
         weeks = conn.execute(
             "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date ASC",
             (uid,),
         ).fetchall()
 
-        # ✅ Correct "current week" selector (contains today; else latest past; else earliest future)
         current_week = get_week_for_today_strict(conn, uid)
 
         # Totals (all time)
@@ -1785,10 +2032,11 @@ def dashboard(req: Request):
         total_pay_all = 0.0
 
         for w in weeks:
-            rate = float(w["hourly_rate"] or 0)
+            rate = float(w["hourly_rate"] or 0.0)
+
             rows = conn.execute(
                 """
-                SELECT work_date,time_in,time_out,break_minutes,multiplier
+                SELECT work_date, time_in, time_out, break_minutes, multiplier, extra_authorized
                 FROM entries
                 WHERE user_id=? AND week_id=?
                 """,
@@ -1796,25 +2044,28 @@ def dashboard(req: Request):
             ).fetchall()
 
             for r in rows:
-                m = minutes_between(
-                    r["work_date"],
-                    r["time_in"],
-                    r["time_out"],
+                authorized = bool(int(r["extra_authorized"] or 0) == 1)
+                m, _meta = minutes_paid_between(
+                    conn, uid, r["work_date"],
+                    r["time_in"], r["time_out"],
                     int(r["break_minutes"] or 0),
+                    authorized
                 )
+
                 mult = float(r["multiplier"] or 1.0)
-                total_min_all += m
+                total_min_all += int(m)
                 total_pay_all += (m / 60.0) * rate * mult
 
-        # Totals (this week = current_week)
+        # Totals (this week)
         this_week_min = 0
         this_week_pay = 0.0
 
         if current_week:
-            rate = float(current_week["hourly_rate"] or 0)
+            rate = float(current_week["hourly_rate"] or 0.0)
+
             rows = conn.execute(
                 """
-                SELECT work_date,time_in,time_out,break_minutes,multiplier
+                SELECT work_date, time_in, time_out, break_minutes, multiplier, extra_authorized
                 FROM entries
                 WHERE user_id=? AND week_id=?
                 """,
@@ -1822,14 +2073,16 @@ def dashboard(req: Request):
             ).fetchall()
 
             for r in rows:
-                m = minutes_between(
-                    r["work_date"],
-                    r["time_in"],
-                    r["time_out"],
+                authorized = bool(int(r["extra_authorized"] or 0) == 1)
+                m, _meta = minutes_paid_between(
+                    conn, uid, r["work_date"],
+                    r["time_in"], r["time_out"],
                     int(r["break_minutes"] or 0),
+                    authorized
                 )
+
                 mult = float(r["multiplier"] or 1.0)
-                this_week_min += m
+                this_week_min += int(m)
                 this_week_pay += (m / 60.0) * rate * mult
 
         # Bank holidays
@@ -1863,8 +2116,9 @@ def dashboard(req: Request):
 
         return {
             "this_week": {
+                "id": (int(current_week["id"]) if current_week else None),
                 "week_number": (int(current_week["week_number"]) if current_week else None),
-                "hourly_rate": (float(current_week["hourly_rate"] or 0) if current_week else 0),
+                "hourly_rate": (float(current_week["hourly_rate"] or 0.0) if current_week else 0.0),
                 "hhmm": f"{this_week_min//60:02d}:{this_week_min%60:02d}",
                 "pay_eur": round(this_week_pay, 2),
             },
@@ -1882,10 +2136,9 @@ def dashboard(req: Request):
 @app.get("/api/report/week/current")
 def report_current_week(req: Request):
     uid = require_user(req)
-    today = date.today().isoformat()  # "YYYY-MM-DD"
+    today = date.today().isoformat()
 
     with db() as conn:
-        # 1) Try to find the week that contains today (start_date <= today <= start_date+6)
         w = conn.execute(
             """
             SELECT *
@@ -1899,7 +2152,6 @@ def report_current_week(req: Request):
             (uid, today, today),
         ).fetchone()
 
-        # 2) Fallback: if none contains today, use latest (keeps app usable)
         if not w:
             w = conn.execute(
                 "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC LIMIT 1",
@@ -1919,7 +2171,7 @@ def report_current_week(req: Request):
 
         rows = conn.execute(
             """
-            SELECT *
+            SELECT id, work_date, time_in, time_out, break_minutes, multiplier, extra_authorized
             FROM entries
             WHERE user_id=? AND week_id=?
             ORDER BY work_date ASC
@@ -1932,21 +2184,21 @@ def report_current_week(req: Request):
         total_pay = 0.0
 
         for r in rows:
-            m = minutes_between(
-                r["work_date"],
-                r["time_in"],
-                r["time_out"],
-                int(r["break_minutes"] or 0),
-            )
-            mult = float(r["multiplier"] or 1.0)
+            authorized = bool(int(r["extra_authorized"] or 0) == 1)
 
-            total_min += m
+            m, meta = minutes_paid_between(
+                conn, uid, r["work_date"],
+                r["time_in"], r["time_out"],
+                int(r["break_minutes"] or 0),
+                authorized
+            )
+
+            mult = float(r["multiplier"] or 1.0)
+            total_min += int(m)
             total_pay += (m / 60.0) * rate * mult
 
             d = parse_ymd(r["work_date"])
-            break_eff = effective_break_minutes(
-                r["time_in"], r["time_out"], int(r["break_minutes"] or 0)
-            )
+            break_eff = effective_break_minutes(r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
 
             entries.append(
                 {
@@ -1954,11 +2206,20 @@ def report_current_week(req: Request):
                     "work_date": r["work_date"],
                     "weekday": weekday_short_en(d),
                     "date_ddmmyyyy": ddmmyyyy(d),
+
                     "time_in": r["time_in"] or "",
                     "time_out": r["time_out"] or "",
+
+                    "time_in_real": r["time_in"] or "",
+                    "time_out_real": r["time_out"] or "",
+                    "time_in_paid": meta.get("paid_in_hhmm") or "",
+                    "time_out_paid": meta.get("paid_out_hhmm") or "",
+
                     "break_minutes": int(break_eff),
-                    "worked_hhmm": f"{m//60:02d}:{m%60:02d}",
+                    "worked_hhmm": f"{int(m)//60:02d}:{int(m)%60:02d}",
                     "pay_eur": round((m / 60.0) * rate * mult, 2),
+
+                    "extra_authorized": 1 if authorized else 0,
                 }
             )
 
@@ -1977,6 +2238,7 @@ def report_current_week(req: Request):
                 "pay_eur": round(total_pay, 2),
             },
         }
+
 
 # ======================================================
 # CLOCK (IN / OUT / BREAK) + EXTRA CONFIRM
