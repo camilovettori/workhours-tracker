@@ -820,6 +820,9 @@ async function refreshClock() {
     CLOCK = c;
     TODAY_WEEK_ID = c?.has_week ? (c.week_id ?? null) : null;
 
+    // ===============================
+    // NO WEEK CREATED
+    // ===============================
     if (!c.has_week) {
       if (cwIn) cwIn.textContent = "--:--";
       if (cwOut) cwOut.textContent = "--:--";
@@ -833,20 +836,23 @@ async function refreshClock() {
     if (cwIn)  cwIn.textContent  = c.in_time  || "--:--";
     if (cwOut) cwOut.textContent = c.out_time || "--:--";
 
-    // ---- BREAK RECONCILIATION ----
+    // ===============================
+    // BREAK RECONCILIATION
+    // ===============================
     const localActive = hasActiveLocalBreak();
 
     if (c.break_running) {
-      // backend says break running -> ensure local countdown exists
       setBreakButtonRunning(true);
 
-      // if no local break saved, start full or resume from stored left (if any)
       if (!localActive) {
         const savedLeft = Number(localStorage.getItem(LS_BREAK_LEFT) || "0");
         const resumeSec =
-          (Number.isFinite(savedLeft) && savedLeft > 0 && savedLeft <= BREAK_DEFAULT_SEC)
+          (Number.isFinite(savedLeft) &&
+           savedLeft > 0 &&
+           savedLeft <= BREAK_DEFAULT_SEC)
             ? savedLeft
             : BREAK_DEFAULT_SEC;
+
         localStorage.removeItem(LS_BREAK_LEFT);
         startBreakCountdown(resumeSec);
       } else {
@@ -854,15 +860,14 @@ async function refreshClock() {
       }
 
     } else {
-      // backend says break not running
-      // BUT: if local says it's still active, DO NOT kill countdown (prevents "freeze at 40m" due to backend blip)
+
       if (localActive) {
         setBreakButtonRunning(true);
         resumeBreakCountdownIfAny();
       } else {
         if (cwBreak) cwBreak.textContent = `${Number(c.break_minutes || 0)}m`;
         setBreakButtonRunning(false);
-        // stop UI + clear storage (safe because localActive is false)
+
         if (breakTick) clearInterval(breakTick);
         breakTick = null;
         breakRunningUI = false;
@@ -871,30 +876,107 @@ async function refreshClock() {
       }
     }
 
-    if (cwStatusText) {
-      if (!c.in_time) cwStatusText.textContent = "Tap IN to start.";
-      else if (c.break_running || localActive) cwStatusText.textContent = "Break running…";
-      else if (!c.out_time) cwStatusText.textContent = "Tracking live…";
-      else {
-        cwStatusText.textContent = "Done for today ✅";
+    // ===============================
+    // STATUS TEXT LOGIC
+    // ===============================
+    if (!cwStatusText) return;
 
-        // Tomorrow roster hint (best-effort)
-        try {
+    // 1️⃣ NOT CLOCKED IN
+    if (!c.in_time) {
+      try {
+        const todayYmd = ymdFromDate(new Date());
+        const todayRoster =
+          await api(`/api/roster/day?date_ymd=${encodeURIComponent(todayYmd)}`);
+
+        // ---- TODAY OFF ----
+        if (todayRoster && todayRoster.day_off === true) {
+
           const tomorrow = new Date();
           tomorrow.setDate(tomorrow.getDate() + 1);
-          const date_ymd = ymdFromDate(tomorrow);
+          const tomorrowYmd = ymdFromDate(tomorrow);
 
-          const r = await api(`/api/roster/day?date_ymd=${encodeURIComponent(date_ymd)}`);
+          try {
+            const tomorrowRoster =
+              await api(`/api/roster/day?date_ymd=${encodeURIComponent(tomorrowYmd)}`);
 
-          if (!r || r.day_off === true || !r.shift_in || !r.shift_out) {
-            cwStatusText.textContent = "You are off tomorrow — enjoy your day! 😎";
-          } else {
-            const s = fmtHHMM(r.shift_in);
-            const e = fmtHHMM(r.shift_out);
-            cwStatusText.textContent = `You work tomorrow ${s}–${e} 💪`;
+            if (
+              tomorrowRoster &&
+              !tomorrowRoster.day_off &&
+              tomorrowRoster.shift_in &&
+              tomorrowRoster.shift_out
+            ) {
+              const s = fmtHHMM(tomorrowRoster.shift_in);
+              const e = fmtHHMM(tomorrowRoster.shift_out);
+              cwStatusText.textContent = `OFF today • Tomorrow ${s}–${e}`;
+            } else {
+              cwStatusText.textContent = "OFF today 😎";
+            }
+
+          } catch {
+            cwStatusText.textContent = "OFF today 😎";
           }
-        } catch {}
+
+        }
+
+        // ---- TODAY WORK SHIFT ----
+        else if (
+          todayRoster &&
+          !todayRoster.day_off &&
+          todayRoster.shift_in &&
+          todayRoster.shift_out
+        ) {
+          const s = fmtHHMM(todayRoster.shift_in);
+          const e = fmtHHMM(todayRoster.shift_out);
+          cwStatusText.textContent = `Shift ${s}–${e} • Tap IN to start`;
+        }
+
+        else {
+          cwStatusText.textContent = "Tap IN to start.";
+        }
+
+      } catch {
+        cwStatusText.textContent = "Tap IN to start.";
       }
+
+      return;
+    }
+
+    // 2️⃣ BREAK RUNNING
+    if (c.break_running || localActive) {
+      cwStatusText.textContent = "Break running…";
+      return;
+    }
+
+    // 3️⃣ WORKING
+    if (!c.out_time) {
+      cwStatusText.textContent = "Tracking live…";
+      return;
+    }
+
+    // 4️⃣ FINISHED DAY
+    try {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowYmd = ymdFromDate(tomorrow);
+
+      const tomorrowRoster =
+        await api(`/api/roster/day?date_ymd=${encodeURIComponent(tomorrowYmd)}`);
+
+      if (
+        tomorrowRoster &&
+        !tomorrowRoster.day_off &&
+        tomorrowRoster.shift_in &&
+        tomorrowRoster.shift_out
+      ) {
+        const s = fmtHHMM(tomorrowRoster.shift_in);
+        const e = fmtHHMM(tomorrowRoster.shift_out);
+        cwStatusText.textContent = `Done for today ✅ • Tomorrow ${s}–${e}`;
+      } else {
+        cwStatusText.textContent = "Done for today ✅";
+      }
+
+    } catch {
+      cwStatusText.textContent = "Done for today ✅";
     }
 
   } catch (e) {
@@ -902,6 +984,8 @@ async function refreshClock() {
     stopLiveTicker();
   }
 }
+
+
 
 /* =========================
    Current week totals (SAFE)
@@ -1164,13 +1248,72 @@ async function handleOvertimePrompt(resObj) {
   return { proceed: true, authorized: false, reason };
 }
 
+async function validateBeforeClockIn() {
+
+  // 1️⃣ Check Hourly Rate
+  const rate = Number(ME?.hourly_rate ?? 0);
+
+  if (!rate || rate <= 0) {
+    alert("Add Hour Rate First.\nGo to Profile → Hourly Rate.");
+    go("/profile");
+    return false;
+  }
+
+  // 2️⃣ Check current week roster exists
+  try {
+    const todayYmd = ymdFromDate(new Date());
+    const roster = await api(`/api/roster/day?date_ymd=${encodeURIComponent(todayYmd)}`);
+
+    if (!roster) {
+      alert("Add your Week Roster First.");
+      go("/roster");
+      return false;
+    }
+
+  } catch {
+    alert("Add your Week Roster First.");
+    go("/roster");
+    return false;
+  }
+
+  return true;
+}
+
 /* =========================
    Clock actions
 ========================= */
+
 async function doClockIn() {
   try {
-    await ensureWeekExistsForClock();
 
+    // 1️⃣ CHECK HOURLY RATE
+    const me = await api("/api/me");
+    const rate = Number(me?.hourly_rate || 0);
+
+    if (!rate || rate <= 0) {
+      alert("Add Hour Rate First.\nGo to Profile → Hourly Rate.");
+      return;
+    }
+
+    // 2️⃣ CHECK ROSTER FOR TODAY
+    const todayYmd = ymdFromDate(new Date());
+
+    let rosterToday = null;
+
+    try {
+      rosterToday = await api(
+        `/api/roster/day?date_ymd=${encodeURIComponent(todayYmd)}`
+      );
+    } catch {
+      rosterToday = null;
+    }
+
+    if (!rosterToday) {
+      alert("Add your Week Roster First.");
+      return;
+    }
+
+    // 🚀 DIRECT CLOCK IN (NO AUTO WEEK CREATION)
     const r = await api("/api/clock/in", { method: "POST" });
 
     if (r?.needs_extra_confirm) {
@@ -1179,16 +1322,14 @@ async function doClockIn() {
       await api("/api/clock/in", { method: "POST" });
     }
 
-    const el = document.getElementById("todayEarnHHMM");
-    if (el) el.textContent = "00:00:00";
-    const pay = document.getElementById("todayEarnPay");
-    if (pay) pay.textContent = "€0.00";
-
     await refreshAll();
+
   } catch (e) {
     alert(e?.message || "IN failed");
   }
 }
+
+
 
 async function doClockOut() {
   try {
@@ -1631,6 +1772,7 @@ function bind() {
   navHolidays?.addEventListener("click", () => go("/holidays"));
   navReports?.addEventListener("click", () => go("/report"));
   document.addEventListener("DOMContentLoaded", enterRoster);
+  
 
 }
 
