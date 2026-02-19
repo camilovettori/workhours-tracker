@@ -361,6 +361,18 @@
 #btnSave:hover{ filter: brightness(1.05) !important; }
 #btnSave:active{ transform: translateY(1px) !important; }
 #btnSave:disabled{ opacity:.55 !important; cursor:not-allowed !important; }
+/* ===== Roster Preview Highlight ===== */
+
+.rpRow.rp-selected {
+  background: rgba(37,99,235,.08);
+  border: 1px solid rgba(37,99,235,.25);
+}
+
+.rpRow.rp-latest {
+  background: rgba(37,99,235,.18);
+  border: 1px solid rgba(37,99,235,.45);
+  box-shadow: 0 8px 20px rgba(37,99,235,.20);
+}
 
 
   </style>
@@ -451,6 +463,9 @@
           <button id="btnB" class="btnChoice" type="button">10:45 → 20:00</button>
           <button id="btnOFF" class="btnChoice" type="button">DAY OFF</button>
         </div>
+ 
+
+        
 
         <div class="muted" style="margin-top:10px;">Pick one option. It will move to next day.</div>
       </div>
@@ -811,7 +826,16 @@
         }
 
         const row = document.createElement("div");
-        row.className = "rpRow";
+row.className = "rpRow";
+
+// todas selecionadas ficam levemente azuis
+row.classList.add("rp-selected");
+
+// última adicionada fica mais forte
+if (item.i === wizardIndex - 1) {
+  row.classList.add("rp-latest");
+}
+
         row.innerHTML = `
           <div class="left">
             <div class="d1">${weekdayShort(dt)} • ${workYmd}</div>

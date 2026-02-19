@@ -1336,22 +1336,41 @@ async function loadAdminUsers(){
 }
 
 /* =========================
-   ROSTER (/roster) - kept as in your v17
+   ROSTER (/roster) - CLEAN REBUILD
 ========================= */
+
+// Helpers
 const R = (id) => document.getElementById(id);
 const SHIFT_PAID_MIN = 495; // 8h15 paid
+
+// Global state (only declared ONCE)
+window.__WH_ROSTER = window.__WH_ROSTER || {
+  hourlyRate: 0,
+  picked: [],
+  startDate: "",
+  activeDayIndex: 0,
+};
+
+const ROSTER = window.__WH_ROSTER;
+
+
+// =======================
+// Core helpers
+// =======================
 
 function codeToLabel(code) {
   if (code === "A") return "09:45 → 19:00";
   if (code === "B") return "10:45 → 20:00";
-  return "OFF";
+  return "DAY OFF";
 }
+
 function rosterExpectedMinutesFromCodes(codes) {
   return (codes || []).reduce((acc, code) => {
     if (code === "A" || code === "B") return acc + SHIFT_PAID_MIN;
     return acc;
   }, 0);
 }
+
 async function rosterCalcExpectedPay(codes, startYmd, rate) {
   let total = 0;
   const r = Number(rate || 0);
@@ -1367,18 +1386,16 @@ async function rosterCalcExpectedPay(codes, startYmd, rate) {
   return total;
 }
 
-window.__WH_ROSTER = window.__WH_ROSTER || {
-  hourlyRate: 0,
-  picked: [],
-  startDate: "",
-  activeDayIndex: 0,
-};
-const ROSTER = window.__WH_ROSTER;
+
+// =======================
+// Preview Renderer
+// =======================
 
 async function rosterRenderPreview() {
   const box = R("rosterPreview");
   const list = R("rpList");
   const totals = R("rpTotals");
+
   if (!box || !list || !totals) return;
 
   if (!ROSTER.picked.length || !ROSTER.startDate) {
@@ -1392,8 +1409,14 @@ async function rosterRenderPreview() {
   const mins = rosterExpectedMinutesFromCodes(ROSTER.picked);
   const hhmm = `${pad2(Math.floor(mins/60))}:${pad2(mins%60)}`;
 
-  const pay = await rosterCalcExpectedPay(ROSTER.picked, ROSTER.startDate, ROSTER.hourlyRate);
-  totals.textContent = `Expected: ${hhmm} • ${fmtEUR(Number.isFinite(pay) ? pay : 0)}`;
+  const pay = await rosterCalcExpectedPay(
+    ROSTER.picked,
+    ROSTER.startDate,
+    ROSTER.hourlyRate
+  );
+
+  totals.textContent =
+    `Expected: ${hhmm} • ${fmtEUR(Number.isFinite(pay) ? pay : 0)}`;
 
   for (let i = 0; i < ROSTER.picked.length; i++) {
     const code = ROSTER.picked[i];
@@ -1402,6 +1425,15 @@ async function rosterRenderPreview() {
 
     const row = document.createElement("div");
     row.className = "rpRow";
+
+    // highlight ALL picked
+    row.classList.add("is-picked");
+
+    // stronger highlight on last
+    if (i === ROSTER.picked.length - 1) {
+      row.classList.add("is-latest");
+    }
+
     row.innerHTML = `
       <div class="left">
         <div class="d1">${weekdayShort(dt)} • ${ymd}</div>
@@ -1409,9 +1441,15 @@ async function rosterRenderPreview() {
       </div>
       <div class="right">${codeToLabel(code)}</div>
     `;
+
     list.appendChild(row);
   }
 }
+
+
+// =======================
+// Wizard logic
+// =======================
 
 function rosterRenderWizardDay() {
   const dayTitle = R("rwDayTitle");
@@ -1423,41 +1461,31 @@ function rosterRenderWizardDay() {
   if (!startInput) return;
 
   ROSTER.startDate = (startInput.value || "").trim();
-  if (saveBtn) saveBtn.disabled = ROSTER.picked.length !== 7;
+
+  if (saveBtn) {
+    saveBtn.disabled = ROSTER.picked.length !== 7;
+  }
 
   if (!ROSTER.startDate) {
     if (dayTitle) dayTitle.textContent = "Pick start date";
     if (dayDate) dayDate.textContent = "";
-    rosterRenderPreview().catch(() => {});
+    rosterRenderPreview();
     return;
   }
 
   const ymd = ymdAddDays(ROSTER.startDate, ROSTER.activeDayIndex);
   const dt = ymdToDateObj(ymd);
 
-  if (dayTitle) dayTitle.textContent = `${weekdayShort(dt)}`;
-  if (dayDate) dayDate.textContent = `${ymd}`;
+  if (dayTitle) dayTitle.textContent = weekdayShort(dt);
+  if (dayDate) dayDate.textContent = ymd;
 
-  if (weekInput && !String(weekInput.value || "").trim()) {
+  if (weekInput && !weekInput.value) {
     weekInput.value = String(isoWeekNumber(new Date()));
   }
 
-  rosterRenderPreview().catch(() => {});
+  rosterRenderPreview();
 }
 
-function rosterWizardReset() {
-  ROSTER.picked = [];
-  ROSTER.activeDayIndex = 0;
-
-  const weekInput = R("rwWeekNumber");
-  const startInput = R("rwStartDate");
-
-  if (weekInput) weekInput.value = String(isoWeekNumber(new Date()));
-  if (startInput) startInput.value = todayYMD();
-
-  ROSTER.startDate = (startInput?.value || "").trim();
-  rosterRenderWizardDay();
-}
 
 function rosterPick(code) {
   const startInput = R("rwStartDate");
@@ -1471,200 +1499,46 @@ function rosterPick(code) {
   if (ROSTER.picked.length >= 7) return;
 
   ROSTER.picked.push(code);
-  ROSTER.activeDayIndex = Math.min(6, ROSTER.picked.length);
-  rosterRenderWizardDay();
-}
+  ROSTER.activeDayIndex = ROSTER.picked.length - 1;
 
-function rosterOpenWizard() {
-  const wizard = R("rosterWizard");
-  if (wizard) wizard.classList.remove("hidden");
-  rosterWizardReset();
-}
-function rosterCloseWizard() {
-  const wizard = R("rosterWizard");
-  if (wizard) wizard.classList.add("hidden");
-}
-
-async function rosterShowDetail(roster) {
-  const detail = R("rosterDetail");
-  const title = R("rosterDetailTitle");
-  const totals = R("rosterDetailTotals");
-  const grid = R("rosterDetailGrid");
-
-  if (detail) detail.classList.remove("hidden");
-  if (title) title.textContent = `Week ${roster.week_number} (start ${roster.start_date})`;
-
-  const codes = (roster.days || []).map((d) =>
-    d.day_off ? "OFF" : d.shift_in === "09:45" ? "A" : "B"
-  );
-
-  const mins = rosterExpectedMinutesFromCodes(codes);
-  const hhmm = `${pad2(Math.floor(mins/60))}:${pad2(mins%60)}`;
-
-  const pay = await rosterCalcExpectedPay(codes, roster.start_date, ROSTER.hourlyRate);
-  if (totals) totals.textContent = `Expected: ${hhmm} • ${fmtEUR(pay)}`;
-
-  if (grid) {
-    grid.innerHTML = "";
-    for (const d of roster.days || []) {
-      const dt = ymdToDateObj(d.work_date);
-      const code = d.day_off ? "OFF" : d.shift_in === "09:45" ? "A" : "B";
-
-      const cell = document.createElement("div");
-      cell.className = "rosterCell";
-      cell.innerHTML = `
-        <div class="rcTop">${weekdayShort(dt)}</div>
-        <div class="rcDate">${d.work_date}</div>
-        <div class="rcShift">${codeToLabel(code)}</div>
-      `;
-      grid.appendChild(cell);
-    }
-  }
-}
-
-async function rosterLoadDetail(rosterId) {
-  try {
-    window.__WH_ACTIVE_ROSTER_ID = rosterId;
-    const r = await api(`/api/roster/${rosterId}`);
-    window.__WH_ACTIVE_ROSTER_WEEKNO = r?.week_number ?? null;
-    await rosterShowDetail(r);
-  } catch (e) {
-    alert(e.message || "Failed to load roster");
-  }
-}
-
-async function rosterLoadList() {
-  const list = R("rosterWeeksList");
-  const msg = R("rosterListMsg");
-  if (!list) return;
-
-  list.innerHTML = "";
-  if (msg) msg.textContent = "Loading...";
-
-  try {
-    const items = await api("/api/roster");
-    if (!items || !items.length) {
-      if (msg) msg.textContent = "No roster weeks yet. Click “Add week”.";
-      return;
-    }
-    if (msg) msg.textContent = "";
-
-    for (const it of items) {
-      const card = document.createElement("div");
-      card.className = "weekItem";
-      card.innerHTML = `
-        <div class="weekLeft">
-          <div class="t1">Week ${it.week_number}</div>
-          <div class="t2">Start: ${it.start_date}</div>
-        </div>
-        <div class="weekRight"></div>
-      `;
-      card.addEventListener("click", () => rosterLoadDetail(it.id));
-      list.appendChild(card);
-    }
-
-    await rosterLoadDetail(items[0].id);
-  } catch (e) {
-    if (msg) msg.textContent = "";
-    alert(e.message || "Failed to load rosters");
-    if (e.status === 401) go("/");
-  }
-}
-
-async function rosterSaveWeek() {
-  const weekInput = R("rwWeekNumber");
-  const startInput = R("rwStartDate");
-
-  const week_number = Number(weekInput?.value || 0);
-  const start_date = (startInput?.value || "").trim();
-
-  if (!week_number || week_number < 1) { alert("Week number invalid."); return; }
-  if (!start_date) { alert("Start date required."); return; }
-  if (ROSTER.picked.length !== 7) { alert("Select all days (Sun..Sat) before saving."); return; }
-
-  try {
-    await api("/api/roster", {
-      method: "POST",
-      body: JSON.stringify({
-        week_number,
-        start_date,
-        days: ROSTER.picked,
-      }),
-    });
-
-    rosterCloseWizard();
-    await rosterLoadList();
-  } catch (e) {
-    alert(e.message || "Failed to save roster");
-  }
-}
-
-async function enterRoster() {
-  try { ME = await refreshMe(false); } catch {}
-
-  ROSTER.hourlyRate =
-    Number(ME?.hourly_rate ?? 0) ||
-    Number(getSavedRate() ?? 0) ||
-    18.24;
-
-  try {
-    const weeks = await api("/api/weeks");
-    if (weeks && weeks.length) ROSTER.hourlyRate = Number(weeks[0].hourly_rate || ROSTER.hourlyRate || 0);
-  } catch {}
-
-  const addBtn = R("btnRosterAddWeek");
-  const cancelBtn = R("btnRwCancel");
-  const backBtn = R("btnRwBack");
-  const saveBtn = R("btnRwSave");
-  const startInput = R("rwStartDate");
-
-  if (addBtn && !addBtn.dataset.bound) {
-    addBtn.dataset.bound = "1";
-    addBtn.addEventListener("click", rosterOpenWizard);
-  }
-  if (cancelBtn && !cancelBtn.dataset.bound) {
-    cancelBtn.dataset.bound = "1";
-    cancelBtn.addEventListener("click", rosterCloseWizard);
-  }
-  if (backBtn && !backBtn.dataset.bound) {
-    backBtn.dataset.bound = "1";
-    backBtn.addEventListener("click", rosterCloseWizard);
-  }
-
+  // Button highlight
   const bA = R("btnRwA");
   const bB = R("btnRwB");
   const bOFF = R("btnRwOFF");
 
-  if (bA && !bA.dataset.bound) {
-    bA.dataset.bound = "1";
-    bA.addEventListener("click", () => rosterPick("A"));
-  }
-  if (bB && !bB.dataset.bound) {
-    bB.dataset.bound = "1";
-    bB.addEventListener("click", () => rosterPick("B"));
-  }
-  if (bOFF && !bOFF.dataset.bound) {
-    bOFF.dataset.bound = "1";
-    bOFF.addEventListener("click", () => rosterPick("OFF"));
-  }
+  [bA, bB, bOFF].forEach(b => b?.classList.remove("shiftOption--active"));
 
-  if (startInput && !startInput.dataset.bound) {
-    startInput.dataset.bound = "1";
-    startInput.addEventListener("change", () => {
-      ROSTER.startDate = (R("rwStartDate")?.value || "").trim();
-      ROSTER.picked = [];
-      ROSTER.activeDayIndex = 0;
-      rosterRenderWizardDay();
-    });
-  }
+  if (code === "A") bA?.classList.add("shiftOption--active");
+  if (code === "B") bB?.classList.add("shiftOption--active");
+  if (code === "OFF") bOFF?.classList.add("shiftOption--active");
 
-  if (saveBtn && !saveBtn.dataset.bound) {
-    saveBtn.dataset.bound = "1";
-    saveBtn.addEventListener("click", rosterSaveWeek);
-  }
-
-  await rosterLoadList();
+  rosterRenderWizardDay();
 }
+
+
+// =======================
+// Init
+// =======================
+
+function enterRoster() {
+  const bA = R("btnRwA");
+  const bB = R("btnRwB");
+  const bOFF = R("btnRwOFF");
+  const startInput = R("rwStartDate");
+
+  bA?.addEventListener("click", () => rosterPick("A"));
+  bB?.addEventListener("click", () => rosterPick("B"));
+  bOFF?.addEventListener("click", () => rosterPick("OFF"));
+
+  startInput?.addEventListener("change", () => {
+    ROSTER.picked = [];
+    ROSTER.activeDayIndex = 0;
+    rosterRenderWizardDay();
+  });
+
+  rosterRenderWizardDay();
+}
+
 
 /* =========================
    Routing after auth
@@ -1756,6 +1630,8 @@ function bind() {
   navHistory?.addEventListener("click", () => go("/roster"));
   navHolidays?.addEventListener("click", () => go("/holidays"));
   navReports?.addEventListener("click", () => go("/report"));
+  document.addEventListener("DOMContentLoaded", enterRoster);
+
 }
 
 /* =========================

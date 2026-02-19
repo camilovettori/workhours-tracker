@@ -1407,3 +1407,65 @@ button[id^="btnSavePhoto"]{
 .pill.pill--blue:active{
   transform: translateY(1px);
 }
+#rpList .rpRow.is-picked{
+  background: #cfe1ff !important;
+  border: 2px solid #2563eb !important;
+  box-shadow: 0 18px 40px rgba(37,99,235,.35) !important;
+  transform: scale(1.01);
+  transition: all .18s ease;
+}
+
+#rpList .rpRow.is-picked::before{
+  content:"";
+  position:absolute;
+  left:0;
+  top:0;
+  bottom:0;
+  width:8px;
+  background:#1d4ed8;
+}
+
+#rpList .rpRow.is-latest{
+  background: #bcd4ff !important;
+  border-color: #1e40af !important;
+  box-shadow: 0 22px 50px rgba(37,99,235,.45) !important;
+}
+.shiftOption--active{
+  background: #2563eb !important;
+  color: #fff !important;
+  border: 2px solid #1e40af !important;
+  box-shadow: 0 12px 30px rgba(37,99,235,.35);
+}
+#rpList .rpRow.is-picked{
+  background: #2563eb !important;
+  color: #fff !important;
+  border: 2px solid #1e40af !important;
+  box-shadow: 0 18px 40px rgba(37,99,235,.45) !important;
+  transform: scale(1.01);
+  transition: all .2s ease;
+}
+
+#rpList .rpRow.is-picked .d2{
+  color: rgba(255,255,255,.85);
+}
+
+#rpList .rpRow.is-picked::before{
+  display:none;
+}
+.shiftOption--active{
+  background:#2563eb !important;
+  color:#fff !important;
+  border:2px solid #1e40af !important;
+  box-shadow:0 14px 35px rgba(37,99,235,.35);
+}
+
+#rpList .rpRow.is-picked{
+  background:#2563eb !important;
+  color:#fff !important;
+  border:2px solid #1e40af !important;
+  box-shadow:0 18px 40px rgba(37,99,235,.45);
+}
+
+#rpList .rpRow.is-picked .d2{
+  color:rgba(255,255,255,.85);
+}
