@@ -8,22 +8,10 @@
 
   <link rel="manifest" href="/static/manifest.webmanifest" />
   <link rel="icon" href="/static/logo.png" />
-  <link rel="stylesheet" href="/static/app.css?v=12" />
-</head>
+  
+  <link rel="stylesheet" href="/static/app.css?v=999">
 
-<script>
-  (async () => {
-    try {
-      if (window.caches) {
-        const keys = await caches.keys();
-        for (const k of keys) await caches.delete(k);
-      }
-      console.log("Caches cleared ✅");
-    } catch (e) {
-      console.log("Cache clear failed", e);
-    }
-  })();
-</script>
+</head>
 
 <body>
   <main class="app">
@@ -144,7 +132,12 @@
             <input id="awHourlyRate" type="number" step="0.01" min="0" required />
           </label>
 
-          <button class="btn btn--primary" type="submit">Create week</button>
+        <button type="submit" class="pill pill--blue">
+  Create Week
+</button>
+
+
+
           <div id="addWeekMsg" class="msg" aria-live="polite"></div>
         </form>
       </section>
@@ -155,44 +148,32 @@
     <!-- =========================
          HOME VIEW
     ========================== -->
-    
-
     <section id="viewHome" class="homeView hidden">
-
       <header class="topbar">
         <div>
           <h1 class="h1">Home</h1>
-          <div class="subtitle">Welcome, <strong id="welcomeName">Camilo Vettori</strong></div>
+          <div class="subtitle">Welcome, <strong id="welcomeName">User</strong></div>
         </div>
 
-        <!-- Avatar no topo (substitui o botão Profile) -->
-<button id="btnProfileAvatar" class="topAvatarBtn" type="button" title="Profile">
-  <img id="topAvatarImg" class="topAvatarImg" src="/static/avatars/default.png" alt="Profile" />
-</button>
-
+        <button id="btnProfileAvatar" class="topAvatarBtn" type="button" title="Profile">
+          <img id="topAvatarImg" class="topAvatarImg" src="/static/logo.png" alt="Profile" />
+        </button>
       </header>
 
-      <!-- MAIN CARD (single, no duplicates) -->
-      <section class="card card--big cwCard" id="cardCurrentWeek">
-        <section id="cardCurrentWeek" class="card ">
-  
-</section>
-
-
-        <!-- Today earnings full width -->
+      <!-- ✅ Source of truth: JS binds click on #cwWeekBlock -->
+      <section class="card card--big cwCard" id="cwWeekBlock" role="button" tabindex="0" aria-label="Open current week report">
+        <!-- Today earnings -->
         <div class="cwTop cwTop--full">
-          <div class="teCard teCard--full">
-            <div class="teCard teCard--full" id="todayEarnCard">
-
+          <div class="teCard teCard--full" id="todayEarnCard">
             <div class="teHead">
               <div class="teTitle">Today earnings</div>
-              <div class="teLive" id="todayEarnState">LIVE</div>
+              <div class="teLive" id="todayEarnState">OFF</div>
             </div>
 
             <div class="teGrid teGrid--2">
               <div class="teItem">
                 <div class="teLabel">Time</div>
-                <div id="todayEarnHHMM" class="teValue">--:--</div>
+                <div id="todayEarnHHMM" class="teValue">--:--:--</div>
               </div>
 
               <div class="teItem">
@@ -203,7 +184,7 @@
           </div>
         </div>
 
-        <!-- Current week same style -->
+        <!-- Current week -->
         <div class="cwTop cwTop--full" style="margin-top:12px;">
           <div class="teCard teCard--full">
             <div class="teHead">
@@ -225,15 +206,15 @@
           </div>
         </div>
 
-        <!-- Actions -->
+        <!-- Actions (do NOT navigate) -->
         <div class="cwActions" style="margin-top:14px;">
-          <button id="btnIn" class="pill pill--green" type="button">
+          <button id="btnIn" class="pill pill--green cwNoNav" type="button">
             <span class="pillIcon">✓</span> IN
           </button>
 
-          <button id="btnOut" class="pill pill--gray" type="button">OUT</button>
+          <button id="btnOut" class="pill pill--gray cwNoNav" type="button">OUT</button>
 
-          <button id="btnBreak" class="pill pill--orange" type="button">
+          <button id="btnBreak" class="pill pill--orange cwNoNav" type="button">
             <span class="pillIcon">⏱</span> BREAK
           </button>
         </div>
@@ -252,7 +233,6 @@
           <span class="flex1"></span>
           <span>💪</span>
         </div>
-
       </section>
 
       <!-- BANK HOLIDAYS CARD -->
@@ -289,6 +269,7 @@
 
   </main>
 
+  <!-- app.js deve ser o único dono de binds -->
   <script defer src="/static/app.js?v=999"></script>
 </body>
 </html>

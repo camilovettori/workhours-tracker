@@ -7,7 +7,8 @@
   <title>Week summary</title>
 
   <link rel="icon" href="/static/logo.png" />
-  <link rel="stylesheet" href="/static/app.css?v=12" />
+  <link rel="stylesheet" href="/static/app.css?v=999">
+
 
   <style>
     /* FIX: Save button appearing washed/white in the modal */
@@ -94,6 +95,17 @@
       .reportWrap{ padding:0 !important; width:100% !important; }
       .card{ box-shadow:none !important; }
     }
+
+    .btn--blue{
+  background:#2563eb;
+  color:#fff;
+  border:none;
+}
+
+.btn--blue:hover{
+  background:#1d4ed8;
+}
+
   </style>
 </head>
 
@@ -278,7 +290,10 @@
         <div id="addWeekErr2" class="err"></div>
 
         <div class="modalActions">
-          <button class="btn btn--primary btnSmall" type="submit">Create week</button>
+          <button type="submit" class="pill pill--blue">
+  Create Week
+</button>
+
         </div>
       </form>
     </div>

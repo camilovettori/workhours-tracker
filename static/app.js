@@ -1,15 +1,21 @@
 /* =========================
-   Work Hours Tracker - app.js (v17)
-   FIX PACK:
-   - refreshCurrentWeekTotals global (works with type="module")
-   - fmtEUR added
-   - Remove CURRENT_WEEK_ID bug (use DASH_WEEK_ID)
-   - One secondsToHHMMSS() only
-   - Today earnings shows HH:MM:SS
-   - Current week totals use /api/report/week/current
+   Work Hours Tracker - app.js (v18)
+   FULL REBUILD (bugfix + cleanup)
+
+   FIXED:
+   - ✅ me undefined -> uses ME everywhere
+   - ✅ removed duplicate functions (ymdLocal, fmtHHMM)
+   - ✅ removed recursive listener add inside doClockOut()
+   - ✅ break countdown no longer dies if backend briefly returns break_running=false
+   - ✅ refreshClock reconciles backend/local break state safely
+   - ✅ safer navigation fetch handling preserved
 ========================= */
 
-console.log("app.js loaded ✅ v17");
+console.log("app.js loaded ✅ v18");
+
+// ---- navigation guard (prevents "Failed to fetch" alerts on page change)
+window.__WH_NAVIGATING__ = false;
+window.addEventListener("beforeunload", () => { window.__WH_NAVIGATING__ = true; });
 
 /* =========================
    Small DOM helpers
@@ -19,101 +25,13 @@ const show = (el) => el && el.classList.remove("hidden");
 const hide = (el) => el && el.classList.add("hidden");
 function go(path) { window.location.href = path; }
 function pathIs(p) { return window.location.pathname === p; }
-// ===== ME cache =====
-// ===== ME cache (declare ONCE) =====
+
+/* =========================
+   Local caches
+========================= */
 const LS_ME = "wh_me";
+const LS_AVATAR = "wh_avatar_url";
 let ME = null;
-
-
-function readCachedMe(){
-  try { return JSON.parse(localStorage.getItem(LS_ME) || "null"); }
-  catch { return null; }
-}
-
-async function refreshMe(force = false) {
-  if (!force) {
-    const cached = readCachedMe();
-    if (cached && cached.ok) {
-      ME = cached;
-      if (typeof applyMeToUI === "function") applyMeToUI(ME);
-    }
-  }
-
-  const me = await api("/api/me");
-  ME = me;
-
-  // cache
-  try { localStorage.setItem(LS_ME, JSON.stringify(me)); } catch {}
-
-  // aplica na UI se existir
-  if (typeof applyMeToUI === "function") applyMeToUI(ME);
-
-  // mostra/esconde botão Admin se existir na página
-  const adminBtn = document.getElementById("openAdmin");
-  if (adminBtn) {
-    const isAdmin = Number(ME?.is_admin || 0) === 1;
-    adminBtn.classList.toggle("hidden", !isAdmin);
-    adminBtn.onclick = () => (window.location.href = "/admin");
-  }
-
-  return ME;
-}
-
-// garante global (se algum HTML chama refreshMe direto)
-window.refreshMe = refreshMe;
-
-
-
-async function initAdminPage() {
-  const btnBack = document.getElementById("btnAdminBack");
-  const btnHome = document.getElementById("btnAdminHome");
-  const btnReload = document.getElementById("btnAdminReload");
-
-  if (btnBack) btnBack.onclick = () => history.back();
-  if (btnHome) btnHome.onclick = () => (window.location.href = "/");
-  if (btnReload) btnReload.onclick = () => loadAdminUsers();
-
-  await loadAdminUsers();
-}
-
-async function loadAdminUsers(){
-  const msg  = document.getElementById("adminMsg");
-  const list = document.getElementById("adminUsersList");
-  if (msg) msg.textContent = "";
-  if (list) list.innerHTML = "";
-
-  try{
-    const res = await api("/api/admin/users");
-    const users = res?.users || [];
-
-    if (!users.length){
-      if (list) list.innerHTML = `<div class="muted">No users found.</div>`;
-      return;
-    }
-
-    if (list){
-      list.innerHTML = users.map(u => {
-        const name = `${(u.first_name||"").trim()} ${(u.last_name||"").trim()}`.trim() || "—";
-        const badge = u.is_admin ? `<span class="todayPill" style="margin-left:0;">ADMIN</span>` : "";
-        return `
-          <div class="rpRow">
-            <div class="left">
-              <div class="d1">${name} ${badge}</div>
-              <div class="d2">${u.email}</div>
-            </div>
-            <div class="right">#${u.id}</div>
-          </div>
-        `;
-      }).join("");
-    }
-  }catch(e){
-    if (msg) msg.textContent = e?.message || "Failed to load users";
-  }
-}
-
-
-
-
 
 /* =========================
    Format helpers
@@ -123,138 +41,40 @@ function fmtEUR(v) {
   if (!Number.isFinite(n)) return "€0.00";
   return `€${n.toFixed(2)}`;
 }
-
-function fmtHHMMFromMinutes(mins){
-  const m = Math.max(0, Math.floor(Number(mins || 0)));
-  const hh = String(Math.floor(m / 60)).padStart(2, "0");
-  const mm = String(m % 60).padStart(2, "0");
-  return `${hh}:${mm}`;
-}
-
-function ymdTodayLocal(){
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth()+1).padStart(2,'0');
-  const day = String(d.getDate()).padStart(2,'0');
-  return `${y}-${m}-${day}`;
-}
-
-function ymdToDateLocal(ymd){
-  // "2026-02-15" -> Date local (00:00 local)
-  const [y,m,d] = ymd.split("-").map(Number);
-  return new Date(y, m-1, d);
-}
-
-function inWeekRange(todayYmd, weekStartYmd){
-  const t = ymdToDateLocal(todayYmd);
-  const s = ymdToDateLocal(weekStartYmd);
-  const e = new Date(s);
-  e.setDate(e.getDate() + 6);
-  return t >= s && t <= e;
-}
-function ymd(d){
-  const y = d.getFullYear();
-  const m = String(d.getMonth()+1).padStart(2,"0");
-  const day = String(d.getDate()).padStart(2,"0");
-  return `${y}-${m}-${day}`;
-}
-
-function sundayOfThisWeek(d=new Date()){
-  const x = new Date(d);
-  x.setDate(x.getDate() - x.getDay()); // Sunday
-  return ymd(x);
-}
-
-
+function pad2(n) { return String(n).padStart(2, "0"); }
 function secondsToHHMMSS(totalSec) {
   const s = Math.max(0, Math.floor(Number(totalSec || 0)));
-  const hh = String(Math.floor(s / 3600)).padStart(2, "0");
-  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
-  const ss = String(s % 60).padStart(2, "0");
+  const hh = pad2(Math.floor(s / 3600));
+  const mm = pad2(Math.floor((s % 3600) / 60));
+  const ss = pad2(s % 60);
   return `${hh}:${mm}:${ss}`;
 }
-
-function pad2(n) { return String(n).padStart(2, "0"); }
 function fmtMMSS(totalSec) {
   const sec = Math.max(0, Math.floor(Number(totalSec || 0)));
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${pad2(m)}:${pad2(s)}`;
 }
-
-/* =========================
-   API helper
-========================= */
-async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    cache: "no-store",
-    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
-    ...opts,
-    credentials: "include",
-  });
-
-  const ct = res.headers.get("content-type") || "";
-  const data = ct.includes("application/json") ? await res.json() : await res.text();
-
-  if (!res.ok) {
-    const msg =
-      (data && data.detail) ? data.detail :
-      (typeof data === "string" ? data : "Request failed");
-    const err = new Error(msg);
-    err.status = res.status;
-    throw err;
-  }
-  return data;
-}
-
-function ymdLocal(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function fmtHHMM(t) {
-  // aceita "09:45", "09:45:00"
-  if (!t) return "";
-  return String(t).slice(0, 5);
-}
-
-/* =========================
-   Date helpers
-========================= */
-
-function ymdLocal(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 function fmtHHMM(t) {
   if (!t) return "";
   return String(t).slice(0, 5); // "09:45:00" -> "09:45"
 }
 
+/* =========================
+   Date helpers (single source)
+========================= */
 function todayYMD() {
   const t = new Date();
-  const y = t.getFullYear();
-  const m = String(t.getMonth() + 1).padStart(2, "0");
-  const d = String(t.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`;
 }
 function ymdFromDate(dt) {
-  const y = dt.getFullYear();
-  const m = String(dt.getMonth() + 1).padStart(2, "0");
-  const d = String(dt.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
 }
 function ymdToDateObj(ymd) {
   const [y, m, d] = String(ymd || "").split("-").map(Number);
   return new Date(y || 1970, (m || 1) - 1, d || 1);
 }
 function isSunday(dt) { return dt.getDay() === 0; }
-
 function isoWeekNumber(d = new Date()) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   const dayNum = date.getUTCDay() || 7;
@@ -265,79 +85,86 @@ function isoWeekNumber(d = new Date()) {
 function mondayOfThisWeek(d = new Date()) {
   const x = new Date(d);
   const day = x.getDay(); // 0 Sun .. 6 Sat
-  const diff = day === 0 ? -6 : 1 - day; // back to Monday
+  const diff = day === 0 ? -6 : 1 - day;
   x.setDate(x.getDate() + diff);
-  const y = x.getFullYear();
-  const m = String(x.getMonth() + 1).padStart(2, "0");
-  const dd = String(x.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
+  return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`;
 }
 function weekStartMondayISO(d = new Date()) { return mondayOfThisWeek(d); }
-
-/* ===== roster date helpers ===== */
 function ymdAddDays(ymd, add) {
   if (!ymd) return "";
   const [y, m, d] = String(ymd).split("-").map(Number);
   const dt = new Date(y || 1970, (m || 1) - 1, d || 1);
   dt.setDate(dt.getDate() + Number(add || 0));
-  const yy = dt.getFullYear();
-  const mm = String(dt.getMonth() + 1).padStart(2, "0");
-  const dd = String(dt.getDate()).padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
+  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
 }
-function applyTodayHighlight() {
-  const today = ymdTodayLocal();
-  const cards = document.querySelectorAll("[data-day-date]");
-
-  // debug rápido: se der 0, teu HTML não tem data-day-date
-  // console.log("applyTodayHighlight cards:", cards.length, "today:", today);
-
-  cards.forEach(card => {
-    const d = card.getAttribute("data-day-date");
-    const isToday = (d === today);
-
-    card.classList.toggle("is-today", isToday);
-
-    // Cria/Remove pill "Today" sem depender de .day-title
-    let pill = card.querySelector(".today-pill");
-    if (isToday) {
-      if (!pill) {
-        pill = document.createElement("span");
-        pill.className = "today-pill";
-        pill.textContent = "Today";
-
-        // tenta colocar no topo do card
-        // prioridade: header -> h4/h3/strong -> primeiro elemento
-        const header =
-          card.querySelector(".day-title") ||
-          card.querySelector(".day-header") ||
-          card.querySelector("h4, h3, strong") ||
-          card.firstElementChild;
-
-        if (header) {
-          header.appendChild(pill);
-        } else {
-          card.prepend(pill);
-        }
-      }
-    } else {
-      if (pill) pill.remove();
-    }
-  });
-}
-
-
-
 function weekdayShort(dt) {
   return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dt.getDay()];
 }
 
 /* =========================
-   FIX: ME + Avatar (single source of truth)
+   API helper
 ========================= */
+async function api(path, opts = {}) {
+  try {
+    const res = await fetch(path, {
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+      ...opts,
+      credentials: "include",
+    });
 
-const LS_AVATAR = "wh_avatar_url";
+    const ct = res.headers.get("content-type") || "";
+    const data = ct.includes("application/json") ? await res.json() : await res.text();
 
+    if (!res.ok) {
+      const msg =
+        (data && data.detail) ? data.detail :
+        (typeof data === "string" ? data : "Request failed");
+      const err = new Error(msg);
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+
+  } catch (e) {
+    if (window.__WH_NAVIGATING__ || e?.name === "AbortError") {
+      console.log("Fetch aborted (navigation) ✅", path);
+      return null;
+    }
+    throw e;
+  }
+}
+
+/* =========================
+   ME cache
+========================= */
+function readCachedMe(){
+  try { return JSON.parse(localStorage.getItem(LS_ME) || "null"); }
+  catch { return null; }
+}
+
+async function refreshMe(force = false) {
+  if (!force) {
+    const cached = readCachedMe();
+    if (cached && cached.ok) {
+      ME = cached;
+      applyMeToUI(ME);
+    }
+  }
+
+  const me = await api("/api/me");
+  ME = me;
+
+  try { localStorage.setItem(LS_ME, JSON.stringify(me)); } catch {}
+  applyMeToUI(ME);
+
+  return ME;
+}
+window.refreshMe = refreshMe;
+
+/* =========================
+   Avatar + Name (single source of truth)
+========================= */
 function cacheBust(url) {
   if (!url) return "";
   const sep = url.includes("?") ? "&" : "?";
@@ -355,7 +182,7 @@ function applyMeToUI(me) {
     nameEl.textContent = (fn + " " + ln).trim() || "User";
   }
 
-  // Avatar URL priority: explicit saved -> me.avatar_url
+  // Avatar
   const rawUrl = (localStorage.getItem(LS_AVATAR) || me.avatar_url || "").trim();
   const finalUrl = rawUrl ? cacheBust(rawUrl) : "";
 
@@ -372,66 +199,37 @@ function applyMeToUI(me) {
   avatarIds.forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
-
     if (el.tagName && el.tagName.toLowerCase() === "img") {
-      if (finalUrl) {
-        el.src = finalUrl;
-        el.style.display = "";
-      } else {
-        el.src = "/static/logo.png";
-      }
+      el.src = finalUrl || "/static/logo.png";
+      el.style.display = "";
     }
   });
 
-  // Bind profile click once (if your header uses button)
   const btn = $("btnProfileAvatar");
   if (btn && !btn.dataset.bound) {
     btn.dataset.bound = "1";
     btn.addEventListener("click", () => go("/profile"));
   }
 }
-function initProfileAdminButton(){
-  const btn = document.getElementById("openAdmin");
-  if (!btn) return;
+
+/* =========================
+   Admin UI (fixed)
+========================= */
+function applyAdminUI() {
+  const adminBtn = document.getElementById("openAdmin");
+  const panelBtn = document.getElementById("btnAdminPanel");
 
   const isAdmin = !!(ME && Number(ME.is_admin || 0) === 1);
 
-  btn.classList.toggle("hidden", !isAdmin);
-
-  if (isAdmin){
-    btn.onclick = () => (window.location.href = "/admin");
+  if (adminBtn) {
+    adminBtn.classList.toggle("hidden", !isAdmin);
+    adminBtn.onclick = isAdmin ? () => (location.href = "/admin") : null;
   }
-}
 
-
-
-function readCachedMe() {
-  try {
-    const raw = localStorage.getItem(LS_ME);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
+  if (panelBtn) {
+    panelBtn.classList.toggle("hidden", !isAdmin);
+    panelBtn.onclick = isAdmin ? () => (location.href = "/admin") : null;
   }
-}
-
-const adminBtn = document.getElementById("openAdmin");
-if (adminBtn) {
-  const isAdmin = Number(me?.is_admin || 0) === 1;
-  adminBtn.classList.toggle("hidden", !isAdmin);
-  adminBtn.onclick = () => (location.href = "/admin");
-}
-
-function applyAdminUI(){
-  const b = document.getElementById("btnAdminPanel");
-  if (!b) return;
-
-  const isAdmin = !!(ME && Number(ME.is_admin || 0) === 1);
-
-  if (isAdmin) b.classList.remove("hidden");
-  else b.classList.add("hidden");
-
-  b.onclick = () => (window.location.href = "/admin");
 }
 
 /* =========================
@@ -461,7 +259,6 @@ function saveRate(rate) {
   const v = Number(rate || 0);
   if (v > 0) localStorage.setItem("hourly_rate", String(v));
 }
-
 async function ensureWeekExistsForClock() {
   const c = await api("/api/clock/today");
   if (c?.has_week) return c;
@@ -516,7 +313,6 @@ async function premiumMultiplierForYmd(ymd) {
 
   const dt = ymdToDateObj(ymd);
   let mult = 1;
-
   if (dt.getDay() === 0) mult = Math.max(mult, SUN_MULT);
 
   try {
@@ -573,7 +369,6 @@ const cwWeekNo = $("cwWeekNo");
 const cwHHMM = $("cwHHMM") || $("cwHours");
 const cwPay  = $("cwPay")  || $("cwGross");
 
-
 const btnIn    = $("btnIn");
 const btnOut   = $("btnOut");
 const btnBreak = $("btnBreak");
@@ -588,16 +383,6 @@ const bhRemain = $("bhRemain");
 
 const cardHolidays = $("cardHolidays");
 const cardReports  = $("cardReports");
-const cardCurrentWeek = document.getElementById("cardCurrentWeek");
-
-cardCurrentWeek?.addEventListener("click", (ev) => {
-  // se clicou em botão/link/input dentro do card, NÃO navega
-  if (ev.target.closest("button, a, input, select, textarea, [data-no-nav]")) return;
-
-  go("/report?week=current");
-});
-
-
 
 const navHome    = $("navHome");
 const navHistory = $("navHistory");
@@ -606,7 +391,7 @@ const navReports = $("navReports");
 const navProfile = $("navProfile");
 
 /* =========================
-   Add Week UI (page)
+   Add Week UI
 ========================= */
 const btnBackAddWeek = $("btnBackAddWeek");
 const addWeekForm = $("addWeekForm");
@@ -619,31 +404,40 @@ const addWeekMsg = $("addWeekMsg");
    State
 ========================= */
 let UI_DAY = todayYMD();
-
 let TODAY_WEEK_ID = null;
 let DASH_WEEK_ID  = null;
 
 let CLOCK = null;
 let LAST_DASH = null;
 
-
 /* =========================
-   Break countdown (UI) — FIXED
-   - Resume does NOT overwrite endEpoch
-   - resetTodayVisual will NOT kill an active break
+   Break countdown (robust)
+   - local countdown survives brief backend desync
 ========================= */
 let breakTick = null;
 let breakRemaining = 0;
 let breakRunningUI = false;
 
 const BREAK_DEFAULT_SEC = 60 * 60;
-const LS_BREAK_END = "wh_break_end_epoch";
-const LS_BREAK_DAY = "wh_break_day";
-const LS_BREAK_WARN5 = "wh_break_warn5_sent";
-const LS_BREAK_DONE  = "wh_break_done_sent";
+const LS_BREAK_END  = "wh_break_end_epoch";
+const LS_BREAK_DAY  = "wh_break_day";
+const LS_BREAK_WARN5= "wh_break_warn5_sent";
+const LS_BREAK_DONE = "wh_break_done_sent";
 const LS_BREAK_LEFT = "wh_break_left_sec";
 
-
+function getLocalBreakEnd() {
+  return Number(localStorage.getItem(LS_BREAK_END) || "0");
+}
+function getLocalBreakLeftSec() {
+  const endEpoch = getLocalBreakEnd();
+  if (!endEpoch) return 0;
+  return Math.ceil((endEpoch - Date.now()) / 1000);
+}
+function hasActiveLocalBreak() {
+  const savedDay = localStorage.getItem(LS_BREAK_DAY);
+  if (!savedDay || savedDay !== UI_DAY) return false;
+  return getLocalBreakLeftSec() > 0;
+}
 
 function setBreakButtonRunning(running) {
   if (!btnBreak) return;
@@ -651,20 +445,17 @@ function setBreakButtonRunning(running) {
     ? `<span class="pillIcon">⏱</span> BREAK (stop)`
     : `<span class="pillIcon">⏱</span> BREAK`;
 }
-
 function saveBreakEnd(endEpochMs) {
   localStorage.setItem(LS_BREAK_END, String(endEpochMs));
   localStorage.setItem(LS_BREAK_DAY, UI_DAY);
 }
-
 function clearBreakStorage() {
   localStorage.removeItem(LS_BREAK_END);
   localStorage.removeItem(LS_BREAK_DAY);
   localStorage.removeItem(LS_BREAK_WARN5);
   localStorage.removeItem(LS_BREAK_DONE);
+  localStorage.removeItem(LS_BREAK_LEFT);
 }
-
-
 
 function stopBreakCountdown(vibrate = false) {
   if (breakTick) clearInterval(breakTick);
@@ -679,10 +470,20 @@ function stopBreakCountdown(vibrate = false) {
   if (vibrate && "vibrate" in navigator) navigator.vibrate([200, 100, 200]);
 }
 
+function sendBreakNotification(title, body) {
+  if (!("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+  new Notification(title, { body, icon: "/static/logo.png", vibrate: [200, 100, 200] });
+}
+
 function tickBreakCountdown() {
-  const endEpoch = Number(localStorage.getItem(LS_BREAK_END) || "0");
+  const endEpoch = getLocalBreakEnd();
   if (!endEpoch) {
-    stopBreakCountdown(false);
+    // no local break tracked -> just stop UI timer
+    if (breakTick) clearInterval(breakTick);
+    breakTick = null;
+    breakRunningUI = false;
+    setBreakButtonRunning(false);
     return;
   }
 
@@ -691,7 +492,7 @@ function tickBreakCountdown() {
 
   if (cwBreak) cwBreak.textContent = fmtMMSS(Math.max(0, leftSec));
 
-  // ---- 5-minute warning (only once) ----
+  // 5-min warning (once)
   if (leftSec <= 300 && leftSec > 0) {
     const warned = localStorage.getItem(LS_BREAK_WARN5) === "1";
     if (!warned) {
@@ -700,11 +501,8 @@ function tickBreakCountdown() {
     }
   }
 
-  // ---- finished (only once) ----
+  // finished
   if (leftSec <= 0) {
-    // ✅ quando termina de verdade, limpa o "resume"
-    localStorage.removeItem(LS_BREAK_LEFT);
-
     const done = localStorage.getItem(LS_BREAK_DONE) === "1";
     if (!done) {
       localStorage.setItem(LS_BREAK_DONE, "1");
@@ -712,6 +510,8 @@ function tickBreakCountdown() {
     }
 
     stopBreakCountdown(true);
+
+    // tell backend break ended
     api("/api/clock/break", { method: "POST" })
       .then(() => refreshAll())
       .catch(() => {});
@@ -731,47 +531,28 @@ function startBreakCountdown(seconds = BREAK_DEFAULT_SEC) {
   breakTick = setInterval(tickBreakCountdown, 250);
 }
 
-/** Resume break WITHOUT changing endEpoch */
 function resumeBreakCountdownIfAny() {
-  const savedDay = localStorage.getItem(LS_BREAK_DAY);
-  const endEpoch = Number(localStorage.getItem(LS_BREAK_END) || "0");
+  if (!hasActiveLocalBreak()) return;
 
-  // if no saved break or wrong day, clear leftovers
-  if (!savedDay || savedDay !== UI_DAY || !endEpoch) {
-    clearBreakStorage();
-    return;
-  }
+  breakRunningUI = true;
+  setBreakButtonRunning(true);
+  tickBreakCountdown();
 
-  const leftSec = Math.ceil((endEpoch - Date.now()) / 1000);
-
-  if (leftSec > 0) {
-    breakRunningUI = true;
-    setBreakButtonRunning(true);
-    tickBreakCountdown();
-
-    if (breakTick) clearInterval(breakTick);
-    breakTick = setInterval(tickBreakCountdown, 250);
-  } else {
-    clearBreakStorage();
-  }
+  if (breakTick) clearInterval(breakTick);
+  breakTick = setInterval(tickBreakCountdown, 250);
 }
 
-/** Reset UI, but DO NOT kill an active break */
 function resetTodayVisual() {
   if (cwIn) cwIn.textContent = "00:00";
   if (cwOut) cwOut.textContent = "00:00";
 
-  const endEpoch = Number(localStorage.getItem(LS_BREAK_END) || "0");
-  const leftSec = endEpoch ? Math.ceil((endEpoch - Date.now()) / 1000) : 0;
-
-  if (leftSec > 0) {
-    // break active: keep it running
+  if (hasActiveLocalBreak()) {
     setBreakButtonRunning(true);
     resumeBreakCountdownIfAny();
   } else {
-    // no break active: safe to reset visuals
     if (cwBreak) cwBreak.textContent = "0m";
     setBreakButtonRunning(false);
+    // stop only UI timer; keep storage clean anyway
     stopBreakCountdown(false);
   }
 }
@@ -788,21 +569,17 @@ function watchDayChange() {
     refreshAll().catch(() => {});
   }
 }
-/*==================================
-   Notification
-   ============================*/
 
-function sendBreakNotification(title, body) {
-  if (!("Notification" in window)) return;
-  if (Notification.permission !== "granted") return;
-
-  new Notification(title, {
-    body,
-    icon: "/static/logo.png",
-    vibrate: [200, 100, 200]
-  });
+/* =========================
+   Notifications permission
+   NOTE: best practice is calling from user gesture;
+   we still expose helper and also call on BREAK click.
+========================= */
+function requestNotificationPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    try { Notification.requestPermission(); } catch {}
+  }
 }
-
 
 /* =========================
    Auth / routing (index only)
@@ -819,13 +596,6 @@ function showLogin() {
   hide(forgotPanel);
   clearAuthMsgs();
 }
-
-function requestNotificationPermission() {
-  if ("Notification" in window && Notification.permission === "default") {
-    Notification.requestPermission();
-  }
-}
-
 function showSignup() {
   hide(loginForm);
   show(signupForm);
@@ -853,10 +623,9 @@ async function enterHome() {
   show(viewHome);
 
   ME = await refreshMe(true);
-initProfileAdminButton();
-applyAdminUI(); // opcional, mas bom
-await refreshAll();
+  applyAdminUI();
 
+  await refreshAll();
 }
 
 /* =========================
@@ -919,7 +688,6 @@ async function doLogout() {
 
   stopLiveTicker();
   stopBreakCountdown(false);
-  clearBreakStorage();
 
   window.location.href = "/";
 }
@@ -944,26 +712,24 @@ async function sendReset() {
   }
 }
 
+/* =========================
+   Today Earnings (LIVE)
+========================= */
 function updateTodayEarningsUI() {
   const tHHMM  = $("todayEarnHHMM");
   const tPAY   = $("todayEarnPay");
   const tSTATE = $("todayEarnState");
   const tCard  = document.getElementById("todayEarnCard");
 
-  // calcula LIVE primeiro (pra não depender do resto)
   const isLive =
     !!CLOCK?.has_week &&
     !!CLOCK?.in_time &&
     !CLOCK?.out_time &&
     !CLOCK?.break_running;
 
-  // aplica/remove a classe SEMPRE, mesmo se faltar algum elemento
   if (tCard) tCard.classList.toggle("is-live", isLive);
-
-  // se não tem os campos, não tem o que renderizar
   if (!tHHMM || !tPAY) return;
 
-  // OFF (sem semana ou sem IN)
   if (!CLOCK?.has_week || !CLOCK?.in_time) {
     tHHMM.textContent = "--:--:--";
     tPAY.textContent  = "€-.--";
@@ -972,7 +738,6 @@ function updateTodayEarningsUI() {
     return;
   }
 
-  // rate
   const rate =
     Number(ME?.hourly_rate ?? 0) ||
     Number(LAST_DASH?.this_week?.hourly_rate ?? 0) ||
@@ -986,7 +751,6 @@ function updateTodayEarningsUI() {
     return;
   }
 
-  // label do estado (e evita recalcular em break)
   if (CLOCK.break_running) {
     if (tSTATE) tSTATE.textContent = "BREAK";
     return;
@@ -999,9 +763,7 @@ function updateTodayEarningsUI() {
     if (tSTATE) tSTATE.textContent = "LIVE";
   }
 
-  // calcula segundos trabalhados hoje
   const now = new Date();
-
   const [ih, im] = String(CLOCK.in_time).split(":").map(Number);
   const inDt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), ih || 0, im || 0, 0);
 
@@ -1012,7 +774,6 @@ function updateTodayEarningsUI() {
   }
 
   let workedSec = Math.max(0, Math.floor((endDt - inDt) / 1000));
-
   const brMin = Number(CLOCK.break_minutes || 0);
   workedSec = Math.max(0, workedSec - brMin * 60);
 
@@ -1022,16 +783,11 @@ function updateTodayEarningsUI() {
   tPAY.textContent  = fmtEUR(eur);
 }
 
-// =========================
-// Live ticker (Today earnings) - GLOBAL
-// =========================
 let LIVE_TIMER = null;
-
 function stopLiveTicker() {
   if (LIVE_TIMER) clearInterval(LIVE_TIMER);
   LIVE_TIMER = null;
 }
-
 function startLiveTicker() {
   if (LIVE_TIMER) return;
 
@@ -1044,26 +800,24 @@ function startLiveTicker() {
 
     if (!shouldLive) {
       stopLiveTicker();
-      if (typeof updateTodayEarningsUI === "function") updateTodayEarningsUI();
+      updateTodayEarningsUI();
       return;
     }
-
-    if (typeof updateTodayEarningsUI === "function") updateTodayEarningsUI();
+    updateTodayEarningsUI();
   }, 1000);
 }
-
-// expõe no global (pra qualquer lugar que chame)
 window.startLiveTicker = startLiveTicker;
 window.stopLiveTicker = stopLiveTicker;
 
 /* =========================
-   Clock refresh
+   Clock refresh (break-safe)
 ========================= */
 async function refreshClock() {
   try {
     const c = await api("/api/clock/today");
-    CLOCK = c;
+    if (!c) return;
 
+    CLOCK = c;
     TODAY_WEEK_ID = c?.has_week ? (c.week_id ?? null) : null;
 
     if (!c.has_week) {
@@ -1071,41 +825,64 @@ async function refreshClock() {
       if (cwOut) cwOut.textContent = "--:--";
       if (cwBreak) cwBreak.textContent = "0m";
       if (cwStatusText) cwStatusText.textContent = "Create a week first.";
-
       setBreakButtonRunning(false);
       stopLiveTicker();
       return;
     }
 
-    if (cwIn) cwIn.textContent = c.in_time || "--:--";
-if (cwOut) cwOut.textContent = c.out_time || "--:--";
+    if (cwIn)  cwIn.textContent  = c.in_time  || "--:--";
+    if (cwOut) cwOut.textContent = c.out_time || "--:--";
 
-// Se break está rodando, a UI do countdown manda no cwBreak (MM:SS)
-if (c.break_running) {
-  setBreakButtonRunning(true);
-  // garante que o countdown continua (ou retoma) sem ser sobrescrito
-  resumeBreakCountdownIfAny();
-} else {
-  // break não está rodando -> mostra minutos do backend
-  if (cwBreak) cwBreak.textContent = `${Number(c.break_minutes || 0)}m`;
-  setBreakButtonRunning(false);
-  // limpa countdown se sobrou algum timer
-  stopBreakCountdown(false);
-}
+    // ---- BREAK RECONCILIATION ----
+    const localActive = hasActiveLocalBreak();
 
+    if (c.break_running) {
+      // backend says break running -> ensure local countdown exists
+      setBreakButtonRunning(true);
+
+      // if no local break saved, start full or resume from stored left (if any)
+      if (!localActive) {
+        const savedLeft = Number(localStorage.getItem(LS_BREAK_LEFT) || "0");
+        const resumeSec =
+          (Number.isFinite(savedLeft) && savedLeft > 0 && savedLeft <= BREAK_DEFAULT_SEC)
+            ? savedLeft
+            : BREAK_DEFAULT_SEC;
+        localStorage.removeItem(LS_BREAK_LEFT);
+        startBreakCountdown(resumeSec);
+      } else {
+        resumeBreakCountdownIfAny();
+      }
+
+    } else {
+      // backend says break not running
+      // BUT: if local says it's still active, DO NOT kill countdown (prevents "freeze at 40m" due to backend blip)
+      if (localActive) {
+        setBreakButtonRunning(true);
+        resumeBreakCountdownIfAny();
+      } else {
+        if (cwBreak) cwBreak.textContent = `${Number(c.break_minutes || 0)}m`;
+        setBreakButtonRunning(false);
+        // stop UI + clear storage (safe because localActive is false)
+        if (breakTick) clearInterval(breakTick);
+        breakTick = null;
+        breakRunningUI = false;
+        breakRemaining = 0;
+        clearBreakStorage();
+      }
+    }
 
     if (cwStatusText) {
       if (!c.in_time) cwStatusText.textContent = "Tap IN to start.";
-      else if (c.break_running) cwStatusText.textContent = "Break running…";
+      else if (c.break_running || localActive) cwStatusText.textContent = "Break running…";
       else if (!c.out_time) cwStatusText.textContent = "Tracking live…";
       else {
-        // ✅ terminou hoje -> mostrar info de amanhã puxando do roster
-        cwStatusText.textContent = "Done for today ✅"; // fallback rápido
+        cwStatusText.textContent = "Done for today ✅";
 
+        // Tomorrow roster hint (best-effort)
         try {
           const tomorrow = new Date();
           tomorrow.setDate(tomorrow.getDate() + 1);
-          const date_ymd = ymdLocal(tomorrow);
+          const date_ymd = ymdFromDate(tomorrow);
 
           const r = await api(`/api/roster/day?date_ymd=${encodeURIComponent(date_ymd)}`);
 
@@ -1116,34 +893,28 @@ if (c.break_running) {
             const e = fmtHHMM(r.shift_out);
             cwStatusText.textContent = `You work tomorrow ${s}–${e} 💪`;
           }
-        } catch (err) {
-          // se falhar, mantém fallback
-        }
+        } catch {}
       }
     }
+
   } catch (e) {
-    if (e.status === 401) await enterLogin();
+    if (e?.status === 401) await enterLogin();
     stopLiveTicker();
   }
 }
 
-
 /* =========================
    Current week totals (SAFE)
-   Uses /api/report/week/current (source of truth)
 ========================= */
 async function refreshCurrentWeekTotalsSafe() {
   try {
     const rep = await api("/api/report/week/current");
-
-    // se não tem semana
-    if (rep?.has_week === false || rep?.ok === false) {
+    if (!rep || rep?.has_week === false || rep?.ok === false) {
       if (cwHHMM) cwHHMM.textContent = "00:00";
       if (cwPay)  cwPay.textContent  = fmtEUR(0);
       return;
     }
 
-    // pega hhmm de vários formatos possíveis
     const hhmm =
       rep?.totals?.hhmm ??
       rep?.totals?.hours_hhmm ??
@@ -1151,7 +922,6 @@ async function refreshCurrentWeekTotalsSafe() {
       rep?.hours_hhmm ??
       "00:00";
 
-    // pega pay de vários formatos possíveis
     const pay =
       rep?.totals?.pay_eur ??
       rep?.totals?.gross_pay ??
@@ -1168,14 +938,13 @@ async function refreshCurrentWeekTotalsSafe() {
   }
 }
 
-
 /* =========================
-   Refresh all (dashboard + clock)
+   Refresh all
 ========================= */
 async function refreshAll() {
   try {
     const dash = await api("/api/dashboard");
-    LAST_DASH = dash;
+    if (dash) LAST_DASH = dash;
 
     DASH_WEEK_ID =
       LAST_DASH?.this_week?.id ||
@@ -1203,10 +972,15 @@ async function refreshAll() {
 
   updateTodayEarningsUI();
 
-  if (CLOCK?.has_week && CLOCK?.in_time && !CLOCK?.out_time && !CLOCK?.break_running) startLiveTicker();
+  const shouldLive =
+    !!CLOCK?.has_week &&
+    !!CLOCK?.in_time &&
+    !CLOCK?.out_time &&
+    !CLOCK?.break_running;
+
+  if (shouldLive) startLiveTicker();
   else stopLiveTicker();
 
-  // ✅ important: bind after UI exists
   bindCurrentWeekTap();
 }
 
@@ -1220,10 +994,6 @@ function goCurrentWeekReport() {
   }
   go("/report?week=current");
 }
-
-/* =========================
-   Tap/click on "Current week" block (mobile + desktop)
-========================= */
 function bindCurrentWeekTap() {
   const block = document.getElementById("cwWeekBlock");
   if (!block || block.dataset.bound) return;
@@ -1237,10 +1007,7 @@ function bindCurrentWeekTap() {
     goCurrentWeekReport();
   };
 
-  // desktop
   block.addEventListener("click", handler);
-
-  // mobile (avoid double-trigger)
   block.addEventListener(
     "touchend",
     (ev) => {
@@ -1251,7 +1018,6 @@ function bindCurrentWeekTap() {
     { passive: false }
   );
 }
-
 
 /* =========================
    Custom Yes/No Modal (Promise)
@@ -1300,14 +1066,14 @@ function showYesNoModal({ title, message, icon = "⏱", yesText = "Yes", noText 
   iconEl.textContent  = icon || "⏱";
   yesBtn.textContent  = yesText || "Yes";
   noBtn.textContent   = noText || "No";
-  // Se for modal informativo (mesmo texto ou só um botão)
-if (!noText || yesText === noText) {
-  noBtn.style.display = "none";
-  yesBtn.style.marginLeft = "auto";
-} else {
-  noBtn.style.display = "";
-  yesBtn.style.marginLeft = "";
-}
+
+  if (!noText || yesText === noText) {
+    noBtn.style.display = "none";
+    yesBtn.style.marginLeft = "auto";
+  } else {
+    noBtn.style.display = "";
+    yesBtn.style.marginLeft = "";
+  }
 
   hintEl.textContent  = hint || "";
 
@@ -1350,8 +1116,8 @@ if (!noText || yesText === noText) {
 }
 
 async function handleOvertimePrompt(resObj) {
-  const reason = resObj.reason || "";
-  const work_date = resObj.work_date || todayYMD();
+  const reason = resObj?.reason || "";
+  const work_date = resObj?.work_date || todayYMD();
 
   const text =
     reason === "DAY_OFF"
@@ -1404,6 +1170,7 @@ async function handleOvertimePrompt(resObj) {
 async function doClockIn() {
   try {
     await ensureWeekExistsForClock();
+
     const r = await api("/api/clock/in", { method: "POST" });
 
     if (r?.needs_extra_confirm) {
@@ -1411,31 +1178,15 @@ async function doClockIn() {
       if (!decision.proceed) return;
       await api("/api/clock/in", { method: "POST" });
     }
-    function uiStartNow(){
-  // zera na hora (sensação instantânea)
-  const el = document.getElementById("todayEarnHHMM");
-  if (el) el.textContent = "00:00:00";
-  const pay = document.getElementById("todayEarnPay");
-  if (pay) pay.textContent = "€0.00";
-}
 
-// exemplo dentro do IN
-async function doClockIn(){
-  try{
-    await api("/api/clock/in", { method:"POST" });
-
-    uiStartNow();       // <- aqui
-    startLiveTicker();  // se você usa ticker
-    await refreshAll(); // sincroniza com servidor
-  }catch(e){
-    alert(e.message || "IN failed");
-  }
-}
-
+    const el = document.getElementById("todayEarnHHMM");
+    if (el) el.textContent = "00:00:00";
+    const pay = document.getElementById("todayEarnPay");
+    if (pay) pay.textContent = "€0.00";
 
     await refreshAll();
   } catch (e) {
-    alert(e.message || "IN failed");
+    alert(e?.message || "IN failed");
   }
 }
 
@@ -1451,37 +1202,35 @@ async function doClockOut() {
 
     await refreshAll();
   } catch (e) {
-    alert(e.message || "OUT failed");
+    alert(e?.message || "OUT failed");
   }
 }
 
 async function doClockBreak() {
+  // call permission request on user gesture (best)
   requestNotificationPermission();
 
   try {
     const r = await api("/api/clock/break", { method: "POST" });
+    if (!r) return;
 
-    // ✅ START / RESUME
-    if (r && r.break_running === true) {
+    // START / RESUME
+    if (r.break_running === true) {
       const savedLeft = Number(localStorage.getItem(LS_BREAK_LEFT) || "0");
-
       const resumeSec =
         (Number.isFinite(savedLeft) && savedLeft > 0 && savedLeft <= BREAK_DEFAULT_SEC)
           ? savedLeft
           : BREAK_DEFAULT_SEC;
 
-      // limpa pra não sobrescrever sempre
       localStorage.removeItem(LS_BREAK_LEFT);
-
       startBreakCountdown(resumeSec);
+
       await refreshAll();
       return;
     }
 
-    // ✅ STOP (PAUSE)
-    const endEpoch = Number(localStorage.getItem(LS_BREAK_END) || "0");
-    const leftSec = endEpoch ? Math.ceil((endEpoch - Date.now()) / 1000) : 0;
-
+    // STOP (PAUSE)
+    const leftSec = getLocalBreakLeftSec();
     if (leftSec > 0) localStorage.setItem(LS_BREAK_LEFT, String(leftSec));
     else localStorage.removeItem(LS_BREAK_LEFT);
 
@@ -1489,10 +1238,9 @@ async function doClockBreak() {
     await refreshAll();
 
   } catch (e) {
-    alert(e.message || "BREAK failed");
+    alert(e?.message || "BREAK failed");
   }
 }
-
 
 /* =========================
    Add week page
@@ -1538,7 +1286,57 @@ async function createWeekFromPage(ev) {
 }
 
 /* =========================
-   ROSTER (/roster)
+   Admin page
+========================= */
+async function initAdminPage() {
+  const btnBack = document.getElementById("btnAdminBack");
+  const btnHome = document.getElementById("btnAdminHome");
+  const btnReload = document.getElementById("btnAdminReload");
+
+  if (btnBack) btnBack.onclick = () => history.back();
+  if (btnHome) btnHome.onclick = () => (window.location.href = "/");
+  if (btnReload) btnReload.onclick = () => loadAdminUsers();
+
+  await loadAdminUsers();
+}
+
+async function loadAdminUsers(){
+  const msg  = document.getElementById("adminMsg");
+  const list = document.getElementById("adminUsersList");
+  if (msg) msg.textContent = "";
+  if (list) list.innerHTML = "";
+
+  try{
+    const res = await api("/api/admin/users");
+    const users = res?.users || [];
+
+    if (!users.length){
+      if (list) list.innerHTML = `<div class="muted">No users found.</div>`;
+      return;
+    }
+
+    if (list){
+      list.innerHTML = users.map(u => {
+        const name = `${(u.first_name||"").trim()} ${(u.last_name||"").trim()}`.trim() || "—";
+        const badge = u.is_admin ? `<span class="todayPill" style="margin-left:0;">ADMIN</span>` : "";
+        return `
+          <div class="rpRow">
+            <div class="left">
+              <div class="d1">${name} ${badge}</div>
+              <div class="d2">${u.email}</div>
+            </div>
+            <div class="right">#${u.id}</div>
+          </div>
+        `;
+      }).join("");
+    }
+  }catch(e){
+    if (msg) msg.textContent = e?.message || "Failed to load users";
+  }
+}
+
+/* =========================
+   ROSTER (/roster) - kept as in your v17
 ========================= */
 const R = (id) => document.getElementById(id);
 const SHIFT_PAID_MIN = 495; // 8h15 paid
@@ -1592,11 +1390,10 @@ async function rosterRenderPreview() {
   list.innerHTML = "";
 
   const mins = rosterExpectedMinutesFromCodes(ROSTER.picked);
-  const hhmm = `${String(Math.floor(mins/60)).padStart(2,"0")}:${String(mins%60).padStart(2,"0")}`;
+  const hhmm = `${pad2(Math.floor(mins/60))}:${pad2(mins%60)}`;
 
   const pay = await rosterCalcExpectedPay(ROSTER.picked, ROSTER.startDate, ROSTER.hourlyRate);
-totals.textContent = `Expected: ${hhmm} • ${fmtEUR(Number.isFinite(pay) ? pay : 0)}`;
-
+  totals.textContent = `Expected: ${hhmm} • ${fmtEUR(Number.isFinite(pay) ? pay : 0)}`;
 
   for (let i = 0; i < ROSTER.picked.length; i++) {
     const code = ROSTER.picked[i];
@@ -1702,7 +1499,7 @@ async function rosterShowDetail(roster) {
   );
 
   const mins = rosterExpectedMinutesFromCodes(codes);
-  const hhmm = `${String(Math.floor(mins/60)).padStart(2,"0")}:${String(mins%60).padStart(2,"0")}`;
+  const hhmm = `${pad2(Math.floor(mins/60))}:${pad2(mins%60)}`;
 
   const pay = await rosterCalcExpectedPay(codes, roster.start_date, ROSTER.hourlyRate);
   if (totals) totals.textContent = `Expected: ${hhmm} • ${fmtEUR(pay)}`;
@@ -1806,10 +1603,9 @@ async function enterRoster() {
   try { ME = await refreshMe(false); } catch {}
 
   ROSTER.hourlyRate =
-  Number(ME?.hourly_rate ?? 0) ||
-  Number(getSavedRate() ?? 0) ||
-  18.24;
-
+    Number(ME?.hourly_rate ?? 0) ||
+    Number(getSavedRate() ?? 0) ||
+    18.24;
 
   try {
     const weeks = await api("/api/weeks");
@@ -1870,11 +1666,17 @@ async function enterRoster() {
   await rosterLoadList();
 }
 
+/* =========================
+   Routing after auth
+========================= */
 async function routeAfterAuth() {
   if (!ME) {
     try { ME = await refreshMe(false); } catch {}
   }
-  if (ME) applyMeToUI(ME);
+  if (ME) {
+    applyMeToUI(ME);
+    applyAdminUI();
+  }
 
   if (pathIs("/admin")) { 
     await initAdminPage(); 
@@ -1886,6 +1688,7 @@ async function routeAfterAuth() {
     return; 
   }
 
+  // other pages manage themselves
   if (pathIs("/holidays") || pathIs("/report") || pathIs("/profile")) return;
 
   if (!hasIndexViews()) return;
@@ -1902,135 +1705,6 @@ async function routeAfterAuth() {
 
   await enterHome();
 }
-
-// ===== Holidays UI state =====
-let HOL_TAB = "upcoming"; // "upcoming" | "past"
-
-function holidayIsPast(isoDate){
-  // isoDate = "2026-03-17"
-  const d = new Date(isoDate + "T00:00:00");
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  return d < today;
-}
-
-function nextHolidayStatus(cur){
-  // Accept: "na" | "not_paid" | "paid"
-  if(cur === "na") return "not_paid";
-  if(cur === "not_paid") return "paid";
-  return "na";
-}
-
-function statusLabel(s){
-  if(s === "paid") return "PAID";
-  if(s === "not_paid") return "NOT PAID";
-  return "N/A";
-}
-
-function statusClass(s){
-  if(s === "paid") return "status--paid";
-  if(s === "not_paid") return "status--notpaid";
-  return "status--na";
-}
-
-// Update pills counters
-function updateHolidaySummary(holidays){
-  const paid = holidays.filter(h => h.status === "paid").length;
-  const notPaid = holidays.filter(h => h.status === "not_paid").length;
-  const na = holidays.filter(h => (h.status === "na" || h.status === "n/a" || !h.status)).length;
-
-  const a = document.getElementById("sumPaid");
-  const b = document.getElementById("sumNotPaid");
-  const c = document.getElementById("sumNA");
-  if(a) a.textContent = paid;
-  if(b) b.textContent = notPaid;
-  if(c) c.textContent = na;
-}
-
-function renderHolidayCards(holidays){
-  const list = document.getElementById("holidayList");
-  if(!list) return;
-
-  // normalize status values
-  holidays.forEach(h => {
-    if(!h.status) h.status = "na";
-    if(h.status === "n/a") h.status = "na";
-  });
-
-  updateHolidaySummary(holidays);
-
-  const filtered = holidays.filter(h => {
-    const past = holidayIsPast(h.date);
-    return HOL_TAB === "past" ? past : !past;
-  });
-
-  list.innerHTML = filtered.map(h => {
-    const s = h.status || "na";
-    return `
-      <article class="holidayCard" data-id="${h.id}">
-        <div>
-          <h3>${h.name}</h3>
-          <div class="date">${h.datePretty || h.date}</div>
-        </div>
-        <button class="statusBtn ${statusClass(s)}" type="button" data-action="cycle">
-          ${statusLabel(s)}
-        </button>
-      </article>
-    `;
-  }).join("");
-
-  // click handlers (event delegation)
-  list.onclick = async (ev) => {
-    const btn = ev.target.closest('button[data-action="cycle"]');
-    if(!btn) return;
-
-    const card = ev.target.closest(".holidayCard");
-    if(!card) return;
-
-    const id = card.getAttribute("data-id");
-    const h = holidays.find(x => String(x.id) === String(id));
-    if(!h) return;
-
-    // cycle status
-    h.status = nextHolidayStatus(h.status);
-
-    // optimistic UI update
-    btn.textContent = statusLabel(h.status);
-    btn.classList.remove("status--paid","status--notpaid","status--na");
-    btn.classList.add(statusClass(h.status));
-    updateHolidaySummary(holidays);
-
-    // TODO: salvar no backend (ajusta pro seu endpoint real)
-    try{
-      await fetch(`/api/holidays/${id}/status`, {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ status: h.status })
-      });
-    } catch(e){
-      console.warn("Failed to save holiday status", e);
-    }
-  };
-}
-
-function bindHolidayTabs(holidays){
-  const up = document.getElementById("tabUpcoming");
-  const past = document.getElementById("tabPast");
-  if(!up || !past) return;
-
-  const setTab = (t) => {
-    HOL_TAB = t;
-    up.classList.toggle("segBtn--active", t === "upcoming");
-    past.classList.toggle("segBtn--active", t === "past");
-    renderHolidayCards(holidays);
-  };
-
-  up.onclick = () => setTab("upcoming");
-  past.onclick = () => setTab("past");
-}
-
-
-
 
 /* =========================
    Navigation (data-route)
@@ -2072,7 +1746,6 @@ function bind() {
 
   cardHolidays?.addEventListener("click", () => go("/holidays"));
   cardReports?.addEventListener("click", () => go("/report"));
-  
 
   btnAddWeek?.addEventListener("click", () => go("/add-week"));
 
@@ -2089,7 +1762,6 @@ function bind() {
    Init
 ========================= */
 let dayWatcherStarted = false;
-requestNotificationPermission();
 
 (async function init() {
   bind();
@@ -2099,18 +1771,24 @@ requestNotificationPermission();
     setInterval(watchDayChange, 5000);
   }
 
+  // Apply cached ME immediately (fast UI)
   const cached = readCachedMe();
-  if (cached?.ok) applyMeToUI(cached);
+  if (cached?.ok) {
+    ME = cached;
+    applyMeToUI(cached);
+    applyAdminUI();
+  }
 
+  // When returning from bfcache (mobile), re-sync ME silently
   window.addEventListener("pageshow", () => {
-    refreshMe(false).catch(() => {});
+    refreshMe(false).then(() => applyAdminUI()).catch(() => {});
   });
 
   try {
     ME = await refreshMe(false);
+    applyAdminUI();
     await routeAfterAuth();
   } catch (e) {
     if (hasIndexViews()) await enterLogin();
   }
 })();
-
