@@ -9,7 +9,7 @@
   <link rel="manifest" href="/static/manifest.webmanifest" />
   <link rel="icon" href="/static/logo.png" />
   
-  <link rel="stylesheet" href="/static/app.css?v=777">
+  <link rel="stylesheet" href="/static/app.css?v=1003">
 
 
 </head>
@@ -161,6 +161,15 @@
         </button>
       </header>
 
+      <section class="homeHero card">
+        <div class="homeHeroTop">
+          <div>
+            <div class="homeHeroTitle">Track hours, pay and deliveries in one calm workspace.</div>
+          </div>
+          <div class="homeHeroChip">V2 Pro</div>
+        </div>
+      </section>
+
       <!-- ✅ Source of truth: JS binds click on #cwWeekBlock -->
       <section class="card card--big cwCard" id="cwWeekBlock" role="button" tabindex="0" aria-label="Open current week report">
         <!-- Today earnings -->
@@ -256,6 +265,25 @@
         <div class="reportsSub">View your work summaries</div>
       </section>
 
+      <section class="card card--reports" id="cardDeliveries">
+        <div class="listRowTop">
+          <div class="listTitle">🚚 Deliveries Tracker</div>
+          <div class="reportsSub">Runs • Stats • Charts</div>
+          <div class="chev">›</div>
+        </div>
+        <div class="reportsSub">Log Dublin 8 and Dublin 15 runs</div>
+        <div class="reportsSub">This week: <strong id="deliveriesWeekInline">0</strong> deliveries</div>
+      </section>
+
+      <section class="card card--reports" id="cardSettings">
+        <div class="listRowTop">
+          <div class="listTitle">⚙️ Reminders & Schedule</div>
+          <div class="reportsSub">Alerts • Roster • Times</div>
+          <div class="chev">›</div>
+        </div>
+        <div class="reportsSub">Configure work reminders for mobile</div>
+      </section>
+
       <!-- BOTTOM NAV -->
       <nav class="bottomNav">
         <button id="navHome" class="navItem navItem--active" type="button">Home</button>
@@ -271,6 +299,6 @@
   </main>
 
   <!-- app.js deve ser o único dono de binds -->
-  <script defer src="/static/app.js?v=999"></script>
+  <script defer src="/static/app.js?v=1003"></script>
 </body>
 </html>

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Reminders & Schedule</title>
+
+  <link rel="manifest" href="/static/manifest.webmanifest" />
+  <link rel="icon" href="/static/logo.png" />
+  <link rel="stylesheet" href="/static/app.css?v=1003" />
+
+  <style>
+    .settingsWrap{ width:min(980px,100%); margin:0 auto; padding:22px 16px 120px; }
+    .sectionHead{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
+    .sectionTitle{ font-size:38px; font-weight:1000; letter-spacing:-.03em; line-height:1; margin:0; }
+    .sectionSub{ margin-top:6px; color: var(--muted); font-weight:900; }
+    .stack{ display:grid; gap:14px; }
+    .settingsGrid{ display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:10px; }
+    @media (max-width: 720px){ .settingsGrid{ grid-template-columns: 1fr; } }
+    .dayPicker{ display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:8px; }
+    @media (max-width: 540px){ .dayPicker{ grid-template-columns: repeat(2, minmax(0,1fr)); } }
+    .dayCheck{
+      border:1px solid rgba(15,23,42,.10);
+      background: rgba(255,255,255,.78);
+      border-radius:16px;
+      padding:10px 12px;
+      display:flex;
+      align-items:center;
+      gap:8px;
+      font-weight:900;
+    }
+    .note{
+      padding:12px 14px;
+      border-radius:16px;
+      background: rgba(37,99,235,.08);
+      border: 1px solid rgba(37,99,235,.14);
+      color: #0f172a;
+      font-weight:900;
+      line-height:1.45;
+    }
+    .heroStrip{
+      margin-bottom:14px;
+      padding:16px;
+      border-radius:24px;
+      background:
+        radial-gradient(700px 200px at 100% 0%, rgba(37,99,235,.14), transparent 58%),
+        rgba(255,255,255,.72);
+      border:1px solid rgba(255,255,255,.72);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px) saturate(140%);
+    }
+    .heroStripTitle{
+      font-size:18px;
+      font-weight:1000;
+      letter-spacing:-.02em;
+    }
+    .heroStripSub{
+      margin-top:6px;
+      color:var(--muted);
+      font-weight:900;
+      line-height:1.45;
+    }
+  </style>
+</head>
+<body>
+  <main class="settingsWrap">
+    <header class="sectionHead">
+      <div>
+        <h1 class="sectionTitle">Reminders & Schedule</h1>
+        <div class="sectionSub">Configure your expected shift and the reminders that help you stay on track</div>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
+        <button id="btnEnableNotifications" class="btn btn--pill btn--soft" type="button">Enable notifications</button>
+        <button id="btnHome" class="btn btn--pill btn--ghost" type="button" onclick="location.href='/'">Home</button>
+      </div>
+    </header>
+
+    <section class="heroStrip">
+      <div class="heroStripTitle">Work schedule and reminders</div>
+      <div class="heroStripSub">Tune the times once and keep the app aligned with your real shifts.</div>
+    </section>
+
+    <section class="card card--big">
+      <div class="note">
+        Reminders use the browser notification permission while the app is installed or open. This is the best web/PWA version available without native push.
+      </div>
+    </section>
+
+    <section class="card card--big">
+      <form id="settingsForm" class="formStack">
+        <div class="settingsGrid">
+          <section class="deliveryPanel">
+            <div class="deliveryPanelTitle">Weekly schedule</div>
+            <div class="field">
+              <span>Work days</span>
+              <div class="dayPicker">
+                <label class="dayCheck"><input data-schedule-day type="checkbox" value="1" /> Mon</label>
+                <label class="dayCheck"><input data-schedule-day type="checkbox" value="2" /> Tue</label>
+                <label class="dayCheck"><input data-schedule-day type="checkbox" value="3" /> Wed</label>
+                <label class="dayCheck"><input data-schedule-day type="checkbox" value="4" /> Thu</label>
+                <label class="dayCheck"><input data-schedule-day type="checkbox" value="5" /> Fri</label>
+                <label class="dayCheck"><input data-schedule-day type="checkbox" value="6" /> Sat</label>
+                <label class="dayCheck"><input data-schedule-day type="checkbox" value="0" /> Sun</label>
+              </div>
+            </div>
+            <div class="grid2">
+              <label class="field">
+                <span>Expected start</span>
+                <input id="scheduleStartTime" type="time" value="09:00" required />
+              </label>
+              <label class="field">
+                <span>Expected end</span>
+                <input id="scheduleEndTime" type="time" value="17:00" required />
+              </label>
+            </div>
+            <label class="field">
+              <span>Break reminder after (minutes)</span>
+              <input id="scheduleBreakAfter" type="number" min="15" step="5" value="240" required />
+            </label>
+          </section>
+
+          <section class="deliveryPanel">
+            <div class="deliveryPanelTitle">Notification settings</div>
+            <label class="toggleRow"><input id="breakEnabled" type="checkbox" checked /> Break reminder</label>
+            <label class="toggleRow"><input id="missedInEnabled" type="checkbox" checked /> Missed IN reminder</label>
+            <label class="toggleRow"><input id="missedOutEnabled" type="checkbox" checked /> Missed OUT reminder</label>
+            <div class="grid2">
+              <label class="field">
+                <span>Missed IN offset (min)</span>
+                <input id="missedInOffset" type="number" min="0" step="1" value="10" required />
+              </label>
+              <label class="field">
+                <span>Missed OUT offset (min)</span>
+                <input id="missedOutOffset" type="number" min="0" step="1" value="20" required />
+              </label>
+            </div>
+            <label class="field">
+              <span>Break reminder after (minutes)</span>
+              <input id="breakReminderAfter" type="number" min="15" step="5" value="240" required />
+            </label>
+          </section>
+        </div>
+
+        <div class="rowActions">
+          <button class="pill pill--green" type="submit">Save settings</button>
+        </div>
+        <div id="settingsMsg" class="msg" aria-live="polite"></div>
+      </form>
+    </section>
+
+    <div class="safeSpace"></div>
+  </main>
+
+  <script defer src="/static/app.js?v=1003"></script>
+</body>
+</html>

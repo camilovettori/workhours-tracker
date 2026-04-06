@@ -39,7 +39,7 @@ self.addEventListener("fetch", (event) => {
           // só cacheia resposta OK e same-origin
           if (res && res.ok && res.type === "basic") {
             const copy = res.clone();
-            caches.open("static-v1").then((c) => c.put(req, copy)).catch(() => {});
+            caches.open("static-v2").then((c) => c.put(req, copy)).catch(() => {});
           }
           return res;
         });

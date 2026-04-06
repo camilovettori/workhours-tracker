@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import hmac
 import hashlib
 import secrets
@@ -127,6 +128,50 @@ def ensure_clock_tables(conn: sqlite3.Connection) -> None:
     )
 
 
+def ensure_v2_tables(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS deliveries(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            work_date TEXT NOT NULL,
+            run_no INTEGER NOT NULL,
+            location TEXT NOT NULL,
+            delivery_count INTEGER NOT NULL DEFAULT 0,
+            note TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_deliveries_user_day_run
+        ON deliveries(user_id, work_date, run_no);
+
+        CREATE TABLE IF NOT EXISTS reminder_settings(
+            user_id INTEGER PRIMARY KEY,
+            break_enabled INTEGER NOT NULL DEFAULT 1,
+            missed_in_enabled INTEGER NOT NULL DEFAULT 1,
+            missed_out_enabled INTEGER NOT NULL DEFAULT 1,
+            break_reminder_after_min INTEGER NOT NULL DEFAULT 240,
+            missed_in_offset_min INTEGER NOT NULL DEFAULT 10,
+            missed_out_offset_min INTEGER NOT NULL DEFAULT 20,
+            updated_at TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS work_schedule(
+            user_id INTEGER PRIMARY KEY,
+            active_days TEXT NOT NULL DEFAULT '[1,2,3,4,5]',
+            start_time TEXT NOT NULL DEFAULT '09:00',
+            end_time TEXT NOT NULL DEFAULT '17:00',
+            break_after_min INTEGER NOT NULL DEFAULT 240,
+            updated_at TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        """
+    )
+
+
 def ensure_bh_indexes(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -154,6 +199,77 @@ def ensure_password_resets_table(conn: sqlite3.Connection) -> None:
         ON password_resets(token_hash);
         """
     )
+
+
+def ensure_v2_defaults(conn: sqlite3.Connection, uid: int) -> None:
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO reminder_settings(
+            user_id, break_enabled, missed_in_enabled, missed_out_enabled,
+            break_reminder_after_min, missed_in_offset_min, missed_out_offset_min, updated_at
+        )
+        VALUES (?, 1, 1, 1, 240, 10, 20, ?)
+        """,
+        (uid, now()),
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO work_schedule(
+            user_id, active_days, start_time, end_time, break_after_min, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (uid, json.dumps([1, 2, 3, 4, 5]), "09:00", "17:00", 240, now()),
+    )
+
+
+def parse_hhmm(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError("Time is required")
+    parts = text.split(":")
+    if len(parts) != 2:
+        raise ValueError("Invalid time format")
+    hh = int(parts[0])
+    mm = int(parts[1])
+    if hh < 0 or hh > 23 or mm < 0 or mm > 59:
+        raise ValueError("Invalid time value")
+    return f"{hh:02d}:{mm:02d}"
+
+
+def parse_days_json(raw: str) -> list[int]:
+    try:
+        value = json.loads(raw or "[]")
+    except Exception as exc:
+        raise ValueError("Invalid active days") from exc
+    if not isinstance(value, list):
+        raise ValueError("Invalid active days")
+    out: list[int] = []
+    for item in value:
+        n = int(item)
+        if n < 0 or n > 6:
+            raise ValueError("Invalid day index")
+        if n not in out:
+            out.append(n)
+    return sorted(out)
+
+
+def get_reminder_settings(conn: sqlite3.Connection, uid: int) -> sqlite3.Row:
+    ensure_v2_defaults(conn, uid)
+    row = conn.execute(
+        "SELECT * FROM reminder_settings WHERE user_id=?",
+        (uid,),
+    ).fetchone()
+    return row
+
+
+def get_schedule_settings(conn: sqlite3.Connection, uid: int) -> sqlite3.Row:
+    ensure_v2_defaults(conn, uid)
+    row = conn.execute(
+        "SELECT * FROM work_schedule WHERE user_id=?",
+        (uid,),
+    ).fetchone()
+    return row
 
 
 def init_db() -> None:
@@ -231,6 +347,7 @@ def init_db() -> None:
                 shift_in TEXT,
                 shift_out TEXT,
                 day_off INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'WORK',
                 created_at TEXT,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY(roster_id) REFERENCES rosters(id) ON DELETE CASCADE
@@ -251,9 +368,11 @@ def init_db() -> None:
         add_col_if_missing(conn, "bank_holidays", "paid_date", "TEXT")
         add_col_if_missing(conn, "bank_holidays", "paid_week", "INTEGER")
         add_col_if_missing(conn, "bank_holidays", "applicable", "INTEGER NOT NULL DEFAULT 1")
+        add_col_if_missing(conn, "roster_days", "status", "TEXT DEFAULT 'WORK'")
 
         ensure_bh_indexes(conn)
         ensure_clock_tables(conn)
+        ensure_v2_tables(conn)
 
         conn.commit()
 
@@ -271,6 +390,7 @@ def init_db() -> None:
         add_col_if_missing(conn, "bank_holidays", "paid_date", "TEXT")
         add_col_if_missing(conn, "bank_holidays", "paid_week", "INTEGER")
         add_col_if_missing(conn, "bank_holidays", "applicable", "INTEGER NOT NULL DEFAULT 1")
+        add_col_if_missing(conn, "roster_days", "status", "TEXT DEFAULT 'WORK'")
         
 
         ensure_bh_indexes(conn)
@@ -468,6 +588,40 @@ class MeUpdate(BaseModel):
     hourly_rate: Optional[float] = None
 
 
+class DeliveryUpsert(BaseModel):
+    work_date: str
+    run_no: int = Field(..., ge=1, le=2)
+    location: str = Field(..., min_length=1)
+    delivery_count: int = Field(..., ge=0)
+    note: Optional[str] = None
+
+
+class DeliveriesDayUpsert(BaseModel):
+    work_date: str
+    run_1_count: int = Field(..., ge=0)
+    run_1_location: str = Field(..., min_length=1)
+    run_2_count: int = Field(..., ge=0)
+    run_2_location: str = Field(..., min_length=1)
+    run_1_note: Optional[str] = None
+    run_2_note: Optional[str] = None
+
+
+class ReminderSettingsUpdate(BaseModel):
+    break_enabled: bool = True
+    missed_in_enabled: bool = True
+    missed_out_enabled: bool = True
+    break_reminder_after_min: int = Field(..., ge=15, le=720)
+    missed_in_offset_min: int = Field(..., ge=0, le=240)
+    missed_out_offset_min: int = Field(..., ge=0, le=240)
+
+
+class ScheduleSettingsUpdate(BaseModel):
+    active_days: List[int] = Field(default_factory=list)
+    start_time: str
+    end_time: str
+    break_after_min: int = Field(..., ge=15, le=720)
+
+
 # ======================================================
 # PAGES
 # ======================================================
@@ -488,6 +642,16 @@ def add_week_page():
 @app.get("/report", response_class=HTMLResponse)
 def report():
     return (STATIC_DIR / "report.html").read_text(encoding="utf-8")
+
+
+@app.get("/deliveries", response_class=HTMLResponse)
+def deliveries_page():
+    return (STATIC_DIR / "deliveries.html").read_text(encoding="utf-8")
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page():
+    return (STATIC_DIR / "settings.html").read_text(encoding="utf-8")
 
 
 @app.get("/hours", response_class=HTMLResponse)
@@ -1207,6 +1371,21 @@ def hhmm_now() -> str:
     return datetime.now().strftime("%H:%M")
 
 
+def sunday_start(dt: date) -> date:
+    return dt - timedelta(days=(dt.weekday() + 1) % 7)
+
+
+def tesco_week_number(dt: date) -> int:
+    """
+    Tesco roster weeks are Sunday -> Saturday and numbered from the Sunday-based
+    week that contains the date, instead of ISO Monday-based weeks.
+    """
+    year_start = date(dt.year, 1, 1)
+    days_since_year_start = (dt - year_start).days
+    year_start_offset = (year_start.weekday() + 1) % 7
+    return (days_since_year_start + year_start_offset) // 7 + 1
+
+
 # ======================================================
 # MULTIPLIER (Sunday / BH paid)
 # ======================================================
@@ -1373,6 +1552,412 @@ def patch_bh(bh_id: int, p: BhPaidPatch, req: Request):
 
 
 # ======================================================
+# DELIVERIES TRACKER
+# ======================================================
+DELIVERY_LOCATIONS = ("Dublin 8", "Dublin 15")
+
+
+def _delivery_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "id": int(row["id"]),
+        "work_date": row["work_date"],
+        "run_no": int(row["run_no"]),
+        "location": row["location"],
+        "delivery_count": int(row["delivery_count"] or 0),
+        "note": row["note"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+@app.get("/api/deliveries")
+def deliveries_list(req: Request):
+    uid = require_user(req)
+    with db() as conn:
+        ensure_v2_defaults(conn, uid)
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM deliveries
+            WHERE user_id=?
+            ORDER BY date(work_date) DESC, run_no ASC, id DESC
+            """,
+            (uid,),
+        ).fetchall()
+        return {"items": [_delivery_to_dict(r) for r in rows]}
+
+
+@app.get("/api/deliveries/day")
+def deliveries_day(req: Request, date_ymd: str):
+    uid = require_user(req)
+    with db() as conn:
+        ensure_v2_defaults(conn, uid)
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM deliveries
+            WHERE user_id=? AND work_date=?
+            ORDER BY run_no ASC, id ASC
+            """,
+            (uid, date_ymd),
+        ).fetchall()
+        return {"work_date": date_ymd, "items": [_delivery_to_dict(r) for r in rows]}
+
+
+@app.post("/api/deliveries")
+def deliveries_create(p: DeliveryUpsert, req: Request):
+    uid = require_user(req)
+    try:
+        work_date = parse_ymd(p.work_date).isoformat()
+    except Exception:
+        raise HTTPException(400, "Invalid delivery date")
+
+    location = str(p.location or "").strip()
+    if location not in DELIVERY_LOCATIONS:
+        raise HTTPException(400, "Invalid delivery location")
+
+    with db() as conn:
+        ensure_v2_defaults(conn, uid)
+        existing = conn.execute(
+            "SELECT id FROM deliveries WHERE user_id=? AND work_date=? AND run_no=?",
+            (uid, work_date, int(p.run_no)),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                """
+                UPDATE deliveries
+                SET location=?, delivery_count=?, note=?, updated_at=?
+                WHERE id=? AND user_id=?
+                """,
+                (location, int(p.delivery_count), p.note, now(), int(existing["id"]), uid),
+            )
+            row_id = int(existing["id"])
+        else:
+            cur = conn.execute(
+                """
+                INSERT INTO deliveries(user_id, work_date, run_no, location, delivery_count, note, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (uid, work_date, int(p.run_no), location, int(p.delivery_count), p.note, now(), now()),
+            )
+            row_id = int(cur.lastrowid)
+
+        conn.commit()
+        row = conn.execute("SELECT * FROM deliveries WHERE id=? AND user_id=?", (row_id, uid)).fetchone()
+        return {"ok": True, "item": _delivery_to_dict(row)}
+
+
+@app.put("/api/deliveries/day")
+def deliveries_day_upsert(p: DeliveriesDayUpsert, req: Request):
+    uid = require_user(req)
+    try:
+        work_date = parse_ymd(p.work_date).isoformat()
+    except Exception:
+        raise HTTPException(400, "Invalid delivery date")
+
+    rows = [
+        {"run_no": 1, "count": p.run_1_count, "location": p.run_1_location, "note": p.run_1_note},
+        {"run_no": 2, "count": p.run_2_count, "location": p.run_2_location, "note": p.run_2_note},
+    ]
+    for row in rows:
+        if row["location"] not in DELIVERY_LOCATIONS:
+            raise HTTPException(400, "Invalid delivery location")
+
+    with db() as conn:
+        ensure_v2_defaults(conn, uid)
+        for row in rows:
+            existing = conn.execute(
+                "SELECT id FROM deliveries WHERE user_id=? AND work_date=? AND run_no=?",
+                (uid, work_date, int(row["run_no"])),
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    """
+                    UPDATE deliveries
+                    SET location=?, delivery_count=?, note=?, updated_at=?
+                    WHERE id=? AND user_id=?
+                    """,
+                    (row["location"], int(row["count"]), row["note"], now(), int(existing["id"]), uid),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO deliveries(user_id, work_date, run_no, location, delivery_count, note, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (uid, work_date, int(row["run_no"]), row["location"], int(row["count"]), row["note"], now(), now()),
+                )
+
+        conn.commit()
+        items = conn.execute(
+            """
+            SELECT *
+            FROM deliveries
+            WHERE user_id=? AND work_date=?
+            ORDER BY run_no ASC, id ASC
+            """,
+            (uid, work_date),
+        ).fetchall()
+        return {"ok": True, "work_date": work_date, "items": [_delivery_to_dict(r) for r in items]}
+
+
+@app.patch("/api/deliveries/{delivery_id}")
+def deliveries_patch(delivery_id: int, p: DeliveryUpsert, req: Request):
+    uid = require_user(req)
+    try:
+        work_date = parse_ymd(p.work_date).isoformat()
+    except Exception:
+        raise HTTPException(400, "Invalid delivery date")
+
+    location = str(p.location or "").strip()
+    if location not in DELIVERY_LOCATIONS:
+        raise HTTPException(400, "Invalid delivery location")
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT * FROM deliveries WHERE id=? AND user_id=?",
+            (delivery_id, uid),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Delivery entry not found")
+
+        conn.execute(
+            """
+            UPDATE deliveries
+            SET work_date=?, run_no=?, location=?, delivery_count=?, note=?, updated_at=?
+            WHERE id=? AND user_id=?
+            """,
+            (work_date, int(p.run_no), location, int(p.delivery_count), p.note, now(), delivery_id, uid),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM deliveries WHERE id=? AND user_id=?",
+            (delivery_id, uid),
+        ).fetchone()
+        return {"ok": True, "item": _delivery_to_dict(row)}
+
+
+@app.delete("/api/deliveries/{delivery_id}")
+def deliveries_delete(delivery_id: int, req: Request):
+    uid = require_user(req)
+    with db() as conn:
+        conn.execute("DELETE FROM deliveries WHERE id=? AND user_id=?", (delivery_id, uid))
+        conn.commit()
+        return {"ok": True}
+
+
+@app.get("/api/deliveries/stats")
+def deliveries_stats(req: Request):
+    uid = require_user(req)
+    today = date.today()
+    month_start = today.replace(day=1)
+    week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=6)
+
+    with db() as conn:
+        ensure_v2_defaults(conn, uid)
+        rows = conn.execute(
+            """
+            SELECT work_date, run_no, location, delivery_count
+            FROM deliveries
+            WHERE user_id=?
+            ORDER BY date(work_date) ASC, run_no ASC, id ASC
+            """,
+            (uid,),
+        ).fetchall()
+
+        deliveries = [
+            {
+                "work_date": r["work_date"],
+                "run_no": int(r["run_no"]),
+                "location": r["location"],
+                "delivery_count": int(r["delivery_count"] or 0),
+            }
+            for r in rows
+        ]
+
+        def sum_in_range(start_d: date, end_d: date) -> Dict[str, Any]:
+            filtered = [r for r in deliveries if start_d <= parse_ymd(r["work_date"]) <= end_d]
+            total = sum(int(r["delivery_count"] or 0) for r in filtered)
+            run_1 = sum(int(r["delivery_count"] or 0) for r in filtered if int(r["run_no"]) == 1)
+            run_2 = sum(int(r["delivery_count"] or 0) for r in filtered if int(r["run_no"]) == 2)
+            by_location: Dict[str, int] = {loc: 0 for loc in DELIVERY_LOCATIONS}
+            for r in filtered:
+                by_location[r["location"]] = by_location.get(r["location"], 0) + int(r["delivery_count"] or 0)
+            distinct_days = len({r["work_date"] for r in filtered}) or 1
+            distinct_weeks = len({
+                f"{parse_ymd(r['work_date']).isocalendar().year}-{parse_ymd(r['work_date']).isocalendar().week}"
+                for r in filtered
+            }) or 1
+            trend: Dict[str, int] = {}
+            for r in filtered:
+                trend[r["work_date"]] = trend.get(r["work_date"], 0) + int(r["delivery_count"] or 0)
+            return {
+                "total": total,
+                "run_1": run_1,
+                "run_2": run_2,
+                "by_location": by_location,
+                "avg_per_day": round(total / distinct_days, 2) if distinct_days else 0.0,
+                "avg_per_week": round(total / distinct_weeks, 2) if distinct_weeks else 0.0,
+                "trend": trend,
+            }
+
+        week = sum_in_range(week_start, week_end)
+        month = sum_in_range(month_start, today)
+
+        weekly_trend = []
+        for i in range(7):
+            d = week_start + timedelta(days=i)
+            weekly_trend.append(
+                {
+                    "date": d.isoformat(),
+                    "label": weekday_short_en(d),
+                    "value": int(week["trend"].get(d.isoformat(), 0)),
+                }
+            )
+
+        monthly_trend = []
+        cursor = month_start
+        while cursor <= today:
+            monthly_trend.append(
+                {
+                    "date": cursor.isoformat(),
+                    "label": f"{cursor.day:02d}",
+                    "value": int(month["trend"].get(cursor.isoformat(), 0)),
+                }
+            )
+            cursor += timedelta(days=1)
+
+        location_breakdown = [
+            {"location": loc, "count": int(month["by_location"].get(loc, 0))}
+            for loc in DELIVERY_LOCATIONS
+        ]
+        most_frequent_location = max(location_breakdown, key=lambda item: item["count"], default={"location": None, "count": 0})
+
+        return {
+            "ok": True,
+            "week": {
+                "total": int(week["total"]),
+                "run_1": int(week["run_1"]),
+                "run_2": int(week["run_2"]),
+                "avg_per_day": week["avg_per_day"],
+                "avg_per_week": week["avg_per_week"],
+                "trend": weekly_trend,
+            },
+            "month": {
+                "total": int(month["total"]),
+                "run_1": int(month["run_1"]),
+                "run_2": int(month["run_2"]),
+                "avg_per_day": month["avg_per_day"],
+                "avg_per_week": month["avg_per_week"],
+                "trend": monthly_trend,
+            },
+            "location_breakdown": location_breakdown,
+            "most_frequent_location": most_frequent_location["location"],
+            "items": deliveries,
+        }
+
+
+# ======================================================
+# SETTINGS / SCHEDULE
+# ======================================================
+@app.get("/api/settings/reminders")
+def reminders_get(req: Request):
+    uid = require_user(req)
+    with db() as conn:
+        row = get_reminder_settings(conn, uid)
+        return {
+            "ok": True,
+            "break_enabled": bool(int(row["break_enabled"] or 0)),
+            "missed_in_enabled": bool(int(row["missed_in_enabled"] or 0)),
+            "missed_out_enabled": bool(int(row["missed_out_enabled"] or 0)),
+            "break_reminder_after_min": int(row["break_reminder_after_min"] or 240),
+            "missed_in_offset_min": int(row["missed_in_offset_min"] or 10),
+            "missed_out_offset_min": int(row["missed_out_offset_min"] or 20),
+        }
+
+
+@app.put("/api/settings/reminders")
+def reminders_put(p: ReminderSettingsUpdate, req: Request):
+    uid = require_user(req)
+    with db() as conn:
+        ensure_v2_defaults(conn, uid)
+        conn.execute(
+            """
+            INSERT INTO reminder_settings(
+                user_id, break_enabled, missed_in_enabled, missed_out_enabled,
+                break_reminder_after_min, missed_in_offset_min, missed_out_offset_min, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                break_enabled=excluded.break_enabled,
+                missed_in_enabled=excluded.missed_in_enabled,
+                missed_out_enabled=excluded.missed_out_enabled,
+                break_reminder_after_min=excluded.break_reminder_after_min,
+                missed_in_offset_min=excluded.missed_in_offset_min,
+                missed_out_offset_min=excluded.missed_out_offset_min,
+                updated_at=excluded.updated_at
+            """,
+            (
+                uid,
+                1 if p.break_enabled else 0,
+                1 if p.missed_in_enabled else 0,
+                1 if p.missed_out_enabled else 0,
+                int(p.break_reminder_after_min),
+                int(p.missed_in_offset_min),
+                int(p.missed_out_offset_min),
+                now(),
+            ),
+        )
+        conn.commit()
+        return {"ok": True}
+
+
+@app.get("/api/settings/schedule")
+def schedule_get(req: Request):
+    uid = require_user(req)
+    with db() as conn:
+        row = get_schedule_settings(conn, uid)
+        try:
+            active_days = parse_days_json(row["active_days"] or "[]")
+        except Exception:
+            active_days = [1, 2, 3, 4, 5]
+        return {
+            "ok": True,
+            "active_days": active_days,
+            "start_time": row["start_time"] or "09:00",
+            "end_time": row["end_time"] or "17:00",
+            "break_after_min": int(row["break_after_min"] or 240),
+        }
+
+
+@app.put("/api/settings/schedule")
+def schedule_put(p: ScheduleSettingsUpdate, req: Request):
+    uid = require_user(req)
+    active_days = sorted({int(d) for d in p.active_days if 0 <= int(d) <= 6})
+    start_time = parse_hhmm(p.start_time)
+    end_time = parse_hhmm(p.end_time)
+
+    with db() as conn:
+        ensure_v2_defaults(conn, uid)
+        conn.execute(
+            """
+            INSERT INTO work_schedule(user_id, active_days, start_time, end_time, break_after_min, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                active_days=excluded.active_days,
+                start_time=excluded.start_time,
+                end_time=excluded.end_time,
+                break_after_min=excluded.break_after_min,
+                updated_at=excluded.updated_at
+            """,
+            (uid, json.dumps(active_days), start_time, end_time, int(p.break_after_min), now()),
+        )
+        conn.commit()
+        return {"ok": True}
+
+
+# ======================================================
 # DAY DETAILS
 # ======================================================
 @app.get("/api/day-details/{entry_id}")
@@ -1445,7 +2030,7 @@ def day_details(entry_id: int, req: Request):
 def roster_for_date(conn: sqlite3.Connection, uid: int, ymd: str) -> Optional[sqlite3.Row]:
     return conn.execute(
         """
-        SELECT rd.shift_in, rd.shift_out, rd.day_off
+        SELECT rd.shift_in, rd.shift_out, rd.day_off, rd.status
         FROM roster_days rd
         JOIN rosters r ON r.id = rd.roster_id
         WHERE rd.user_id=? AND rd.work_date=?
@@ -1555,6 +2140,68 @@ def roster_list(req: Request):
 
 from fastapi import Query
 
+
+def roster_code_to_state(code: str) -> tuple[Optional[str], Optional[str], int]:
+    code_up = (code or "").strip().upper()
+    if code_up == "OFF":
+        return None, None, 1
+    if code_up == "A":
+        return SHIFT_A_IN, SHIFT_A_OUT, 0
+    if code_up == "B":
+        return SHIFT_B_IN, SHIFT_B_OUT, 0
+    if code_up == "HOLIDAY":
+        return None, None, 1
+    if code_up in ("BANK_HOLIDAY", "BANK HOLIDAY", "BH"):
+        return None, None, 1
+    raise HTTPException(400, "Invalid day code (use A, B, OFF, HOLIDAY, BANK_HOLIDAY)")
+
+
+def roster_day_status_from_row(row: sqlite3.Row) -> str:
+    try:
+        status = str(row["status"] or "").strip().upper()
+    except Exception:
+        status = ""
+    if status in ("A", "B", "OFF", "HOLIDAY", "BANK_HOLIDAY"):
+        return status
+    if int(row["day_off"] or 0) == 1:
+        return "OFF"
+    if row["shift_in"] == SHIFT_A_IN:
+        return "A"
+    if row["shift_in"] == SHIFT_B_IN:
+        return "B"
+    return "OFF"
+
+
+def sync_bank_holiday_paid_for_date(conn: sqlite3.Connection, uid: int, work_date: str) -> None:
+    try:
+        y = int(str(work_date).split("-")[0])
+    except Exception:
+        return
+
+    ensure_bh_for_year(conn, uid, y)
+    row = conn.execute(
+        """
+        SELECT id, paid
+        FROM bank_holidays
+        WHERE user_id=? AND year=? AND bh_date=?
+        LIMIT 1
+        """,
+        (uid, y, work_date),
+    ).fetchone()
+
+    if not row:
+        return
+
+    if int(row["paid"] or 0) != 1:
+        conn.execute(
+            """
+            UPDATE bank_holidays
+            SET paid=1
+            WHERE id=? AND user_id=?
+            """,
+            (int(row["id"]), uid),
+        )
+
 @app.get("/api/roster/day")
 def roster_day_lookup(req: Request, date_ymd: str = Query(..., description="YYYY-MM-DD")):
     uid = require_user(req)
@@ -1570,7 +2217,7 @@ def roster_day_lookup(req: Request, date_ymd: str = Query(..., description="YYYY
 
         if not ro:
             # sem roster cadastrado pra amanhã -> trata como OFF
-            return {"has_roster": False, "day_off": True, "shift_in": None, "shift_out": None}
+            return {"has_roster": False, "day_off": True, "shift_in": None, "shift_out": None, "status": "OFF"}
 
         day_off = bool(int(ro["day_off"] or 0))
         return {
@@ -1578,6 +2225,7 @@ def roster_day_lookup(req: Request, date_ymd: str = Query(..., description="YYYY
             "day_off": day_off,
             "shift_in": ro["shift_in"],
             "shift_out": ro["shift_out"],
+            "status": roster_day_status_from_row(ro),
         }
 
 
@@ -1612,6 +2260,7 @@ def roster_get(roster_id: int, req: Request):
                     "day_off": bool(int(d["day_off"] or 0)),
                     "shift_in": d["shift_in"],
                     "shift_out": d["shift_out"],
+                    "status": roster_day_status_from_row(d),
                 }
                 for d in days
             ],
@@ -1673,24 +2322,21 @@ def roster_create(p: RosterCreate, req: Request):
         for i, code in enumerate(p.days):
             d = start + timedelta(days=i)
             ymd = d.isoformat()
-            code_up = (code or "").strip().upper()
-
-            if code_up == "OFF":
-                shift_in, shift_out, day_off = None, None, 1
-            elif code_up == "A":
-                shift_in, shift_out, day_off = SHIFT_A_IN, SHIFT_A_OUT, 0
-            elif code_up == "B":
-                shift_in, shift_out, day_off = SHIFT_B_IN, SHIFT_B_OUT, 0
-            else:
-                raise HTTPException(400, "Invalid day code (use A, B, OFF)")
+            shift_in, shift_out, day_off = roster_code_to_state(code)
+            status = (code or "").strip().upper()
+            if status in ("BANK HOLIDAY", "BH"):
+                status = "BANK_HOLIDAY"
 
             conn.execute(
                 """
-                INSERT INTO roster_days(user_id,roster_id,work_date,shift_in,shift_out,day_off,created_at)
-                VALUES (?,?,?,?,?,?,?)
+                INSERT INTO roster_days(user_id,roster_id,work_date,shift_in,shift_out,day_off,status,created_at)
+                VALUES (?,?,?,?,?,?,?,?)
                 """,
-                (uid, roster_id, ymd, shift_in, shift_out, day_off, now()),
+                (uid, roster_id, ymd, shift_in, shift_out, day_off, status, now()),
             )
+
+            if status == "BANK_HOLIDAY":
+                sync_bank_holiday_paid_for_date(conn, uid, ymd)
 
         conn.commit()
 
@@ -1701,8 +2347,8 @@ def roster_create(p: RosterCreate, req: Request):
 def roster_day_patch(roster_id: int, p: RosterDayPatch, req: Request):
     uid = require_user(req)
     code = (p.code or "").strip().upper()
-    if code not in ("A", "B", "OFF"):
-        raise HTTPException(400, "Invalid code (use A, B, OFF)")
+    if code not in ("A", "B", "OFF", "HOLIDAY", "BANK_HOLIDAY", "BANK HOLIDAY", "BH"):
+        raise HTTPException(400, "Invalid code (use A, B, OFF, HOLIDAY, BANK_HOLIDAY)")
 
     with db() as conn:
         r = conn.execute(
@@ -1723,17 +2369,19 @@ def roster_day_patch(roster_id: int, p: RosterDayPatch, req: Request):
         if not d:
             raise HTTPException(404, "Roster day not found")
 
-        if code == "OFF":
-            shift_in, shift_out, day_off = None, None, 1
-        elif code == "A":
-            shift_in, shift_out, day_off = SHIFT_A_IN, SHIFT_A_OUT, 0
-        else:
-            shift_in, shift_out, day_off = SHIFT_B_IN, SHIFT_B_OUT, 0
+        shift_in, shift_out, day_off = roster_code_to_state(code)
+        status = code
+        if status in ("BANK HOLIDAY", "BH"):
+            status = "BANK_HOLIDAY"
 
         conn.execute(
-            "UPDATE roster_days SET shift_in=?, shift_out=?, day_off=? WHERE id=? AND user_id=?",
-            (shift_in, shift_out, day_off, int(d["id"]), uid),
+            "UPDATE roster_days SET shift_in=?, shift_out=?, day_off=?, status=? WHERE id=? AND user_id=?",
+            (shift_in, shift_out, day_off, status, int(d["id"]), uid),
         )
+
+        if status == "BANK_HOLIDAY":
+            sync_bank_holiday_paid_for_date(conn, uid, p.work_date)
+
         conn.commit()
 
     return {"ok": True}

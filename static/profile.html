@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="theme-color" content="#0f172a" />
-  <title>Profile</title>
+  <title>Settings</title>
 
   <link rel="icon" href="/static/logo.png" />
-  <link rel="stylesheet" href="/static/app.css?v=12" />
+  <link rel="stylesheet" href="/static/app.css?v=1003" />
 
   <style>
     :root{
@@ -54,13 +54,16 @@
 
     .sectionTitle{ font-weight:1000; font-size:16px; }
     .sectionSub{ font-weight:900; font-size:12px; color:var(--muted2); margin-top:4px; }
+    .pageTitle{ font-size:34px; font-weight:1000; letter-spacing:-.04em; line-height:1; }
+    .pageSub{ margin-top:6px; font-size:13px; font-weight:900; color:var(--muted2); }
+    #pillName{ display:none !important; }
 
     /* Buttons */
     .btnX{
       border:1px solid var(--stroke);
       background: rgba(255,255,255,.75);
       padding:10px 14px;
-      border-radius:999px;
+      border-radius:16px;
       font-weight:1000;
       cursor:pointer;
       display:inline-flex;
@@ -88,13 +91,14 @@
     .avatarBox{
       display:flex; gap:14px; align-items:center; flex-wrap:wrap;
       border:1px solid var(--stroke2);
-      background: rgba(255,255,255,.65);
-      border-radius:20px;
-      padding:14px;
+      background: rgba(255,255,255,.72);
+      border-radius:28px;
+      padding:16px;
+      box-shadow: 0 14px 34px rgba(2,6,23,.08);
     }
-    .avatarWrap{ position:relative; width:92px; height:92px; }
+    .avatarWrap{ position:relative; width:104px; height:104px; }
     .avatar{
-      width:92px; height:92px; border-radius:24px;
+      width:104px; height:104px; border-radius:28px;
       background: rgba(15,23,42,.06);
       border:1px solid rgba(15,23,42,.12);
       overflow:hidden;
@@ -107,8 +111,8 @@
     .avatar img{ width:100%; height:100%; object-fit:cover; }
     .avatarEdit{
       position:absolute; right:-6px; bottom:-6px;
-      width:40px; height:40px;
-      border-radius:14px;
+      width:36px; height:36px;
+      border-radius:12px;
       border:1px solid rgba(37,99,235,.30);
       background: linear-gradient(180deg, var(--blue), var(--blue2));
       color:white;
@@ -117,33 +121,195 @@
       cursor:pointer;
       user-select:none;
     }
+    .avatarBox .btnX{
+      min-height:40px;
+      padding:9px 12px;
+      border-radius:14px;
+      font-size:13px;
+      box-shadow: 0 8px 18px rgba(2,6,23,.06);
+    }
+    .profileInfo{ min-width:0; flex:1; display:flex; flex-direction:column; gap:10px; }
+    .profileName{ font-size:22px; font-weight:1000; letter-spacing:-.03em; line-height:1.05; }
+    .profileMeta{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; color:var(--muted2); font-size:13px; font-weight:900; line-height:1.35; }
+    .profileMeta .dot{ opacity:.35; }
+    .profileActions{ display:flex; gap:8px; flex-wrap:wrap; }
+    .profileActionBtn{ min-height:40px; padding:9px 12px; border-radius:14px; font-size:13px; box-shadow: 0 8px 20px rgba(2,6,23,.06); }
     .btnRow{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
     .smallHint{ font-size:12px; font-weight:900; color:var(--muted2); margin-top:6px; }
+    .profileName{ font-size:22px; font-weight:1000; letter-spacing:-.03em; line-height:1.05; }
+    .profileMeta{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; color:var(--muted2); font-size:13px; font-weight:900; line-height:1.35; }
+    .profileMeta .dot{ opacity:.35; }
+    .profileActions{ display:flex; gap:8px; flex-wrap:wrap; }
+    .profileActionBtn{ min-height:40px; padding:9px 12px; border-radius:14px; font-size:13px; box-shadow: 0 8px 20px rgba(2,6,23,.06); }
 
-    /* Menu */
-    .menuList{ display:flex; flex-direction:column; gap:10px; margin-top:12px; }
+    .menuList{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      margin-top:12px;
+    }
     .menuItem{
       width:100%;
       text-align:left;
       border-radius:18px;
-      border:1px solid var(--stroke2);
-      background: rgba(255,255,255,.70);
-      padding:14px 14px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.84);
+      padding:12px 14px 12px 56px;
       display:flex;
       justify-content:space-between;
       align-items:center;
+      gap:12px;
       cursor:pointer;
-      box-shadow: 0 12px 24px rgba(2,6,23,.06);
+      box-shadow: 0 10px 20px rgba(2,6,23,.04);
+      position:relative;
+      min-height:72px;
+      transition: transform .16s ease, box-shadow .16s ease, background-color .16s ease, border-color .16s ease;
     }
-    .menuItem:hover{ background: rgba(255,255,255,.82); }
-    .miLeft .t1{ font-weight:1000; font-size:15px; }
-    .miLeft .t2{ font-weight:900; font-size:12px; color:var(--muted2); margin-top:3px; }
-    .miRight{ font-weight:1000; color:rgba(15,23,42,.35); font-size:18px; }
+    .menuItem:hover{ background: rgba(255,255,255,.94); transform: translateY(-1px); }
+    .menuItem:active{ transform: translateY(1px); }
+    .menuItem::before{
+      content:"";
+      position:absolute;
+      left:14px;
+      top:50%;
+      transform:translateY(-50%);
+      width:38px;
+      height:38px;
+      border-radius:14px;
+      display:grid;
+      place-items:center;
+      background: rgba(37,99,235,.10);
+      border: 1px solid rgba(37,99,235,.14);
+      color: rgba(29,78,216,1);
+      font-size:17px;
+    }
+    #openAccount::before{ content:"👤"; }
+    #openPay::before{ content:"€"; }
+    #openPhones::before{ content:"☎"; }
+    #openGates::before{ content:"🔐"; }
+    #openAdmin::before{ content:"🛡"; }
+    #openLogout::before{ content:"⎋"; }
+    .miLeft{ min-width:0; flex:1; }
+    .miLeft .t1{
+      font-weight:1000;
+      font-size:15px;
+      line-height:1.2;
+    }
+    .miLeft .t2{
+      font-weight:900;
+      font-size:12px;
+      color:var(--muted2);
+      margin-top:3px;
+      line-height:1.35;
+    }
+    .miRight{
+      display:none;
+    }
     .menuItemDanger{
-      border:1px solid rgba(239,68,68,.25);
-      background: rgba(239,68,68,.08);
+      border:1px solid rgba(239,68,68,.14);
+      background: rgba(239,68,68,.05);
+    }
+    .menuItemDanger::before{
+      background: rgba(239,68,68,.10);
+      border-color: rgba(239,68,68,.16);
+      color: var(--danger2);
     }
     .menuItemDanger .miLeft .t1{ color: var(--danger2); }
+
+    .settingsStack{ display:flex; flex-direction:column; gap:12px; margin-top:12px; }
+    .settingsGroup{
+      padding:14px;
+      border-radius:24px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.72);
+      box-shadow: 0 12px 28px rgba(2,6,23,.06);
+    }
+    .settingsGroupHead{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:10px; }
+    .settingsGroupTitle{ font-size:12px; font-weight:1000; letter-spacing:.12em; text-transform:uppercase; color: rgba(100,116,139,.9); }
+    .settingsList{ display:flex; flex-direction:column; gap:8px; }
+    .settingItem{
+      width:100%;
+      text-align:left;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.84);
+      padding:12px 12px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+      cursor:pointer;
+      border-radius:18px;
+      box-shadow: 0 10px 20px rgba(2,6,23,.04);
+    }
+    .settingItem:hover{ background: rgba(255,255,255,.94); }
+    .settingItem:active{ transform: translateY(1px); }
+    .settingLeft{ display:flex; align-items:center; gap:12px; min-width:0; flex:1; }
+    .settingIcon{
+      width:38px; height:38px;
+      border-radius:14px;
+      display:grid; place-items:center;
+      background: rgba(37,99,235,.10);
+      border: 1px solid rgba(37,99,235,.14);
+      color: rgba(29,78,216,1);
+      font-size:17px;
+      flex:0 0 auto;
+    }
+    .settingText{ min-width:0; }
+    .settingTitle{ font-weight:1000; font-size:15px; line-height:1.2; }
+    .settingSub{ font-weight:900; font-size:12px; color:var(--muted2); margin-top:3px; line-height:1.35; }
+    .settingChevron{ font-weight:1000; color: rgba(15,23,42,.34); font-size:18px; flex:0 0 auto; }
+    .dangerGroup{ border-color: rgba(239,68,68,.16); background: rgba(239,68,68,.05); }
+    .dangerItem{ border-color: rgba(239,68,68,.14); background: rgba(255,255,255,.82); }
+    .dangerItem .settingIcon{ background: rgba(239,68,68,.10); border-color: rgba(239,68,68,.16); color: var(--danger2); }
+    .dangerItem .settingTitle{ color: var(--danger2); }
+    .dangerHint{ margin-top:10px; color:var(--muted2); font-size:12px; font-weight:900; line-height:1.4; }
+    .settingsStack{ display:flex; flex-direction:column; gap:12px; margin-top:12px; }
+    .settingsGroup{
+      padding:14px;
+      border-radius:24px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.72);
+      box-shadow: 0 12px 28px rgba(2,6,23,.06);
+    }
+    .settingsGroupHead{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:10px; }
+    .settingsGroupTitle{ font-size:12px; font-weight:1000; letter-spacing:.12em; text-transform:uppercase; color: rgba(100,116,139,.9); }
+    .settingsList{ display:flex; flex-direction:column; gap:8px; }
+    .settingItem{
+      width:100%;
+      text-align:left;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.84);
+      padding:12px 12px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+      cursor:pointer;
+      border-radius:18px;
+      box-shadow: 0 10px 20px rgba(2,6,23,.04);
+    }
+    .settingItem:hover{ background: rgba(255,255,255,.94); }
+    .settingItem:active{ transform: translateY(1px); }
+    .settingLeft{ display:flex; align-items:center; gap:12px; min-width:0; flex:1; }
+    .settingIcon{
+      width:38px; height:38px;
+      border-radius:14px;
+      display:grid; place-items:center;
+      background: rgba(37,99,235,.10);
+      border: 1px solid rgba(37,99,235,.14);
+      color: rgba(29,78,216,1);
+      font-size:17px;
+      flex:0 0 auto;
+    }
+    .settingText{ min-width:0; }
+    .settingTitle{ font-weight:1000; font-size:15px; line-height:1.2; }
+    .settingSub{ font-weight:900; font-size:12px; color:var(--muted2); margin-top:3px; line-height:1.35; }
+    .settingChevron{ font-weight:1000; color: rgba(15,23,42,.34); font-size:18px; flex:0 0 auto; }
+    .dangerGroup{ border-color: rgba(239,68,68,.16); background: rgba(239,68,68,.05); }
+    .dangerItem{ border-color: rgba(239,68,68,.14); background: rgba(255,255,255,.82); }
+    .dangerItem .settingIcon{ background: rgba(239,68,68,.10); border-color: rgba(239,68,68,.16); color: var(--danger2); }
+    .dangerItem .settingTitle{ color: var(--danger2); }
+    .dangerHint{ margin-top:10px; color:var(--muted2); font-size:12px; font-weight:900; line-height:1.4; }
 
     /* Modal (center) */
     .backdrop{
@@ -283,6 +449,208 @@
       background: rgba(239,68,68,.08);
       color: var(--danger2);
     }
+
+    /* Gate Codes */
+    #bdGates .modal{
+      width: min(940px, 100%);
+      max-height: calc(100vh - 24px);
+      min-height: min(92vh, 860px);
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+    }
+    #bdGates .mHead{
+      gap: 14px;
+      align-items:center;
+    }
+    #bdGates .mBody{
+      padding: 14px;
+      overflow: hidden;
+      display:flex;
+      flex-direction:column;
+      gap: 12px;
+      flex: 1;
+    }
+    .gateHeadMeta{
+      margin-left:auto;
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    .gateCount{
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(37,99,235,.10);
+      border: 1px solid rgba(37,99,235,.16);
+      color: rgba(29,78,216,1);
+      font-size: 12px;
+      font-weight: 1000;
+      white-space: nowrap;
+    }
+    .gateBackBtn{
+      min-width: 88px;
+      justify-content:center;
+    }
+    .gateSearchWrap{
+      position: relative;
+    }
+    .gateSearchIcon{
+      position:absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: rgba(100,116,139,.9);
+      font-size: 16px;
+      pointer-events:none;
+    }
+    .gateSearch{
+      padding-left: 42px !important;
+      background: rgba(255,255,255,.88) !important;
+    }
+    .gateComposer{
+      display:grid;
+      gap:12px;
+      padding: 14px;
+      border-radius: 22px;
+      border: 1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.76);
+      box-shadow: 0 10px 28px rgba(2,6,23,.06);
+    }
+    .gateGrid{
+      display:grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: 10px;
+    }
+    .gateComposer input{
+      width:100%;
+      min-width:0;
+      padding:12px 12px;
+      border-radius:14px;
+      border:1px solid rgba(15,23,42,.12);
+      background: rgba(255,255,255,.86);
+      font-weight:900;
+      outline:none;
+      transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+    }
+    .gateComposer input:focus{
+      border-color: rgba(37,99,235,.34);
+      box-shadow: 0 0 0 4px rgba(37,99,235,.10);
+      background: rgba(255,255,255,.98);
+    }
+    @media (max-width: 640px){
+      .gateGrid{ grid-template-columns: 1fr; }
+      .gateActions .gateSaveBtn{
+        width:100%;
+        min-width:0;
+      }
+      #bdGates .modal{
+        width: 100%;
+        min-height: 100vh;
+        max-height: 100vh;
+        border-radius: 0;
+      }
+      #bdGates .mHead{
+        padding-inline: 14px;
+      }
+    }
+    .gateActions{
+      display:flex;
+      align-items:center;
+      justify-content:flex-start;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .gateSaveBtn{
+      min-width: 118px;
+      justify-content:center;
+    }
+    .gateListWrap{
+      flex:1;
+      overflow:auto;
+      padding: 0 !important;
+      border-radius: 24px;
+      background: rgba(255,255,255,.68);
+    }
+    #gatesList{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      padding: 10px;
+    }
+    .gateItem{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding: 14px 14px 14px 16px;
+      border-radius: 20px;
+      border: 1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.86);
+      box-shadow: 0 10px 24px rgba(2,6,23,.05);
+      cursor:pointer;
+      transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+    }
+    .gateItem:hover{ background: rgba(255,255,255,.95); box-shadow: 0 14px 30px rgba(2,6,23,.07); }
+    .gateItem:active{ transform: translateY(1px); }
+    .gateItemLeft{
+      min-width:0;
+      flex:1;
+    }
+    .gateItemPlace{
+      font-weight: 1000;
+      font-size: 15px;
+      letter-spacing: -.01em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .gateItemCode{
+      margin-top: 4px;
+      color: rgba(71,85,105,.95);
+      font-size: 14px;
+      font-weight: 900;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      letter-spacing: .01em;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .gateItemActions{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex:0 0 auto;
+    }
+    .gateItemActions .iconBtn{
+      width:40px;
+      height:40px;
+      border-radius:14px;
+      font-size:15px;
+    }
+    .gateEmpty{
+      padding: 18px 14px 16px;
+      color: var(--muted2);
+      font-size: 13px;
+      font-weight: 900;
+      line-height: 1.45;
+    }
+    .gateEmptyWrap{
+      display:grid;
+      gap:10px;
+      padding: 6px 4px 10px;
+    }
+    .gateComposerAction{
+      width:100%;
+    }
+    .gateSavedNotice{
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(37,99,235,.08);
+      border: 1px solid rgba(37,99,235,.12);
+      color: rgba(29,78,216,1);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .gateSavedNotice:empty{ display:none; }
 
     /* Gate add button: always blue even if app.css overrides */
     #btnAddGate{
@@ -475,31 +843,42 @@ button[id^="btnSave"]{
   </style>
 </head>
 
+
+
 <body>
   <main class="wrap">
-    <div class="top">
+    <header class="top">
       <div class="brand">
         <img src="/static/logo.png" alt="logo" />
         <div>
-          <div style="font-size:34px; font-weight:1000; letter-spacing:-.03em; line-height:1;">Profile</div>
-          <div class="muted">Personal & pay settings</div>
+          <div class="pageTitle">Settings</div>
+          <div class="pageSub">Quick access to account and tools</div>
         </div>
       </div>
 
-      <div style="display:flex; gap:10px; align-items:center;">
-        <button id="btnHome" class="btnX btnBlue" type="button">Home</button>
-        <button id="btnBack" class="btnX btnGhost" type="button">Back</button>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button id="btnHome" class="btnX btnGhost" type="button">Home</button>
+        <button id="btnBack" class="btnX btnBlue" type="button">Back</button>
       </div>
-    </div>
+    </header>
 
     <!-- PHOTO -->
     <section class="card cardPad">
       <div class="row">
         <div>
-          <div class="sectionTitle">Photo</div>
-          <div class="sectionSub">Upload an avatar or take a selfie</div>
+          <div class="sectionTitle">Profile</div>
+          <div class="sectionSub">Avatar, name, and account basics</div>
         </div>
         <div id="pillName" class="btnX btnGhost" style="cursor:default;">—</div>
+      </div>
+
+      <div style="margin-top:4px;">
+        <div id="profileName" class="profileName">Camilo Vettori</div>
+        <div class="profileMeta" style="margin-top:4px;">
+          <span id="profileEmail">—</span>
+          <span class="dot">•</span>
+          <span id="profileRole">User</span>
+        </div>
       </div>
 
       <div class="avatarBox" style="margin-top:12px;">
@@ -522,16 +901,17 @@ button[id^="btnSave"]{
       </div>
     </section>
 
-    <!-- MENU -->
+    <!-- SETTINGS -->
     <section class="card cardPad" style="margin-top:12px;">
       <div class="row">
         <div>
-          <div class="sectionTitle">Menu</div>
-          <div class="sectionSub">Tap to open</div>
+          <div class="sectionTitle">Settings</div>
+          <div class="sectionSub">Account and tools</div>
         </div>
       </div>
 
       <div class="menuList">
+        <div class="settingsGroupTitle" style="margin:4px 4px 0;">Account</div>
         <button id="openAccount" class="menuItem" type="button">
           <div class="miLeft">
             <div class="t1">Account settings</div>
@@ -548,6 +928,7 @@ button[id^="btnSave"]{
           <div class="miRight">›</div>
         </button>
 
+        <div class="settingsGroupTitle" style="margin:12px 4px 0;">Tools</div>
         <button id="openPhones" class="menuItem" type="button">
           <div class="miLeft">
             <div class="t1">Useful phones</div>
@@ -564,6 +945,7 @@ button[id^="btnSave"]{
           <div class="miRight">›</div>
         </button>
 
+        <div class="settingsGroupTitle" style="margin:12px 4px 0; color: rgba(239,68,68,.85);">System</div>
         <button id="openAdmin" class="menuItem hidden" type="button">
   <div class="miLeft">
     <div class="t1">Admin Panel</div>
@@ -573,6 +955,7 @@ button[id^="btnSave"]{
 </button>
 
 
+        <div class="settingsGroupTitle" style="margin:12px 4px 0; color: rgba(239,68,68,.85);">Danger zone</div>
         <button id="openLogout" class="menuItem menuItemDanger" type="button">
           <div class="miLeft">
             <div class="t1">Logout</div>
@@ -706,44 +1089,41 @@ button[id^="btnSave"]{
   <div id="bdGates" class="backdrop hidden" aria-hidden="true">
     <div class="modal" role="dialog" aria-modal="true">
       <div class="mHead">
+        <button class="mClose gateBackBtn" data-close="bdGates" type="button" aria-label="Back">Back</button>
         <div>
-          <div class="mTitle"><span class="tagBlue">Gate Codes</span></div>
-          
+          <div class="mTitle">Gate Codes</div>
         </div>
-        
+        <div class="gateHeadMeta">
+          <div id="gateCount" class="gateCount">0 codes</div>
+        </div>
       </div>
       <div class="mBody">
-        <div class="grid2">
-          <label class="field">
-            <span>Place</span>
-            <input id="gatePlace" type="text" placeholder="e.g. Brabazon Hall Cork St" />
-          </label>
-          <label class="field">
-            <span>Code / Notes</span>
-            <input id="gateCode" type="text" placeholder="e.g. 5917 or *2665#" />
-          </label>
+        <div class="gateSearchWrap">
+          <div class="gateSearchIcon">⌕</div>
+          <input id="gateSearch" class="gateSearch" type="text" placeholder="Search place or code" />
         </div>
 
-        <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-          <button id="btnAddGate" class="btnX btnBlue" type="button">Add</button>
+        <div class="gateActions">
+          <button id="btnGateToggleComposer" class="btnX btnGhost gateSaveBtn" type="button">+ Add code</button>
         </div>
 
-        <div class="field" style="margin-top:12px;">
-          <span>Search</span>
-          <input id="gateSearch" type="text" placeholder="Type to filter (place or code)" />
-        </div>
+        <section id="gateComposer" class="gateComposer hidden">
+          <div class="gateGrid">
+            <input id="gatePlace" type="text" placeholder="Place name" aria-label="Place name" />
+            <input id="gateCode" type="text" placeholder="Code or notes" aria-label="Code or notes" />
+          </div>
 
-        <div class="listBox" style="margin-top:12px;">
-          <div class="listTitle">Saved gate codes</div>
+          <div class="gateActions">
+            <button id="btnAddGate" class="btnX btnBlue gateSaveBtn" type="button">Save</button>
+          </div>
+
+          <div id="gateMsg" class="gateSavedNotice"></div>
+          <div id="gateErr" class="err"></div>
+        </section>
+
+        <section class="gateListWrap">
           <div id="gatesList"></div>
-        </div>
-
-        <div id="gateMsg" class="ok"></div>
-        <div id="gateErr" class="err"></div>
-      </div>
-      <div class="mFoot">
-        <button class="btnX btnGhost" data-close="bdGates" type="button">Close</button>
-        
+        </section>
       </div>
     </div>
   </div>
@@ -912,6 +1292,12 @@ button[id^="btnSave"]{
 
       const fullName = `${ME.first_name || ""} ${ME.last_name || ""}`.trim() || "User";
       $("pillName").textContent = fullName;
+      const profileNameEl = $("profileName");
+      const profileEmailEl = $("profileEmail");
+      const profileRoleEl = $("profileRole");
+      if (profileNameEl) profileNameEl.textContent = fullName;
+      if (profileEmailEl) profileEmailEl.textContent = ME.email || "";
+      if (profileRoleEl) profileRoleEl.textContent = Number(ME.is_admin || 0) === 1 ? "Admin" : "Member";
 
       $("email").value = ME.email || "";
       $("firstName").value = ME.first_name || "";
@@ -1256,12 +1642,61 @@ button[id^="btnSave"]{
       saveGates(seeded);
     }
 
+    function setGateComposerMode(editItem = null){
+      const btn = $("btnAddGate");
+      const composer = $("gateComposer");
+      const toggle = $("btnGateToggleComposer");
+
+      const editing = !!editItem;
+      if(btn) btn.textContent = editing ? "Save changes" : "Save";
+      if(btn) {
+        if(editing) btn.dataset.editId = String(editItem.id);
+        else delete btn.dataset.editId;
+      }
+      if(composer) composer.classList.remove("hidden");
+      if(toggle) toggle.textContent = editing ? "Edit code" : "+ Add code";
+      if(editing){
+        setTimeout(() => {
+          const input = $("gatePlace");
+          if(input) input.focus();
+        }, 0);
+      }
+    }
+
+    function toggleGateComposer(open = null){
+      const composer = $("gateComposer");
+      const toggle = $("btnGateToggleComposer");
+      if(!composer) return;
+      const shouldOpen = open === null ? composer.classList.contains("hidden") : !!open;
+      composer.classList.toggle("hidden", !shouldOpen);
+      if(toggle) toggle.textContent = shouldOpen ? "Hide" : "+ Add code";
+      if(shouldOpen){
+        const input = $("gatePlace");
+        if(input) setTimeout(() => input.focus(), 0);
+      } else {
+        const btn = $("btnAddGate");
+        if(btn && !btn.dataset.editId) {
+          $("gatePlace").value = "";
+          $("gateCode").value = "";
+          $("gateErr").textContent = "";
+          $("gateMsg").textContent = "";
+        }
+      }
+    }
+
+    function updateGateCount(total, shown){
+      const el = $("gateCount");
+      if(!el) return;
+      el.textContent = shown === total ? `${total} codes` : `${shown} of ${total}`;
+    }
+
     function renderGates(){
       const list = $("gatesList");
       list.innerHTML = "";
 
       const q = ($("gateSearch").value || "").trim().toLowerCase();
-      let items = loadGates();
+      const all = loadGates();
+      let items = all.slice();
       if(q){
         items = items.filter(it =>
           String(it.place||"").toLowerCase().includes(q) ||
@@ -1269,31 +1704,42 @@ button[id^="btnSave"]{
         );
       }
 
+      updateGateCount(all.length, items.length);
+
       if(!items.length){
-        list.innerHTML = `<div class="muted" style="margin:8px 6px;">No gate codes found.</div>`;
+        list.innerHTML = `
+          <div class="gateEmptyWrap">
+            <div class="gateEmpty">
+              Save your first gate code for quick access.
+            </div>
+            <button id="gateEmptyAdd" class="btnX btnBlue gateSaveBtn gateComposerAction" type="button">+ Add code</button>
+          </div>
+        `;
+        const emptyBtn = $("gateEmptyAdd");
+        if(emptyBtn) emptyBtn.addEventListener("click", ()=> toggleGateComposer(true));
         return;
       }
 
       for(const it of items){
         const row = document.createElement("div");
-        row.className = "itemRow";
+        row.className = "gateItem";
         row.style.cursor = "pointer";
         row.title = "Tap to copy";
 
         row.innerHTML = `
-          <div class="itemLeft">
-            <div class="l1">${esc(it.place)}</div>
-            <div class="l2">${esc(it.code)}</div>
+          <div class="gateItemLeft">
+            <div class="gateItemPlace">${esc(it.place)}</div>
+            <div class="gateItemCode">${esc(it.code)}</div>
           </div>
-          <div class="itemActions">
+          <div class="gateItemActions">
             <button class="iconBtn" type="button" title="Edit" aria-label="Edit" data-edit="${it.id}">✎</button>
             <button class="iconBtn iconBtnDanger" type="button" title="Delete" aria-label="Delete" data-del="${it.id}">🗑</button>
           </div>
         `;
 
         row.addEventListener("click", async (e)=>{
-          if (e.target && e.target.closest(".itemActions")) return;
-          const ok = await copyText(`${it.place}: ${it.code}`);
+          if (e.target && e.target.closest(".gateItemActions")) return;
+          const ok = await copyText(`${it.code}`);
           if(ok){
             $("gateMsg").textContent = "Copied.";
             setTimeout(()=> $("gateMsg").textContent = "", 900);
@@ -1310,6 +1756,11 @@ button[id^="btnSave"]{
         btn.addEventListener("click", ()=>{
           const id = Number(btn.getAttribute("data-del"));
           saveGates(loadGates().filter(x => x.id !== id));
+          if(Number($("btnAddGate").dataset.editId || "0") === id){
+            $("gatePlace").value = "";
+            $("gateCode").value = "";
+            setGateComposerMode(null);
+          }
           renderGates();
         });
       });
@@ -1321,13 +1772,13 @@ button[id^="btnSave"]{
           if(!it) return;
           $("gatePlace").value = it.place || "";
           $("gateCode").value = it.code || "";
-          $("btnAddGate").textContent = "Save";
-          $("btnAddGate").dataset.editId = String(id);
+          setGateComposerMode(it);
         });
       });
     }
 
     $("gateSearch").addEventListener("input", ()=> renderGates());
+    $("btnGateToggleComposer").addEventListener("click", ()=> toggleGateComposer());
 
     $("btnAddGate").addEventListener("click", ()=>{
       $("gateErr").textContent = "";
@@ -1352,12 +1803,13 @@ button[id^="btnSave"]{
           saveGates(items);
           $("gateMsg").textContent = "Updated.";
         }
-        $("btnAddGate").textContent = "Add";
-        delete $("btnAddGate").dataset.editId;
+        setGateComposerMode(null);
+        toggleGateComposer(false);
       }else{
         items.unshift({ id: Date.now(), place, code });
         saveGates(items);
         $("gateMsg").textContent = "Added.";
+        toggleGateComposer(false);
       }
 
       $("gatePlace").value = "";
@@ -1376,6 +1828,12 @@ button[id^="btnSave"]{
   
     $("openGates").addEventListener("click", ()=>{
       seedGatesIfEmpty();
+      if($("gateComposer")) $("gateComposer").classList.add("hidden");
+      if($("btnGateToggleComposer")) $("btnGateToggleComposer").textContent = "+ Add code";
+      $("gatePlace").value = "";
+      $("gateCode").value = "";
+      $("gateMsg").textContent = "";
+      $("gateErr").textContent = "";
       renderGates();
       openModal("bdGates");
     });
@@ -1406,6 +1864,7 @@ if (openAdminBtn) {
         bindUpload();
         seedPhonesIfEmpty();
         seedGatesIfEmpty();
+        setGateComposerMode(null);
         await loadMe();
 applyAdminUIProfile();
 

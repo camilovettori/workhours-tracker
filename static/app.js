@@ -90,6 +90,18 @@ function mondayOfThisWeek(d = new Date()) {
   return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`;
 }
 function weekStartMondayISO(d = new Date()) { return mondayOfThisWeek(d); }
+function sundayOfThisWeek(d = new Date()) {
+  const x = new Date(d);
+  x.setDate(x.getDate() - x.getDay());
+  return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`;
+}
+function tescoWeekNumber(d = new Date()) {
+  const dt = new Date(d);
+  const yearStart = new Date(dt.getFullYear(), 0, 1);
+  const daysSinceYearStart = Math.floor((dt.setHours(0,0,0,0) - yearStart.setHours(0,0,0,0)) / 86400000);
+  const yearStartOffset = (yearStart.getDay() + 1) % 7;
+  return Math.floor((daysSinceYearStart + yearStartOffset) / 7) + 1;
+}
 function ymdAddDays(ymd, add) {
   if (!ymd) return "";
   const [y, m, d] = String(ymd).split("-").map(Number);
@@ -99,6 +111,19 @@ function ymdAddDays(ymd, add) {
 }
 function weekdayShort(dt) {
   return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dt.getDay()];
+}
+function hhmmToMinutes(hhmm) {
+  if (!hhmm) return null;
+  const [h, m] = String(hhmm).slice(0, 5).split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+function minutesToHHMM(mins) {
+  const total = Math.max(0, Math.floor(Number(mins || 0)));
+  return `${pad2(Math.floor(total / 60))}:${pad2(total % 60)}`;
+}
+function safeText(v) {
+  return String(v ?? "").replace(/\s+/g, " ").trim();
 }
 
 /* =========================
@@ -263,9 +288,11 @@ async function ensureWeekExistsForClock() {
   const c = await api("/api/clock/today");
   if (c?.has_week) return c;
 
+  const today = new Date();
+  const startDate = sundayOfThisWeek(today);
   const payload = {
-    week_number: isoWeekNumber(new Date()),
-    start_date: weekStartMondayISO(new Date()),
+    week_number: tescoWeekNumber(today),
+    start_date: startDate,
     hourly_rate: getSavedRate(),
   };
 
@@ -383,6 +410,9 @@ const bhRemain = $("bhRemain");
 
 const cardHolidays = $("cardHolidays");
 const cardReports  = $("cardReports");
+const cardDeliveries = $("cardDeliveries");
+const cardSettings = $("cardSettings");
+const deliveriesWeekInline = $("deliveriesWeekInline");
 
 const navHome    = $("navHome");
 const navHistory = $("navHistory");
@@ -409,6 +439,8 @@ let DASH_WEEK_ID  = null;
 
 let CLOCK = null;
 let LAST_DASH = null;
+let DELIVERY_STATE = { items: [], week: null, month: null, location_breakdown: [] };
+let REMINDER_STATE = { reminders: null, schedule: null, ready: false };
 
 /* =========================
    Break countdown (robust)
@@ -581,6 +613,100 @@ function requestNotificationPermission() {
   }
 }
 
+function reminderStorageKey(type, ymd) {
+  return `wh_reminder_${type}_${ymd}`;
+}
+
+function markReminderSent(type, ymd) {
+  localStorage.setItem(reminderStorageKey(type, ymd), "1");
+}
+
+function reminderAlreadySent(type, ymd) {
+  return localStorage.getItem(reminderStorageKey(type, ymd)) === "1";
+}
+
+function clearReminderFlagsForDay(ymd) {
+  ["break", "missed_in", "missed_out"].forEach((type) => {
+    localStorage.removeItem(reminderStorageKey(type, ymd));
+  });
+}
+
+function notifyUser(title, body) {
+  if (!("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+  try {
+    new Notification(title, { body, icon: "/static/logo.png" });
+  } catch {}
+}
+
+async function loadReminderConfig() {
+  try {
+    const [reminders, schedule] = await Promise.all([
+      api("/api/settings/reminders"),
+      api("/api/settings/schedule"),
+    ]);
+    if (reminders) REMINDER_STATE.reminders = reminders;
+    if (schedule) REMINDER_STATE.schedule = schedule;
+    REMINDER_STATE.ready = !!(REMINDER_STATE.reminders && REMINDER_STATE.schedule);
+  } catch {
+    REMINDER_STATE.ready = false;
+  }
+  return REMINDER_STATE;
+}
+
+async function maybeCheckReminders(clockOverride = null) {
+  try {
+    if (!ME) return;
+    if (!REMINDER_STATE.ready) await loadReminderConfig();
+    if (!REMINDER_STATE.ready) return;
+
+    const clock = clockOverride || await api("/api/clock/today");
+    if (!clock) return;
+
+    const schedule = REMINDER_STATE.schedule || {};
+    const reminders = REMINDER_STATE.reminders || {};
+    const today = todayYMD();
+    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+    const activeDays = Array.isArray(schedule.active_days) ? schedule.active_days : [];
+    const dow = new Date().getDay();
+
+    if (!activeDays.includes(dow)) return;
+
+    const startMin = hhmmToMinutes(schedule.start_time);
+    const endMin = hhmmToMinutes(schedule.end_time);
+    const breakAfter = Number(schedule.break_after_min || reminders.break_reminder_after_min || 240);
+    const inOffset = Number(reminders.missed_in_offset_min || 10);
+    const outOffset = Number(reminders.missed_out_offset_min || 20);
+
+    if (reminders.break_enabled && clock?.in_time && !clock?.out_time && !clock?.break_running) {
+      const inMin = hhmmToMinutes(clock.in_time);
+      if (inMin !== null && nowMin >= inMin + breakAfter && !reminderAlreadySent("break", today)) {
+        markReminderSent("break", today);
+        notifyUser("Break reminder", "It looks like break time is due.");
+      }
+    }
+
+    if (reminders.missed_in_enabled && !clock?.in_time && startMin !== null && nowMin >= startMin + inOffset && !reminderAlreadySent("missed_in", today)) {
+      markReminderSent("missed_in", today);
+      notifyUser("Missed IN reminder", `You were scheduled to start around ${schedule.start_time}.`);
+    }
+
+    if (reminders.missed_out_enabled && clock?.in_time && !clock?.out_time && endMin !== null && nowMin >= endMin + outOffset && !reminderAlreadySent("missed_out", today)) {
+      markReminderSent("missed_out", today);
+      notifyUser("Missed OUT reminder", `You may have finished around ${schedule.end_time}.`);
+    }
+  } catch {}
+}
+
+let REMINDER_TIMER = null;
+function startReminderEngine() {
+  if (REMINDER_TIMER) return;
+  REMINDER_TIMER = setInterval(() => {
+    maybeCheckReminders().catch(() => {});
+  }, 60000);
+  maybeCheckReminders().catch(() => {});
+}
+
 /* =========================
    Auth / routing (index only)
 ========================= */
@@ -625,6 +751,7 @@ async function enterHome() {
   ME = await refreshMe(true);
   applyAdminUI();
 
+  await loadReminderConfig();
   await refreshAll();
 }
 
@@ -685,6 +812,8 @@ async function doLogout() {
   CLOCK = null;
   TODAY_WEEK_ID = null;
   DASH_WEEK_ID = null;
+  REMINDER_STATE = { reminders: null, schedule: null, ready: false };
+  DELIVERY_STATE = { items: [], week: null, month: null, location_breakdown: [] };
 
   stopLiveTicker();
   stopBreakCountdown(false);
@@ -1054,6 +1183,15 @@ async function refreshAll() {
   await refreshClock();
   await refreshCurrentWeekTotalsSafe();
 
+  if (deliveriesWeekInline) {
+    try {
+      const stats = await loadDeliveriesStats();
+      if (stats) {
+        deliveriesWeekInline.textContent = String(stats.week?.total ?? 0);
+      }
+    } catch {}
+  }
+
   updateTodayEarningsUI();
 
   const shouldLive =
@@ -1065,6 +1203,7 @@ async function refreshAll() {
   if (shouldLive) startLiveTicker();
   else stopLiveTicker();
 
+  await maybeCheckReminders(CLOCK);
   bindCurrentWeekTap();
 }
 
@@ -1394,8 +1533,8 @@ function openAddWeekPage(defaultRate = 0) {
 
   if (addWeekMsg) addWeekMsg.textContent = "";
 
-  if (awWeekNumber) awWeekNumber.value = String(isoWeekNumber(new Date()));
-  if (awStartDate) awStartDate.value = mondayOfThisWeek(new Date());
+  if (awWeekNumber) awWeekNumber.value = String(tescoWeekNumber(new Date()));
+  if (awStartDate) awStartDate.value = sundayOfThisWeek(new Date());
 
   const r = Number(defaultRate || ME?.hourly_rate || getSavedRate() || 0);
   if (awHourlyRate) awHourlyRate.value = String(r.toFixed(2));
@@ -1424,6 +1563,302 @@ async function createWeekFromPage(ev) {
   } catch (e) {
     if (addWeekMsg) addWeekMsg.textContent = e.message || "Failed to create week";
   }
+}
+
+/* =========================
+   Deliveries page
+========================= */
+const DELIVERY_LOC_OPTIONS = ["Dublin 8", "Dublin 15"];
+
+function groupDeliveriesByDay(items) {
+  const map = new Map();
+  (items || []).forEach((item) => {
+    if (!map.has(item.work_date)) map.set(item.work_date, []);
+    map.get(item.work_date).push(item);
+  });
+  return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+}
+
+function renderBarChart(container, items, options = {}) {
+  if (!container) return;
+  const values = Array.isArray(items) ? items : [];
+  const max = Math.max(1, ...values.map((x) => Number(x.value || 0)));
+  container.innerHTML = values.map((item) => {
+    const val = Number(item.value || 0);
+    const pct = Math.round((val / max) * 100);
+    return `
+      <div class="chartBarRow">
+        <div class="chartBarMeta">
+          <span class="chartBarLabel">${item.label || ""}</span>
+          <span class="chartBarValue">${val}</span>
+        </div>
+        <div class="chartBarTrack">
+          <div class="chartBarFill" style="width:${pct}%"></div>
+        </div>
+      </div>
+    `;
+  }).join("") || `<div class="emptyState">No data yet.</div>`;
+}
+
+function deliveryPageElements() {
+  return {
+    form: $("deliveriesForm"),
+    date: $("deliveriesDate"),
+    run1Count: $("run1Count"),
+    run1Location: $("run1Location"),
+    run2Count: $("run2Count"),
+    run2Location: $("run2Location"),
+    msg: $("deliveriesMsg"),
+    weekTotal: $("deliveriesWeekTotal"),
+    monthTotal: $("deliveriesMonthTotal"),
+    avgDay: $("deliveriesAvgDay"),
+    avgWeek: $("deliveriesAvgWeek"),
+    topLocation: $("deliveriesTopLocation"),
+    run1Total: $("deliveriesRun1Total"),
+    run2Total: $("deliveriesRun2Total"),
+    weekChart: $("deliveriesWeekChart"),
+    monthChart: $("deliveriesMonthChart"),
+    locationChart: $("deliveriesLocationChart"),
+    list: $("deliveriesList"),
+    refreshBtn: $("btnDeliveriesRefresh"),
+    todayBtn: $("btnDeliveriesToday"),
+  };
+}
+
+async function loadDeliveriesStats() {
+  const res = await api("/api/deliveries/stats");
+  if (!res) return null;
+  DELIVERY_STATE = res;
+  return res;
+}
+
+function populateDeliveryForm(dayPayload) {
+  const els = deliveryPageElements();
+  if (!els.date) return;
+  const dateValue = dayPayload?.work_date || todayYMD();
+  els.date.value = dateValue;
+
+  const items = Array.isArray(dayPayload?.items) ? dayPayload.items : [];
+  const run1 = items.find((item) => Number(item.run_no) === 1);
+  const run2 = items.find((item) => Number(item.run_no) === 2);
+
+  if (els.run1Count) els.run1Count.value = String(run1?.delivery_count ?? 0);
+  if (els.run1Location) els.run1Location.value = run1?.location || DELIVERY_LOC_OPTIONS[0];
+  if (els.run2Count) els.run2Count.value = String(run2?.delivery_count ?? 0);
+  if (els.run2Location) els.run2Location.value = run2?.location || DELIVERY_LOC_OPTIONS[1];
+}
+
+async function loadDeliveryDay(dateValue) {
+  const target = dateValue || todayYMD();
+  const res = await api(`/api/deliveries/day?date_ymd=${encodeURIComponent(target)}`);
+  if (res) populateDeliveryForm(res);
+}
+
+function renderDeliveryList(items) {
+  const els = deliveryPageElements();
+  if (!els.list) return;
+  const groups = groupDeliveriesByDay(items);
+  if (!groups.length) {
+    els.list.innerHTML = `<div class="emptyState">No deliveries logged yet.</div>`;
+    return;
+  }
+
+  els.list.innerHTML = groups.map(([workDate, rows]) => {
+    const label = rows.map((r) => `Run ${r.run_no} • ${r.location} • ${r.delivery_count}`).join("<br>");
+    const total = rows.reduce((sum, r) => sum + Number(r.delivery_count || 0), 0);
+    return `
+      <article class="deliveryRow">
+        <div class="deliveryRowMain">
+          <div class="deliveryRowDate">${workDate}</div>
+          <div class="deliveryRowMeta">${label}</div>
+        </div>
+        <div class="deliveryRowSide">
+          <div class="deliveryRowTotal">${total}</div>
+          <button class="btn btn--pill btn--ghost deliveryEditBtn" type="button" data-day="${workDate}">Edit day</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+
+  els.list.querySelectorAll("[data-day]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const day = btn.getAttribute("data-day");
+      if (!day) return;
+      await loadDeliveryDay(day);
+    });
+  });
+
+  els.list.querySelectorAll(".deliveryRow").forEach((row) => {
+    row.addEventListener("click", async (ev) => {
+      if (ev.target.closest("button")) return;
+      const btn = row.querySelector("[data-day]");
+      if (btn) await loadDeliveryDay(btn.getAttribute("data-day"));
+    });
+  });
+}
+
+function renderDeliveriesStats(stats) {
+  const els = deliveryPageElements();
+  if (!stats) return;
+
+  if (els.weekTotal) els.weekTotal.textContent = String(stats.week?.total ?? 0);
+  if (els.monthTotal) els.monthTotal.textContent = String(stats.month?.total ?? 0);
+  if (els.avgDay) els.avgDay.textContent = String(stats.month?.avg_per_day ?? 0);
+  if (els.avgWeek) els.avgWeek.textContent = String(stats.month?.avg_per_week ?? 0);
+  if (els.topLocation) els.topLocation.textContent = stats.most_frequent_location || "—";
+  if (els.run1Total) els.run1Total.textContent = String(stats.month?.run_1 ?? 0);
+  if (els.run2Total) els.run2Total.textContent = String(stats.month?.run_2 ?? 0);
+
+  renderBarChart(els.weekChart, stats.week?.trend || []);
+  renderBarChart(els.monthChart, stats.month?.trend || []);
+  renderBarChart(els.locationChart, stats.location_breakdown || []);
+}
+
+async function refreshDeliveriesPage() {
+  const stats = await loadDeliveriesStats();
+  if (!stats) return;
+  renderDeliveriesStats(stats);
+  renderDeliveryList(stats.items || []);
+}
+
+async function saveDeliveriesDay(ev) {
+  ev?.preventDefault?.();
+  const els = deliveryPageElements();
+  if (els.msg) els.msg.textContent = "";
+
+  try {
+    const work_date = (els.date?.value || todayYMD()).trim();
+    const payload = {
+      work_date,
+      run_1_count: Number(els.run1Count?.value || 0),
+      run_1_location: safeText(els.run1Location?.value || DELIVERY_LOC_OPTIONS[0]),
+      run_2_count: Number(els.run2Count?.value || 0),
+      run_2_location: safeText(els.run2Location?.value || DELIVERY_LOC_OPTIONS[1]),
+    };
+
+    await api("/api/deliveries/day", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+
+    await refreshDeliveriesPage();
+    if (els.msg) els.msg.textContent = "Deliveries saved.";
+  } catch (e) {
+    if (els.msg) els.msg.textContent = e.message || "Failed to save deliveries";
+  }
+}
+
+async function initDeliveriesPage() {
+  const els = deliveryPageElements();
+  if (els.date && !els.date.value) els.date.value = todayYMD();
+  if (els.run1Location && !els.run1Location.value) els.run1Location.value = DELIVERY_LOC_OPTIONS[0];
+  if (els.run2Location && !els.run2Location.value) els.run2Location.value = DELIVERY_LOC_OPTIONS[1];
+
+  els.form?.addEventListener("submit", saveDeliveriesDay);
+  els.refreshBtn?.addEventListener("click", refreshDeliveriesPage);
+  els.todayBtn?.addEventListener("click", () => {
+    if (els.date) els.date.value = todayYMD();
+    loadDeliveryDay(todayYMD()).catch(() => {});
+  });
+
+  await refreshDeliveriesPage();
+  await loadDeliveryDay(todayYMD());
+}
+
+/* =========================
+   Settings page
+========================= */
+function settingsPageElements() {
+  return {
+    form: $("settingsForm"),
+    msg: $("settingsMsg"),
+    enableBtn: $("btnEnableNotifications"),
+    breakEnabled: $("breakEnabled"),
+    missedInEnabled: $("missedInEnabled"),
+    missedOutEnabled: $("missedOutEnabled"),
+    breakReminderAfter: $("breakReminderAfter"),
+    missedInOffset: $("missedInOffset"),
+    missedOutOffset: $("missedOutOffset"),
+    startTime: $("scheduleStartTime"),
+    endTime: $("scheduleEndTime"),
+    breakAfter: $("scheduleBreakAfter"),
+    dayChecks: [...document.querySelectorAll("[data-schedule-day]")],
+  };
+}
+
+function fillSettingsForm(reminders, schedule) {
+  const els = settingsPageElements();
+  if (els.breakEnabled) els.breakEnabled.checked = !!reminders?.break_enabled;
+  if (els.missedInEnabled) els.missedInEnabled.checked = !!reminders?.missed_in_enabled;
+  if (els.missedOutEnabled) els.missedOutEnabled.checked = !!reminders?.missed_out_enabled;
+  if (els.breakReminderAfter) els.breakReminderAfter.value = String(reminders?.break_reminder_after_min ?? 240);
+  if (els.missedInOffset) els.missedInOffset.value = String(reminders?.missed_in_offset_min ?? 10);
+  if (els.missedOutOffset) els.missedOutOffset.value = String(reminders?.missed_out_offset_min ?? 20);
+  if (els.startTime) els.startTime.value = schedule?.start_time || "09:00";
+  if (els.endTime) els.endTime.value = schedule?.end_time || "17:00";
+  if (els.breakAfter) els.breakAfter.value = String(schedule?.break_after_min ?? 240);
+  const active = new Set(schedule?.active_days || []);
+  els.dayChecks.forEach((cb) => {
+    cb.checked = active.has(Number(cb.value));
+  });
+}
+
+async function loadSettingsData() {
+  const [reminders, schedule] = await Promise.all([
+    api("/api/settings/reminders"),
+    api("/api/settings/schedule"),
+  ]);
+  if (reminders) REMINDER_STATE.reminders = reminders;
+  if (schedule) REMINDER_STATE.schedule = schedule;
+  REMINDER_STATE.ready = !!(reminders && schedule);
+  fillSettingsForm(reminders, schedule);
+}
+
+async function saveSettingsPage(ev) {
+  ev?.preventDefault?.();
+  const els = settingsPageElements();
+  if (els.msg) els.msg.textContent = "";
+
+  try {
+    const schedulePayload = {
+      active_days: els.dayChecks.filter((cb) => cb.checked).map((cb) => Number(cb.value)),
+      start_time: els.startTime?.value || "09:00",
+      end_time: els.endTime?.value || "17:00",
+      break_after_min: Number(els.breakAfter?.value || 240),
+    };
+    const reminderPayload = {
+      break_enabled: !!els.breakEnabled?.checked,
+      missed_in_enabled: !!els.missedInEnabled?.checked,
+      missed_out_enabled: !!els.missedOutEnabled?.checked,
+      break_reminder_after_min: Number(els.breakReminderAfter?.value || 240),
+      missed_in_offset_min: Number(els.missedInOffset?.value || 10),
+      missed_out_offset_min: Number(els.missedOutOffset?.value || 20),
+    };
+
+    await api("/api/settings/schedule", {
+      method: "PUT",
+      body: JSON.stringify(schedulePayload),
+    });
+    await api("/api/settings/reminders", {
+      method: "PUT",
+      body: JSON.stringify(reminderPayload),
+    });
+
+    await loadSettingsData();
+    await loadReminderConfig();
+    requestNotificationPermission();
+    if (els.msg) els.msg.textContent = "Settings saved.";
+  } catch (e) {
+    if (els.msg) els.msg.textContent = e.message || "Failed to save settings";
+  }
+}
+
+async function initSettingsPage() {
+  const els = settingsPageElements();
+  els.form?.addEventListener("submit", saveSettingsPage);
+  els.enableBtn?.addEventListener("click", requestNotificationPermission);
+
+  await loadSettingsData();
 }
 
 /* =========================
@@ -1621,7 +2056,7 @@ function rosterRenderWizardDay() {
   if (dayDate) dayDate.textContent = ymd;
 
   if (weekInput && !weekInput.value) {
-    weekInput.value = String(isoWeekNumber(new Date()));
+    weekInput.value = String(tescoWeekNumber(ymdToDateObj(ROSTER.startDate)));
   }
 
   rosterRenderPreview();
@@ -1639,22 +2074,25 @@ function rosterPick(code) {
 
   if (ROSTER.picked.length >= 7) return;
 
-  ROSTER.picked.push(code);
-  ROSTER.activeDayIndex = ROSTER.picked.length - 1;
-
-  // Button highlight
+  // 🔵 REMOVE highlight from all buttons
   const bA = R("btnRwA");
   const bB = R("btnRwB");
   const bOFF = R("btnRwOFF");
 
   [bA, bB, bOFF].forEach(b => b?.classList.remove("shiftOption--active"));
 
+  // 🟦 ADD highlight only to clicked
   if (code === "A") bA?.classList.add("shiftOption--active");
   if (code === "B") bB?.classList.add("shiftOption--active");
   if (code === "OFF") bOFF?.classList.add("shiftOption--active");
 
+  // Save selection
+  ROSTER.picked.push(code);
+  ROSTER.activeDayIndex = ROSTER.picked.length - 1;
+
   rosterRenderWizardDay();
 }
+
 
 
 // =======================
@@ -1703,6 +2141,16 @@ async function routeAfterAuth() {
     return; 
   }
 
+  if (pathIs("/deliveries")) {
+    await initDeliveriesPage();
+    return;
+  }
+
+  if (pathIs("/settings")) {
+    await initSettingsPage();
+    return;
+  }
+
   // other pages manage themselves
   if (pathIs("/holidays") || pathIs("/report") || pathIs("/profile")) return;
 
@@ -1736,6 +2184,17 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnHolidays) btnHolidays.addEventListener("click", () => go("/holidays"));
 });
 
+document.addEventListener("DOMContentLoaded", () => {
+  const current = window.location.pathname;
+
+  document.querySelectorAll(".navItem").forEach(btn => {
+    const route = btn.getAttribute("data-route");
+    if (route === current) {
+      btn.classList.add("navItem--active");
+    }
+  });
+});
+
 /* =========================
    Bind (common)
 ========================= */
@@ -1761,8 +2220,17 @@ function bind() {
 
   cardHolidays?.addEventListener("click", () => go("/holidays"));
   cardReports?.addEventListener("click", () => go("/report"));
+  cardDeliveries?.addEventListener("click", () => go("/deliveries"));
+  cardSettings?.addEventListener("click", () => go("/settings"));
 
   btnAddWeek?.addEventListener("click", () => go("/add-week"));
+  awStartDate?.addEventListener("change", () => {
+    const selected = awStartDate.value;
+    if (!selected) return;
+    const sunday = sundayOfThisWeek(ymdToDateObj(selected));
+    awStartDate.value = sunday;
+    if (awWeekNumber) awWeekNumber.value = String(tescoWeekNumber(ymdToDateObj(sunday)));
+  });
 
   btnBackAddWeek?.addEventListener("click", backFromAddWeek);
   addWeekForm?.addEventListener("submit", createWeekFromPage);
@@ -1772,6 +2240,7 @@ function bind() {
   navHolidays?.addEventListener("click", () => go("/holidays"));
   navReports?.addEventListener("click", () => go("/report"));
   document.addEventListener("DOMContentLoaded", enterRoster);
+  
   
 
 }
@@ -1789,6 +2258,8 @@ let dayWatcherStarted = false;
     setInterval(watchDayChange, 5000);
   }
 
+  startReminderEngine();
+
   // Apply cached ME immediately (fast UI)
   const cached = readCachedMe();
   if (cached?.ok) {
@@ -1800,6 +2271,7 @@ let dayWatcherStarted = false;
   // When returning from bfcache (mobile), re-sync ME silently
   window.addEventListener("pageshow", () => {
     refreshMe(false).then(() => applyAdminUI()).catch(() => {});
+    loadReminderConfig().catch(() => {});
   });
 
   try {
@@ -1808,5 +2280,6 @@ let dayWatcherStarted = false;
     await routeAfterAuth();
   } catch (e) {
     if (hasIndexViews()) await enterLogin();
+    else go("/");
   }
 })();

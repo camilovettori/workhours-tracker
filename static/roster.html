@@ -7,7 +7,7 @@
   <title>Roster</title>
 
   <link rel="icon" href="/static/logo.png" />
-  <link rel="stylesheet" href="/static/app.css?v=999">
+  <link rel="stylesheet" href="/static/app.css?v=1003">
 
 
   <style>
@@ -21,6 +21,33 @@
     .row{ display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; }
     .hidden{ display:none !important; }
     .err{ color:#b91c1c; font-weight:1000; margin-top:8px; }
+    .detailActions{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .wizardTop{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+    .wizardTitle{ font-size:18px; font-weight:1000; letter-spacing:-.02em; }
+    .wizardMode{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      margin-top:6px;
+      padding:6px 10px;
+      border-radius:999px;
+      background: rgba(37,99,235,.10);
+      border:1px solid rgba(37,99,235,.16);
+      color: rgba(29,78,216,1);
+      font-size:12px;
+      font-weight:1000;
+    }
+    .wizardHint{
+      margin-top:10px;
+      padding:12px 14px;
+      border-radius:16px;
+      background: rgba(37,99,235,.08);
+      border:1px solid rgba(37,99,235,.14);
+      color: var(--muted);
+      font-size:13px;
+      font-weight:900;
+      line-height:1.4;
+    }
 
     /* ===== LIST ===== */
     .weekItem{
@@ -102,6 +129,18 @@
       color: rgba(180,83,9,1);
       vertical-align:middle;
     }
+    .badgeHoliday{
+      display:inline-block;
+      margin-left:6px;
+      padding:3px 8px;
+      border-radius:999px;
+      border:1px solid rgba(59,130,246,.22);
+      background: rgba(59,130,246,.10);
+      font-size:11px;
+      font-weight:1000;
+      color: rgba(29,78,216,1);
+      vertical-align:middle;
+    }
     .badgePremium{
       display:inline-block;
       margin-left:6px;
@@ -157,9 +196,12 @@
       cursor:pointer;
     }
     .btnChoice.active{
-      border-color: rgba(37,99,235,.35);
-      background: rgba(37,99,235,.12);
-    }
+  background:#2563eb !important;
+  color:#fff !important;
+  border-color: rgba(37,99,235,.55) !important;
+  box-shadow: 0 0 0 3px rgba(37,99,235,.18);
+}
+
     .btnChoice:active{ transform: translateY(1px); }
     .field{ display:flex; flex-direction:column; gap:6px; }
     .field span{ font-weight:900; color: var(--muted); font-size:13px; }
@@ -374,6 +416,21 @@
   box-shadow: 0 8px 20px rgba(37,99,235,.20);
 }
 
+.shiftOption--active {
+  background: #2f66ff;
+  color: #fff;
+  border-color: #2f66ff;
+  box-shadow: 0 0 0 3px rgba(47,102,255,0.15);
+}
+    .btnSoftEdit{
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(37,99,235,.14);
+      background: rgba(37,99,235,.08);
+      color: rgba(29,78,216,1);
+      font-weight: 1000;
+      cursor: pointer;
+    }
 
   </style>
 </head>
@@ -418,7 +475,8 @@
           <div id="detailSub" class="detailSub">Start: —</div>
         </div>
 
-        <div style="display:flex; gap:10px; align-items:center;">
+        <div class="detailActions">
+          <button id="btnEditWeek" class="btnSoftEdit" type="button">Edit week</button>
           <button id="btnEditBack" class="btn btn--pill btn--ghost" type="button">Back to weeks</button>
           <button id="btnRosterDeleteWeek" class="btn btn--pill btn--danger" type="button">🗑 Delete week</button>
         </div>
@@ -435,8 +493,11 @@
 
     <!-- ===== WIZARD VIEW ===== -->
     <section id="viewWizard" class="card cardPad hidden" style="margin-top:12px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
-        <div style="font-size:18px; font-weight:1000;">Add roster week</div>
+      <div class="wizardTop">
+        <div>
+          <div id="wizardTitle" class="wizardTitle">Add roster week</div>
+          <div id="wizardMode" class="wizardMode">Sunday to Saturday Tesco week</div>
+        </div>
         <button id="btnCancelWizard" class="btn btn--pill btn--ghost" type="button">Cancel</button>
       </div>
 
@@ -453,6 +514,7 @@
       </div>
 
       <div id="wizardErr" class="err"></div>
+      <div id="wizardHint" class="wizardHint">Build the week one day at a time. Edit Week lets you refine an existing roster without changing the Tesco Sunday-to-Saturday rule.</div>
 
       <div id="dayBox" class="wizardDay">
         <div id="dayTitle" class="dayTitle">Sunday</div>
@@ -461,7 +523,9 @@
         <div class="btnRow">
           <button id="btnA" class="btnChoice" type="button">09:45 → 19:00</button>
           <button id="btnB" class="btnChoice" type="button">10:45 → 20:00</button>
-          <button id="btnOFF" class="btnChoice" type="button">DAY OFF</button>
+          <button id="btnOFF" class="btnChoice" type="button">Day Off</button>
+          <button id="btnHoliday" class="btnChoice" type="button">Holiday</button>
+          <button id="btnBankHoliday" class="btnChoice" type="button">Bank Holiday</button>
         </div>
  
 
@@ -478,7 +542,7 @@
         <div id="rpList" class="rpList"></div>
       </div>
 
-      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px; flex-wrap:wrap;">
         <button id="btnSave" class="btn btn--primary" type="button">Save week</button>
       </div>
     </section>
@@ -490,7 +554,7 @@
       <div class="modalHead">
         <div>
           <div id="editTitle" class="modalTitle">Edit day</div>
-          <div id="editSub" class="modalSub">Choose A / B / OFF</div>
+          <div id="editSub" class="modalSub">Choose shift or status</div>
         </div>
         <button id="btnCloseModal" class="btnGhostNice" type="button">Close</button>
       </div>
@@ -519,8 +583,18 @@
           </button>
 
           <button id="editOFF" class="optBtn" type="button" style="grid-column: 1 / -1;">
-            OFF
+            Day Off
             <span class="small">Day off</span>
+          </button>
+
+          <button id="editHoliday" class="optBtn" type="button">
+            Holiday
+            <span class="small">Roster holiday</span>
+          </button>
+
+          <button id="editBankHoliday" class="optBtn" type="button">
+            Bank Holiday
+            <span class="small">Syncs Paid in bank holidays</span>
           </button>
         </div>
 
@@ -547,6 +621,8 @@
 
         rosterCache.delete(currentRosterId);
         currentRosterId = null;
+        currentRosterData = null;
+        editingRosterId = null;
 
         enterList();
         await loadList();
@@ -621,12 +697,15 @@
       const dd = String(x.getDate()).padStart(2,"0");
       return `${y}-${m}-${dd}`;
     }
-    function isoWeekNumber(d = new Date()) {
-      const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-      const dayNum = date.getUTCDay() || 7;
-      date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-      const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-      return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+    function tescoWeekNumber(d = new Date()) {
+      const dt = new Date(d);
+      const yearStart = new Date(dt.getFullYear(), 0, 1);
+      const daysSinceYearStart = Math.floor((dt.setHours(0,0,0,0) - yearStart.setHours(0,0,0,0)) / 86400000);
+      const yearStartOffset = (yearStart.getDay() + 1) % 7;
+      return Math.floor((daysSinceYearStart + yearStartOffset) / 7) + 1;
+    }
+    function sundayOfTescoWeek(d = new Date()) {
+      return sundayOfThisWeek(d);
     }
 
     // ===== Highlight helpers (safe)
@@ -733,11 +812,15 @@
     function enterList(){
       hideAll(); show(viewList);
       $("subTitle").textContent = "Weekly schedule";
+      editingRosterId = null;
+      currentRosterData = null;
+      syncWizardMode();
       history.replaceState({}, "", "/roster");
     }
     function enterWizard(){
       hideAll(); show(viewWizard);
-      $("subTitle").textContent = "Add weekly schedule";
+      $("subTitle").textContent = editingRosterId ? "Edit weekly schedule" : "Add weekly schedule";
+      syncWizardMode();
     }
     function enterDetail(rosterId){
       hideAll(); show(viewDetail);
@@ -758,22 +841,76 @@
 
     const rosterCache = new Map();
     let currentRosterId = null;
+    let currentRosterData = null;
+    let editingRosterId = null;
+
+    function syncWizardMode(){
+      const title = $("wizardTitle");
+      const mode = $("wizardMode");
+      const save = $("btnSave");
+      const wk = $("wkNumber");
+      const start = $("startDate");
+      const hint = $("wizardHint");
+
+      const isEditing = !!editingRosterId;
+
+      if (title) title.textContent = isEditing ? "Edit roster week" : "Add roster week";
+      if (mode) mode.textContent = isEditing ? "Refine an existing Tesco week" : "Sunday to Saturday Tesco week";
+      if (save) save.textContent = isEditing ? "Save changes" : "Save week";
+      if (wk) wk.disabled = isEditing;
+      if (start) start.disabled = isEditing;
+      if (hint) {
+        hint.textContent = isEditing
+          ? "You are editing an existing roster. Tap each day to keep or change its shift, then save the changes."
+          : "Build the week one day at a time. Edit Week lets you refine an existing roster without changing the Tesco Sunday-to-Saturday rule.";
+      }
+    }
 
     function codeToLabel(code){
       if(code==="A") return "09:45 → 19:00";
       if(code==="B") return "10:45 → 20:00";
-      return "OFF";
+      if(code==="HOLIDAY") return "Holiday";
+      if(code==="BANK_HOLIDAY") return "Bank Holiday";
+      return "Day off";
     }
 
     // ===== Wizard
     function resetWizard(){
       wizardIndex = 0;
       wizardDays = ["", "", "", "", "", "", ""];
+      editingRosterId = null;
 
-      $("wkNumber").value = String(isoWeekNumber(new Date()));
-      $("startDate").value = sundayOfThisWeek(new Date());
+      $("wkNumber").value = String(tescoWeekNumber(new Date()));
+      $("startDate").value = sundayOfTescoWeek(new Date());
+      $("wkNumber").disabled = false;
+      $("startDate").disabled = false;
 
       $("wizardErr").textContent = "";
+      syncWizardMode();
+      renderWizardDay();
+      renderPreview();
+    }
+
+    async function beginEditWeek(){
+      if(!currentRosterId){
+        alert("Open a roster week first.");
+        return;
+      }
+
+      const data = currentRosterData || await fetchRosterDetail(currentRosterId);
+      if(!data){
+        alert("Failed to load roster data.");
+        return;
+      }
+
+      editingRosterId = currentRosterId;
+      wizardIndex = 0;
+      wizardDays = (data.days || []).map(dayToCode);
+
+      $("wkNumber").value = String(data.week_number || tescoWeekNumber(new Date()));
+      $("startDate").value = data.start_date || sundayOfTescoWeek(new Date());
+
+      enterWizard();
       renderWizardDay();
       renderPreview();
     }
@@ -785,11 +922,15 @@
       $("btnA").classList.remove("active");
       $("btnB").classList.remove("active");
       $("btnOFF").classList.remove("active");
+      $("btnHoliday").classList.remove("active");
+      $("btnBankHoliday").classList.remove("active");
 
       const c = wizardDays[wizardIndex];
       if(c==="A") $("btnA").classList.add("active");
       if(c==="B") $("btnB").classList.add("active");
       if(c==="OFF") $("btnOFF").classList.add("active");
+      if(c==="HOLIDAY") $("btnHoliday").classList.add("active");
+      if(c==="BANK_HOLIDAY") $("btnBankHoliday").classList.add("active");
     }
     async function renderPreview(){
       const start = ($("startDate").value || "").trim();
@@ -815,7 +956,7 @@
       for(const item of picked){
         const workYmd = ymdAddDays(start, item.i);
         const dt = ymdToDateObj(workYmd);
-        const isOff = item.c === "OFF";
+        const isOff = ["OFF","HOLIDAY","BANK_HOLIDAY"].includes(item.c);
 
         let mult = 1;
         if(!isOff){
@@ -839,7 +980,7 @@ if (item.i === wizardIndex - 1) {
         row.innerHTML = `
           <div class="left">
             <div class="d1">${weekdayShort(dt)} • ${workYmd}</div>
-            <div class="d2">${isOff ? "Day off" : (mult>1 ? `Shift (x${mult.toFixed(1)})` : "Shift")}</div>
+            <div class="d2">${isOff ? codeToLabel(item.c) : (mult>1 ? `Shift (x${mult.toFixed(1)})` : "Shift")}</div>
           </div>
           <div class="right">${codeToLabel(item.c)}</div>
         `;
@@ -878,11 +1019,41 @@ if (item.i === wizardIndex - 1) {
       }
 
       try{
+        if(editingRosterId){
+          const current = currentRosterData || await fetchRosterDetail(editingRosterId);
+          const days = Array.isArray(current?.days) ? current.days : [];
+
+          for(let i = 0; i < 7; i++){
+            const day = days[i];
+            if(!day) continue;
+
+            await api(`/api/roster/${editingRosterId}/day`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                work_date: day.work_date,
+                code: wizardDays[i],
+              })
+            });
+          }
+
+          rosterCache.delete(editingRosterId);
+          bhCache.clear();
+          currentRosterData = await fetchRosterDetail(editingRosterId);
+          enterDetail(editingRosterId);
+          await renderDetail(editingRosterId);
+          rosterCache.clear();
+          await loadList();
+          syncWizardMode();
+          return;
+        }
+
         await api("/api/roster", {
           method: "POST",
           body: JSON.stringify({ week_number, start_date, days: wizardDays })
         });
 
+        editingRosterId = null;
+        bhCache.clear();
         enterList();
         await loadList();
       }catch(e){
@@ -977,6 +1148,8 @@ if (item.i === wizardIndex - 1) {
     }
 
     function dayToCode(x){
+      const status = String(x.status || "").toUpperCase();
+      if(["A","B","OFF","HOLIDAY","BANK_HOLIDAY"].includes(status)) return status;
       if(x.day_off) return "OFF";
       return (x.shift_in === "09:45") ? "A" : "B";
     }
@@ -988,6 +1161,8 @@ if (item.i === wizardIndex - 1) {
       try{
         const d = await api("/api/roster/" + rosterId);
         rosterCache.set(rosterId, d);
+        currentRosterId = rosterId;
+        currentRosterData = d;
 
         await setDetailHeader(d);
 
@@ -996,14 +1171,15 @@ if (item.i === wizardIndex - 1) {
 
         for(const x of (d.days || [])){
           const dt = ymdToDateObj(x.work_date);
-          const isOff = !!x.day_off;
-          const shift = isOff ? "OFF" : (x.shift_in + " → " + x.shift_out);
+          const status = dayToCode(x);
+          const isOff = ["OFF","HOLIDAY","BANK_HOLIDAY"].includes(status);
+          const shift = isOff ? codeToLabel(status) : (x.shift_in + " → " + x.shift_out);
 
           let bh = null;
           try { bh = await bhLookup(x.work_date); } catch { bh = null; }
-          const isBH = isBhTrue(bh);
-          const bhName = isBH ? (bh.name || "") : "";
-          const isPaid = isBH ? !!bh.paid : false;
+          const isBH = status === "BANK_HOLIDAY" || isBhTrue(bh);
+          const bhName = isBH && bh ? (bh.name || "") : "";
+          const isPaid = isBH && bh ? !!bh.paid : false;
 
           let premiumMult = 1;
           if(!isOff){
@@ -1017,7 +1193,8 @@ if (item.i === wizardIndex - 1) {
           card.innerHTML = `
             <div class="w">
               ${weekdayShort(dt)}
-              ${isOff ? `<span class="badgeOff">OFF</span>` : ""}
+              ${status === "OFF" ? `<span class="badgeOff">OFF</span>` : ""}
+              ${status === "HOLIDAY" ? `<span class="badgeHoliday">Holiday</span>` : ""}
               ${isBH ? `<span class="badgeBH" title="${bhName}">BH</span>` : ""}
               ${(!isOff && premiumMult > 1) ? `<span class="badgePremium">x${premiumMult.toFixed(1)}</span>` : ""}
               ${isBH ? (isPaid ? `<span class="badgePaid">Paid</span>` : `<span class="badgeNotPaid">Not Paid</span>`) : ""}
@@ -1044,6 +1221,8 @@ if (item.i === wizardIndex - 1) {
       $("editA").classList.toggle("active", code==="A");
       $("editB").classList.toggle("active", code==="B");
       $("editOFF").classList.toggle("active", code==="OFF");
+      $("editHoliday").classList.toggle("active", code==="HOLIDAY");
+      $("editBankHoliday").classList.toggle("active", code==="BANK_HOLIDAY");
     }
 
     function openEditDayModal(rosterId, workDate, currentCode){
@@ -1052,9 +1231,9 @@ if (item.i === wizardIndex - 1) {
 
       const dt = ymdToDateObj(workDate);
       $("editTitle").textContent = `Edit ${weekdayShort(dt)}`;
-      $("editSub").textContent = `Choose A / B / OFF`;
+      $("editSub").textContent = `Choose shift or status`;
 
-      $("editCurrent").textContent = currentCode;
+      $("editCurrent").textContent = codeToLabel(currentCode);
       $("editDate").textContent = workDate;
 
       setEditActive(currentCode);
@@ -1100,19 +1279,37 @@ if (item.i === wizardIndex - 1) {
 
     // ===== Binds
     $("btnRosterDeleteWeek").addEventListener("click", deleteCurrentRosterWeek);
+    $("btnEditWeek").addEventListener("click", beginEditWeek);
 
     $("btnHome").addEventListener("click", () => location.href = "/");
     $("btnBack").addEventListener("click", () => history.length > 1 ? history.back() : (location.href = "/"));
 
     $("btnAddWeek").addEventListener("click", () => { resetWizard(); enterWizard(); });
-    $("btnCancelWizard").addEventListener("click", async () => { enterList(); await loadList(); });
+    $("btnCancelWizard").addEventListener("click", async () => {
+      if(editingRosterId && currentRosterId){
+        enterDetail(currentRosterId);
+        await renderDetail(currentRosterId);
+        return;
+      }
+      resetWizard();
+      enterList();
+      await loadList();
+    });
 
     $("btnA").addEventListener("click", () => pick("A"));
     $("btnB").addEventListener("click", () => pick("B"));
     $("btnOFF").addEventListener("click", () => pick("OFF"));
+    $("btnHoliday").addEventListener("click", () => pick("HOLIDAY"));
+    $("btnBankHoliday").addEventListener("click", () => pick("BANK_HOLIDAY"));
     $("btnSave").addEventListener("click", saveWizard);
 
     $("startDate").addEventListener("change", () => {
+      const selected = ($("startDate").value || "").trim();
+      if (selected) {
+        const sunday = sundayOfTescoWeek(ymdToDateObj(selected));
+        $("startDate").value = sunday;
+        $("wkNumber").value = String(tescoWeekNumber(ymdToDateObj(sunday)));
+      }
       wizardIndex = 0;
       wizardDays = ["", "", "", "", "", "", ""];
       $("wizardErr").textContent = "";
@@ -1130,6 +1327,8 @@ if (item.i === wizardIndex - 1) {
     $("editA").addEventListener("click", () => { editState.code = "A"; setEditActive("A"); });
     $("editB").addEventListener("click", () => { editState.code = "B"; setEditActive("B"); });
     $("editOFF").addEventListener("click", () => { editState.code = "OFF"; setEditActive("OFF"); });
+    $("editHoliday").addEventListener("click", () => { editState.code = "HOLIDAY"; setEditActive("HOLIDAY"); });
+    $("editBankHoliday").addEventListener("click", () => { editState.code = "BANK_HOLIDAY"; setEditActive("BANK_HOLIDAY"); });
     $("btnSaveDay").addEventListener("click", saveEditDay);
 
     // ===== init
