@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nexora Systems AI</title>
+  <style>
+    body { 
+      font-family: Arial, sans-serif; 
+      background: #0d1117; 
+      color: #c9d1d9; 
+      margin: 0; 
+      padding: 20px; 
+      max-width: 900px; 
+      margin: auto; 
+    }
+    h1 { 
+      color: #00bfff; 
+      text-align: center; 
+      margin-bottom: 30px; 
+    }
+    label { 
+      display: block; 
+      margin: 15px 0 5px; 
+      font-weight: bold; 
+    }
+    textarea { 
+      width: 100%; 
+      padding: 12px; 
+      background: #161b22; 
+      color: white; 
+      border: 1px solid #30363d; 
+      border-radius: 6px; 
+      resize: vertical; 
+      min-height: 100px; 
+    }
+    input[type="file"] { 
+      width: 100%; 
+      padding: 10px; 
+      background: #161b22; 
+      color: white; 
+      border: 1px solid #30363d; 
+      border-radius: 6px; 
+    }
+    button { 
+      padding: 12px 28px; 
+      background: linear-gradient(135deg, #00bfff, #1e90ff); 
+      border: none; 
+      color: white; 
+      font-weight: bold; 
+      border-radius: 6px; 
+      cursor: pointer; 
+      margin: 10px 10px 10px 0; 
+      transition: all 0.3s; 
+    }
+    button:hover { 
+      background: linear-gradient(135deg, #1e90ff, #00bfff); 
+      transform: translateY(-2px); 
+    }
+    #preview { 
+      max-width: 280px; 
+      margin: 15px auto; 
+      display: block; 
+      border-radius: 8px; 
+      border: 2px solid #30363d; 
+    }
+    #result { 
+      margin-top: 30px; 
+      text-align: center; 
+    }
+    img, video { 
+      max-width: 100%; 
+      border-radius: 12px; 
+      margin: 20px 0; 
+      box-shadow: 0 0 20px rgba(0,191,255,0.3); 
+    }
+    .loading { 
+      display: none; 
+      color: #00bfff; 
+      font-size: 1.3em; 
+      margin: 30px 0; 
+      font-weight: bold; 
+    }
+    .error { 
+      color: #ff4444; 
+      font-weight: bold; 
+      margin: 20px 0; 
+    }
+  </style>
+</head>
+<body>
+  <h1>Nexora Systems AI</h1>
+
+  <label for="prompt">Prompt (pode ser explícito):</label>
+  <textarea id="prompt" rows="5" placeholder="Ex: Uma mulher sensual de biquíni na praia ao pôr do sol, realista, alta resolução... ou faça um vídeo curto dele falando 'adoro pepino'"></textarea>
+
+  <div>
+    <button onclick="gerarImagem()">Gerar Imagem</button>
+    <button onclick="gerarVideo()">Gerar Vídeo</button>
+  </div>
+
+  <label for="imageFile">Anexar imagem para editar/animar (opcional):</label>
+  <input type="file" id="imageFile" accept="image/*">
+
+  <img id="preview" src="" alt="Pré-visualização da imagem anexada" style="display:none;">
+
+  <div id="result">
+    <div class="loading" id="loading">Gerando... aguarde (pode demorar 10–90 segundos)</div>
+    <div id="output"></div>
+  </div>
+
+  <script>
+    const promptEl = document.getElementById('prompt');
+    const imageEl = document.getElementById('imageFile');
+    const previewEl = document.getElementById('preview');
+    const loadingEl = document.getElementById('loading');
+    const outputEl = document.getElementById('output');
+
+    // Preview da imagem anexada
+    imageEl.addEventListener('change', () => {
+      const file = imageEl.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = e => {
+          previewEl.src = e.target.result;
+          previewEl.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+      } else {
+        previewEl.style.display = 'none';
+      }
+    });
+
+    async function getImageBase64() {
+      const file = imageEl.files[0];
+      if (!file) return null;
+      return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function gerarImagem() {
+      const prompt = promptEl.value.trim();
+      if (!prompt) return alert("Digite um prompt!");
+
+      loadingEl.style.display = 'block';
+      outputEl.innerHTML = '';
+
+      const image_b64 = await getImageBase64();
+
+      try {
+        const res = await fetch('/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, image_b64 })
+        });
+
+        const data = await res.json();
+        loadingEl.style.display = 'none';
+
+        if (data.success) {
+          data.paths.forEach(path => {
+            const img = document.createElement('img');
+            img.src = path;          // Caminho local servido pelo Flask (/generated/...)
+            img.alt = "Imagem gerada pelo Grok";
+            outputEl.appendChild(img);
+          });
+        } else {
+          outputEl.innerHTML = `<p class="error">Erro: ${data.error || 'Falha desconhecida'}</p>`;
+        }
+      } catch (err) {
+        loadingEl.style.display = 'none';
+        outputEl.innerHTML = `<p class="error">Falha na conexão: ${err.message}</p>`;
+      }
+    }
+
+    async function gerarVideo() {
+      const prompt = promptEl.value.trim();
+      if (!prompt) return alert("Digite um prompt!");
+
+      loadingEl.style.display = 'block';
+      outputEl.innerHTML = '';
+
+      const image_b64 = await getImageBase64();
+
+      try {
+        const res = await fetch('/generate_video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, image_b64 })
+        });
+
+        const data = await res.json();
+        loadingEl.style.display = 'none';
+
+        if (data.success) {
+          const video = document.createElement('video');
+          video.src = data.video_url;
+          video.controls = true;
+          video.style.width = '100%';
+          outputEl.appendChild(video);
+        } else {
+          outputEl.innerHTML = `<p class="error">Erro: ${data.error || 'Falha desconhecida'}</p>`;
+        }
+      } catch (err) {
+        loadingEl.style.display = 'none';
+        outputEl.innerHTML = `<p class="error">Falha na conexão: ${err.message}</p>`;
+      }
+    }
+  </script>
+</body>
+</html>

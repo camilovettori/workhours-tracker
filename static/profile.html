@@ -802,6 +802,50 @@ button[id^="btnSave"]{
   }
 }
 
+@media (max-width: 520px){
+  .menuList{
+    gap:10px;
+    margin-top:10px;
+  }
+  .menuItem{
+    min-height:64px;
+    padding:12px 12px 12px 48px;
+    align-items:center;
+    border-radius:16px;
+  }
+  .menuItem::before{
+    left:12px;
+    width:30px;
+    height:30px;
+    border-radius:11px;
+    font-size:15px;
+  }
+  .miLeft .t1{
+    font-size:14px;
+    line-height:1.15;
+  }
+  .miLeft .t2{
+    font-size:11px;
+    line-height:1.3;
+    margin-top:2px;
+  }
+  .miRight{
+    display:block;
+    margin-left:auto;
+    color: rgba(15,23,42,.34);
+    font-size:18px;
+    line-height:1;
+    flex:0 0 auto;
+  }
+  .menuItemDanger .miRight{
+    color: var(--danger2);
+  }
+  .settingsGroupTitle{
+    margin-top:10px !important;
+    margin-bottom:2px;
+  }
+}
+
 /* ===== FORCE LOGOUT BUTTON STYLE ===== */
 #bdLogout #btnLogout{
   background: linear-gradient(180deg, var(--danger), var(--danger2)) !important;

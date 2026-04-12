@@ -356,10 +356,13 @@ async function premiumMultiplierForYmd(ymd) {
 const viewLogin   = $("viewLogin");
 const viewHome    = $("viewHome");
 const viewAddWeek = $("viewAddWeek");
+const bottomNav   = document.querySelector(".bottomNav");
 
 function hasIndexViews() { return !!(viewLogin || viewHome || viewAddWeek); }
 function hideAllViews() { hide(viewLogin); hide(viewHome); hide(viewAddWeek); }
-
+function setBottomNavVisible(visible) {
+  bottomNav?.classList.toggle("hidden", !visible);
+}
 /* =========================
    Login UI
 ========================= */
@@ -392,6 +395,7 @@ const btnLogout = $("btnLogout");
 const btnOpenProfile = $("btnOpenProfile");
 const btnAddWeek = $("btnAddWeek");
 
+const cwWeekBtn = $("cwWeekBtn");
 const cwWeekNo = $("cwWeekNo");
 const cwHHMM = $("cwHHMM") || $("cwHours");
 const cwPay  = $("cwPay")  || $("cwGross");
@@ -451,14 +455,26 @@ let breakRemaining = 0;
 let breakRunningUI = false;
 
 const BREAK_DEFAULT_SEC = 60 * 60;
+const LS_BREAK_START = "wh_break_start_epoch";
+const LS_BREAK_LENGTH = "wh_break_length_sec";
 const LS_BREAK_END  = "wh_break_end_epoch";
 const LS_BREAK_DAY  = "wh_break_day";
 const LS_BREAK_WARN5= "wh_break_warn5_sent";
 const LS_BREAK_DONE = "wh_break_done_sent";
 const LS_BREAK_LEFT = "wh_break_left_sec";
+const LS_BREAK_LAST_START = "wh_break_last_start_epoch";
+const LS_BREAK_LAST_END = "wh_break_last_end_epoch";
+const LS_BREAK_LAST_DAY = "wh_break_last_day";
 
 function getLocalBreakEnd() {
   return Number(localStorage.getItem(LS_BREAK_END) || "0");
+}
+function getLocalBreakStart() {
+  return Number(localStorage.getItem(LS_BREAK_START) || "0");
+}
+function getLocalBreakLengthSec() {
+  const raw = Number(localStorage.getItem(LS_BREAK_LENGTH) || "");
+  return Number.isFinite(raw) && raw > 0 ? raw : BREAK_DEFAULT_SEC;
 }
 function getLocalBreakLeftSec() {
   const endEpoch = getLocalBreakEnd();
@@ -471,34 +487,118 @@ function hasActiveLocalBreak() {
   return getLocalBreakLeftSec() > 0;
 }
 
-function setBreakButtonRunning(running) {
-  if (!btnBreak) return;
-  btnBreak.innerHTML = running
-    ? `<span class="pillIcon">⏱</span> BREAK (stop)`
-    : `<span class="pillIcon">⏱</span> BREAK`;
+function fmtHHMMFromEpoch(epochMs) {
+  if (!epochMs) return "--:--";
+  const d = new Date(epochMs);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
-function saveBreakEnd(endEpochMs) {
-  localStorage.setItem(LS_BREAK_END, String(endEpochMs));
+
+function fmtBreakDurationFromSeconds(totalSec) {
+  const safe = Math.max(0, Math.round(Number(totalSec || 0)));
+  const totalMin = Math.max(1, Math.round(safe / 60));
+  if (totalMin < 60) return `${totalMin}m`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+function saveBreakStart(startEpochMs, lengthSec = BREAK_DEFAULT_SEC) {
+  localStorage.setItem(LS_BREAK_START, String(startEpochMs));
+  localStorage.setItem(LS_BREAK_LENGTH, String(Math.max(1, Math.round(lengthSec))));
   localStorage.setItem(LS_BREAK_DAY, UI_DAY);
+}
+function saveBreakSummary(startEpochMs, endEpochMs) {
+  localStorage.setItem(LS_BREAK_LAST_START, String(startEpochMs));
+  localStorage.setItem(LS_BREAK_LAST_END, String(endEpochMs));
+  localStorage.setItem(LS_BREAK_LAST_DAY, UI_DAY);
+}
+function getBreakSummaryForToday() {
+  if (localStorage.getItem(LS_BREAK_LAST_DAY) !== UI_DAY) return null;
+  const start = Number(localStorage.getItem(LS_BREAK_LAST_START) || "0");
+  const end = Number(localStorage.getItem(LS_BREAK_LAST_END) || "0");
+  if (!start || !end || end < start) return null;
+  return { start, end, durationSec: Math.max(0, Math.round((end - start) / 1000)) };
 }
 function clearBreakStorage() {
   localStorage.removeItem(LS_BREAK_END);
+  localStorage.removeItem(LS_BREAK_START);
+  localStorage.removeItem(LS_BREAK_LENGTH);
   localStorage.removeItem(LS_BREAK_DAY);
   localStorage.removeItem(LS_BREAK_WARN5);
   localStorage.removeItem(LS_BREAK_DONE);
   localStorage.removeItem(LS_BREAK_LEFT);
 }
+function clearBreakSummaryStorage() {
+  localStorage.removeItem(LS_BREAK_LAST_START);
+  localStorage.removeItem(LS_BREAK_LAST_END);
+  localStorage.removeItem(LS_BREAK_LAST_DAY);
+}
+
+function renderBreakInfoLine(running = false, remainingSec = null, forceNeutral = false) {
+  if (!cwBreak) return;
+
+  if (forceNeutral) {
+    cwBreak.textContent = "0m";
+    return;
+  }
+
+  if (running) {
+    const startEpoch =
+      getLocalBreakStart() ||
+      (() => {
+        const endEpoch = getLocalBreakEnd();
+        const lengthSec = getLocalBreakLengthSec();
+        return endEpoch ? endEpoch - lengthSec * 1000 : 0;
+      })();
+    const elapsedSec = Math.max(0, Math.floor((Date.now() - startEpoch) / 1000));
+    cwBreak.textContent = `BREAK started: ${fmtHHMMFromEpoch(startEpoch)} | ${fmtMMSS(elapsedSec)}`;
+    return;
+  }
+
+  const summary = getBreakSummaryForToday();
+  if (summary) {
+    cwBreak.textContent = `BREAK ${fmtHHMMFromEpoch(summary.start)}\u2013${fmtHHMMFromEpoch(summary.end)} (${fmtBreakDurationFromSeconds(summary.durationSec)})`;
+    return;
+  }
+
+  if (CLOCK) {
+    cwBreak.textContent = `${Number(CLOCK.break_minutes || 0)}m`;
+    return;
+  }
+
+  cwBreak.textContent = "0m";
+}
+
+function setBreakButtonRunning(running, remainingSec = null) {
+  if (!btnBreak) return;
+  const label = btnBreak.querySelector(".pillText");
+  if (label) {
+    label.textContent = running ? "STOP" : "BREAK";
+  }
+  btnBreak.classList.toggle("is-breakRunning", running);
+}
+function saveBreakEnd(endEpochMs) {
+  localStorage.setItem(LS_BREAK_END, String(endEpochMs));
+  localStorage.setItem(LS_BREAK_DAY, UI_DAY);
+}
 
 function stopBreakCountdown(vibrate = false) {
+  const startEpoch = getLocalBreakStart() || (() => {
+    const endEpoch = getLocalBreakEnd();
+    const lengthSec = getLocalBreakLengthSec();
+    return endEpoch ? endEpoch - lengthSec * 1000 : 0;
+  })();
+  const endEpoch = Date.now();
+
   if (breakTick) clearInterval(breakTick);
   breakTick = null;
   breakRunningUI = false;
   breakRemaining = 0;
 
+  if (startEpoch) saveBreakSummary(startEpoch, endEpoch);
   clearBreakStorage();
   setBreakButtonRunning(false);
-
-  if (cwBreak && CLOCK) cwBreak.textContent = `${Number(CLOCK.break_minutes || 0)}m`;
+  renderBreakInfoLine(false);
   if (vibrate && "vibrate" in navigator) navigator.vibrate([200, 100, 200]);
 }
 
@@ -516,13 +616,15 @@ function tickBreakCountdown() {
     breakTick = null;
     breakRunningUI = false;
     setBreakButtonRunning(false);
+    renderBreakInfoLine(false);
     return;
   }
 
   const leftSec = Math.ceil((endEpoch - Date.now()) / 1000);
   breakRemaining = leftSec;
 
-  if (cwBreak) cwBreak.textContent = fmtMMSS(Math.max(0, leftSec));
+  setBreakButtonRunning(true, leftSec);
+  renderBreakInfoLine(true, leftSec);
 
   // 5-min warning (once)
   if (leftSec <= 300 && leftSec > 0) {
@@ -553,10 +655,14 @@ function tickBreakCountdown() {
 function startBreakCountdown(seconds = BREAK_DEFAULT_SEC) {
   breakRunningUI = true;
 
-  const endEpoch = Date.now() + seconds * 1000;
+  const startEpoch = Date.now();
+  const endEpoch = startEpoch + seconds * 1000;
+  clearBreakSummaryStorage();
+  saveBreakStart(startEpoch, seconds);
   saveBreakEnd(endEpoch);
 
-  setBreakButtonRunning(true);
+  setBreakButtonRunning(true, seconds);
+  renderBreakInfoLine(true, seconds);
   tickBreakCountdown();
 
   if (breakTick) clearInterval(breakTick);
@@ -567,7 +673,14 @@ function resumeBreakCountdownIfAny() {
   if (!hasActiveLocalBreak()) return;
 
   breakRunningUI = true;
-  setBreakButtonRunning(true);
+  const leftSec = getLocalBreakLeftSec();
+  if (!getLocalBreakStart()) {
+    const lengthSec = getLocalBreakLengthSec();
+    const endEpoch = getLocalBreakEnd();
+    if (endEpoch) saveBreakStart(endEpoch - lengthSec * 1000, lengthSec);
+  }
+  setBreakButtonRunning(true, leftSec);
+  renderBreakInfoLine(true, leftSec);
   tickBreakCountdown();
 
   if (breakTick) clearInterval(breakTick);
@@ -579,13 +692,17 @@ function resetTodayVisual() {
   if (cwOut) cwOut.textContent = "00:00";
 
   if (hasActiveLocalBreak()) {
-    setBreakButtonRunning(true);
+    setBreakButtonRunning(true, getLocalBreakLeftSec());
     resumeBreakCountdownIfAny();
   } else {
-    if (cwBreak) cwBreak.textContent = "0m";
+    clearBreakStorage();
+    clearBreakSummaryStorage();
     setBreakButtonRunning(false);
-    // stop only UI timer; keep storage clean anyway
-    stopBreakCountdown(false);
+    renderBreakInfoLine(false);
+    if (breakTick) clearInterval(breakTick);
+    breakTick = null;
+    breakRunningUI = false;
+    breakRemaining = 0;
   }
 }
 
@@ -738,6 +855,7 @@ function toggleForgot() {
 async function enterLogin() {
   if (!hasIndexViews()) return;
   hideAllViews();
+  setBottomNavVisible(false);
   show(viewLogin);
   showLogin();
 }
@@ -746,6 +864,7 @@ async function enterHome() {
   if (!hasIndexViews()) return;
 
   hideAllViews();
+  setBottomNavVisible(true);
   show(viewHome);
 
   ME = await refreshMe(true);
@@ -955,7 +1074,7 @@ async function refreshClock() {
     if (!c.has_week) {
       if (cwIn) cwIn.textContent = "--:--";
       if (cwOut) cwOut.textContent = "--:--";
-      if (cwBreak) cwBreak.textContent = "0m";
+      renderBreakInfoLine(false, null, true);
       if (cwStatusText) cwStatusText.textContent = "Create a week first.";
       setBreakButtonRunning(false);
       stopLiveTicker();
@@ -971,7 +1090,7 @@ async function refreshClock() {
     const localActive = hasActiveLocalBreak();
 
     if (c.break_running) {
-      setBreakButtonRunning(true);
+      setBreakButtonRunning(true, getLocalBreakLeftSec() || BREAK_DEFAULT_SEC);
 
       if (!localActive) {
         const savedLeft = Number(localStorage.getItem(LS_BREAK_LEFT) || "0");
@@ -991,11 +1110,11 @@ async function refreshClock() {
     } else {
 
       if (localActive) {
-        setBreakButtonRunning(true);
+        setBreakButtonRunning(true, getLocalBreakLeftSec());
         resumeBreakCountdownIfAny();
       } else {
-        if (cwBreak) cwBreak.textContent = `${Number(c.break_minutes || 0)}m`;
         setBreakButtonRunning(false);
+        renderBreakInfoLine(false);
 
         if (breakTick) clearInterval(breakTick);
         breakTick = null;
@@ -1218,28 +1337,9 @@ function goCurrentWeekReport() {
   go("/report?week=current");
 }
 function bindCurrentWeekTap() {
-  const block = document.getElementById("cwWeekBlock");
-  if (!block || block.dataset.bound) return;
-  block.dataset.bound = "1";
-
-  const ignore = (ev) =>
-    !!ev.target.closest("button,a,input,select,textarea,label");
-
-  const handler = (ev) => {
-    if (ignore(ev)) return;
-    goCurrentWeekReport();
-  };
-
-  block.addEventListener("click", handler);
-  block.addEventListener(
-    "touchend",
-    (ev) => {
-      if (ignore(ev)) return;
-      ev.preventDefault();
-      goCurrentWeekReport();
-    },
-    { passive: false }
-  );
+  if (!cwWeekBtn || cwWeekBtn.dataset.bound) return;
+  cwWeekBtn.dataset.bound = "1";
+  cwWeekBtn.addEventListener("click", goCurrentWeekReport);
 }
 
 /* =========================
@@ -1529,6 +1629,7 @@ function openAddWeekPage(defaultRate = 0) {
   if (!hasIndexViews()) return;
 
   hideAllViews();
+  setBottomNavVisible(true);
   show(viewAddWeek);
 
   if (addWeekMsg) addWeekMsg.textContent = "";

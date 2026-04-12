@@ -170,8 +170,7 @@
         </div>
       </section>
 
-      <!-- ✅ Source of truth: JS binds click on #cwWeekBlock -->
-      <section class="card card--big cwCard" id="cwWeekBlock" role="button" tabindex="0" aria-label="Open current week report">
+      <section class="card card--big cwCard" id="cwWeekBlock">
         <!-- Today earnings -->
         <div class="cwTop cwTop--full">
           <div class="teCard teCard--full" id="todayEarnCard">
@@ -195,11 +194,13 @@
         </div>
 
         <!-- Current week -->
-        <div class="cwTop cwTop--full" style="margin-top:12px;">
+        <div class="cwTop cwTop--full">
           <div class="teCard teCard--full">
             <div class="teHead">
               <div class="teTitle">Current week</div>
-              <div class="teLive teLive--neutral">Week <span id="cwWeekNo">--</span></div>
+              <button id="cwWeekBtn" class="teLive teLive--neutral cwWeekBtn" type="button">
+                Week <span id="cwWeekNo">--</span>
+              </button>
             </div>
 
             <div class="teGrid teGrid--2">
@@ -217,7 +218,7 @@
         </div>
 
         <!-- Actions (do NOT navigate) -->
-        <div class="cwActions" style="margin-top:14px;">
+        <div class="cwActions">
           <button id="btnIn" class="pill pill--green cwNoNav" type="button">
             <span class="pillIcon">✓</span> IN
           </button>
@@ -225,7 +226,8 @@
           <button id="btnOut" class="pill pill--gray cwNoNav" type="button">OUT</button>
 
           <button id="btnBreak" class="pill pill--orange cwNoNav" type="button">
-            <span class="pillIcon">⏱</span> BREAK
+            <span class="pillIcon">⏱</span>
+            <span class="pillText">BREAK</span>
           </button>
         </div>
 
@@ -234,7 +236,7 @@
           <span class="dot">•</span>
           <span><strong>OUT:</strong> <span id="cwOut">--:--</span></span>
           <span class="dot">•</span>
-          <span><strong>BREAK:</strong> <span id="cwBreak">0m</span></span>
+          <span id="cwBreak">0m</span>
         </div>
 
         <div class="cwStatus">
@@ -285,18 +287,18 @@
       </section>
 
       <!-- BOTTOM NAV -->
-      <nav class="bottomNav">
-        <button id="navHome" class="navItem navItem--active" type="button">Home</button>
-        <button id="navHistory" class="navItem" type="button">Roster</button>
-        <button id="navHolidays" class="navItem" type="button">Holidays</button>
-        <button id="navReports" class="navItem" type="button">Reports</button>
-        <button id="navProfile" class="navItem" type="button">Profile</button>
-      </nav>
-
       <div class="safeSpace"></div>
     </section>
 
   </main>
+
+  <nav class="bottomNav hidden">
+    <button id="navHome" class="navItem navItem--active" type="button">Home</button>
+    <button id="navHistory" class="navItem" type="button">Roster</button>
+    <button id="navHolidays" class="navItem" type="button">Holidays</button>
+    <button id="navReports" class="navItem" type="button">Reports</button>
+    <button id="navProfile" class="navItem" type="button">Profile</button>
+  </nav>
 
   <!-- app.js deve ser o único dono de binds -->
   <script defer src="/static/app.js?v=1003"></script>
