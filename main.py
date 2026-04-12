@@ -8,7 +8,8 @@ import secrets
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Optional, List, Dict, Any
 
 from fastapi import FastAPI, HTTPException, Request, Response, UploadFile, File
@@ -40,6 +41,7 @@ APP_SECRET = os.environ.get("WORKHOURS_SECRET", "dev-secret-change-me").encode("
 COOKIE_AGE = 90 * 24 * 60 * 60  # 90 days
 import os
 COOKIE_SECURE = os.getenv("RENDER") == "true"  # ou usa uma env tua
+DUBLIN_TZ = ZoneInfo("Europe/Dublin")
 
 
 app = FastAPI(title="Work Hours Tracker", version="9.3")
@@ -67,7 +69,18 @@ async def no_cache_api(request: Request, call_next):
 # TIME HELPER (FIXES YOUR 500 BUG: now() was missing)
 # ======================================================
 def now() -> str:
-    return datetime.utcnow().isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def local_now() -> datetime:
+    return datetime.now(DUBLIN_TZ)
+
+
+def utc_from_iso(value: str) -> datetime:
+    dt = datetime.fromisoformat(value)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 # ======================================================
@@ -1364,11 +1377,11 @@ def weekday_short_en(d: date) -> str:
 
 
 def today_ymd() -> str:
-    return date.today().isoformat()
+    return local_now().date().isoformat()
 
 
 def hhmm_now() -> str:
-    return datetime.now().strftime("%H:%M")
+    return local_now().strftime("%H:%M")
 
 
 def sunday_start(dt: date) -> date:
@@ -1749,7 +1762,7 @@ def deliveries_delete(delivery_id: int, req: Request):
 @app.get("/api/deliveries/stats")
 def deliveries_stats(req: Request):
     uid = require_user(req)
-    today = date.today()
+    today = local_now().date()
     month_start = today.replace(day=1)
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
@@ -2784,7 +2797,7 @@ def dashboard(req: Request):
 @app.get("/api/report/week/current")
 def report_current_week(req: Request):
     uid = require_user(req)
-    today = date.today().isoformat()
+    today = local_now().date().isoformat()
 
     with db() as conn:
         w = conn.execute(
@@ -2897,7 +2910,7 @@ def get_current_week(conn: sqlite3.Connection, uid: int) -> Optional[sqlite3.Row
 
 
 def get_week_for_today_strict(conn: sqlite3.Connection, uid: int) -> Optional[sqlite3.Row]:
-    today = date.today()
+    today = local_now().date()
 
     weeks = conn.execute(
         "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date ASC",
@@ -3180,8 +3193,8 @@ def clock_out(req: Request):
 
         st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
         if st and int(st["break_running"] or 0) == 1 and st["break_start"]:
-            bs = datetime.fromisoformat(st["break_start"])
-            add = int((datetime.now() - bs).total_seconds() // 60)
+            bs = utc_from_iso(st["break_start"])
+            add = int((datetime.now(timezone.utc) - bs).total_seconds() // 60)
             new_break = int(st["break_minutes"] or 0) + max(0, add)
 
             conn.execute(
@@ -3251,7 +3264,7 @@ def clock_break(req: Request):
                     e["time_in"],
                     e["time_out"],
                     1,
-                    datetime.now().isoformat(timespec="seconds"),
+                    now(),
                     int(e["break_minutes"] or 0),
                     now(),
                 ),
@@ -3264,7 +3277,7 @@ def clock_break(req: Request):
         if not running:
             conn.execute(
                 "UPDATE clock_state SET break_running=1, break_start=?, updated_at=? WHERE user_id=?",
-                (datetime.now().isoformat(timespec="seconds"), now(), uid),
+                (now(), now(), uid),
             )
             conn.commit()
             return {"ok": True, "break_running": True}
@@ -3278,8 +3291,8 @@ def clock_break(req: Request):
             conn.commit()
             return {"ok": True, "break_running": False}
 
-        bs = datetime.fromisoformat(st["break_start"])
-        add = int((datetime.now() - bs).total_seconds() // 60)
+        bs = utc_from_iso(st["break_start"])
+        add = int((datetime.now(timezone.utc) - bs).total_seconds() // 60)
         new_break = int(st["break_minutes"] or 0) + max(0, add)
 
         conn.execute(

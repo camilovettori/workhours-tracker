@@ -63,18 +63,36 @@ function fmtHHMM(t) {
 /* =========================
    Date helpers (single source)
 ========================= */
+const APP_TIMEZONE = "Europe/Dublin";
+
+function datePartsInDublin(dt = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: APP_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  }).formatToParts(dt);
+  const out = {};
+  parts.forEach((part) => {
+    if (part.type !== "literal") out[part.type] = part.value;
+  });
+  return out;
+}
+
 function todayYMD() {
-  const t = new Date();
-  return `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`;
+  const p = datePartsInDublin(new Date());
+  return `${p.year}-${p.month}-${p.day}`;
 }
 function ymdFromDate(dt) {
-  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+  const p = datePartsInDublin(dt);
+  return `${p.year}-${p.month}-${p.day}`;
 }
 function ymdToDateObj(ymd) {
   const [y, m, d] = String(ymd || "").split("-").map(Number);
   return new Date(y || 1970, (m || 1) - 1, d || 1);
 }
-function isSunday(dt) { return dt.getDay() === 0; }
+function isSunday(dt) { return datePartsInDublin(dt).weekday === "Sun"; }
 function isoWeekNumber(d = new Date()) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   const dayNum = date.getUTCDay() || 7;
@@ -84,19 +102,21 @@ function isoWeekNumber(d = new Date()) {
 }
 function mondayOfThisWeek(d = new Date()) {
   const x = new Date(d);
-  const day = x.getDay(); // 0 Sun .. 6 Sat
+  const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(datePartsInDublin(d).weekday);
   const diff = day === 0 ? -6 : 1 - day;
   x.setDate(x.getDate() + diff);
-  return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`;
+  return ymdFromDate(x);
 }
 function weekStartMondayISO(d = new Date()) { return mondayOfThisWeek(d); }
 function sundayOfThisWeek(d = new Date()) {
   const x = new Date(d);
-  x.setDate(x.getDate() - x.getDay());
-  return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`;
+  const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(datePartsInDublin(d).weekday);
+  x.setDate(x.getDate() - day);
+  return ymdFromDate(x);
 }
 function tescoWeekNumber(d = new Date()) {
-  const dt = new Date(d);
+  const p = datePartsInDublin(d);
+  const dt = new Date(Number(p.year) || 1970, (Number(p.month) || 1) - 1, Number(p.day) || 1);
   const yearStart = new Date(dt.getFullYear(), 0, 1);
   const daysSinceYearStart = Math.floor((dt.setHours(0,0,0,0) - yearStart.setHours(0,0,0,0)) / 86400000);
   const yearStartOffset = (yearStart.getDay() + 1) % 7;
@@ -110,7 +130,7 @@ function ymdAddDays(ymd, add) {
   return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
 }
 function weekdayShort(dt) {
-  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dt.getDay()];
+  return datePartsInDublin(dt).weekday || "";
 }
 function hhmmToMinutes(hhmm) {
   if (!hhmm) return null;
@@ -340,7 +360,7 @@ async function premiumMultiplierForYmd(ymd) {
 
   const dt = ymdToDateObj(ymd);
   let mult = 1;
-  if (dt.getDay() === 0) mult = Math.max(mult, SUN_MULT);
+  if (datePartsInDublin(dt).weekday === "Sun") mult = Math.max(mult, SUN_MULT);
 
   try {
     const bh = await bhLookup(ymd);
@@ -417,7 +437,7 @@ const cardReports  = $("cardReports");
 const cardDeliveries = $("cardDeliveries");
 const cardSettings = $("cardSettings");
 const deliveriesWeekInline = $("deliveriesWeekInline");
-const deliveriesTopLocationInline = $("deliveriesTopLocationInline");
+const deliveriesInsightText = $("deliveriesInsightText");
 
 const navHome    = $("navHome");
 const navHistory = $("navHistory");
@@ -446,6 +466,8 @@ let CLOCK = null;
 let LAST_DASH = null;
 let DELIVERY_STATE = { items: [], week: null, month: null, location_breakdown: [] };
 let REMINDER_STATE = { reminders: null, schedule: null, ready: false };
+let DELIVERY_HOME_INSIGHT_TIMER = null;
+let DELIVERY_HOME_INSIGHT_INDEX = 0;
 
 /* =========================
    Break countdown (robust)
@@ -786,7 +808,7 @@ async function maybeCheckReminders(clockOverride = null) {
     const today = todayYMD();
     const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
     const activeDays = Array.isArray(schedule.active_days) ? schedule.active_days : [];
-    const dow = new Date().getDay();
+    const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(datePartsInDublin(new Date()).weekday);
 
     if (!activeDays.includes(dow)) return;
 
@@ -988,6 +1010,340 @@ function getTodayDeliveriesDone() {
   return items
     .filter((item) => item?.work_date === today)
     .reduce((sum, item) => sum + Number(item?.delivery_count || 0), 0);
+}
+
+function formatCoachHours(mins) {
+  const total = Math.max(0, Math.round(Number(mins || 0)));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h <= 0) return `${m}m`;
+  if (m <= 0) return `${h}h`;
+  return `${h}h ${pad2(m)}m`;
+}
+
+function formatCoachPayGap(expected, actual) {
+  const exp = Number(expected || 0);
+  const cur = Number(actual || 0);
+  if (!Number.isFinite(exp) || exp <= 0) return null;
+  const diff = cur - exp;
+  if (diff >= 0) return `${fmtEUR(diff)} above target`;
+  return `${fmtEUR(Math.abs(diff))} left to expected weekly pay`;
+}
+
+function parseHHMMToMinutes(hhmm) {
+  const text = String(hhmm || "00:00");
+  const [hh, mm] = text.slice(0, 5).split(":").map(Number);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return 0;
+  return (hh * 60) + mm;
+}
+
+function selectCurrentRosterRow(rows) {
+  const today = todayYMD();
+  const todayRaw = parseFloat(today.replace(/-/g, ""));
+  const list = Array.isArray(rows) ? rows : [];
+
+  for (const row of list) {
+    const start = safeText(row?.start_date || "");
+    if (!start) continue;
+    const end = ymdAddDays(start, 6);
+    const startRaw = parseFloat(String(start).replace(/-/g, ""));
+    const endRaw = parseFloat(String(end).replace(/-/g, ""));
+    if (Number.isFinite(startRaw) && Number.isFinite(endRaw) && todayRaw >= startRaw && todayRaw <= endRaw) {
+      return row;
+    }
+  }
+
+  return list[0] || null;
+}
+
+function buildRosterWeekSummary(roster) {
+  const days = Array.isArray(roster?.days) ? roster.days : [];
+  const today = todayYMD();
+  const todayRaw = parseFloat(today.replace(/-/g, ""));
+
+  const normalisedDays = days.map((day) => {
+    const hasShift = !!day?.shift_in && !!day?.shift_out && !day?.day_off;
+    const minutes = hasShift ? Math.max(0, parseHHMMToMinutes(day.shift_out) - parseHHMMToMinutes(day.shift_in)) : 0;
+    return { ...day, minutes };
+  });
+
+  const totalMinutes = normalisedDays.reduce((sum, day) => sum + Number(day.minutes || 0), 0);
+  const scheduledSoFarMinutes = normalisedDays.reduce((sum, day) => {
+    const raw = parseFloat(String(day?.work_date || "").replace(/-/g, ""));
+    return sum + (Number.isFinite(raw) && raw <= todayRaw ? Number(day.minutes || 0) : 0);
+  }, 0);
+
+  return {
+    id: roster?.id ?? null,
+    weekNumber: roster?.week_number ?? null,
+    startDate: roster?.start_date || null,
+    days: normalisedDays,
+    totalMinutes,
+    scheduledSoFarMinutes,
+    todayDay: normalisedDays.find((day) => day.work_date === today) || null,
+  };
+}
+
+async function loadCurrentRosterWeekSummary() {
+  const list = await api("/api/roster").catch(() => []);
+  if (!Array.isArray(list) || !list.length) return null;
+
+  const selected = selectCurrentRosterRow(list);
+  if (!selected?.id) return null;
+
+  const roster = await api(`/api/roster/${selected.id}`).catch(() => null);
+  if (!roster) return null;
+
+  return buildRosterWeekSummary(roster);
+}
+
+function loadTodayRosterHint() {
+  return api(`/api/roster/day?date_ymd=${encodeURIComponent(todayYMD())}`).catch(() => null);
+}
+
+function updateHomeCoachCard(dash, todayRoster, rosterWeek) {
+  const title = $("homeCoachTitle");
+  const line = $("homeCoachLine");
+  const chip = $("homeCoachChip");
+  const hero = document.querySelector(".homeHero");
+  if (!title || !line || !chip || !hero) return;
+
+  const earnedPay = Number(dash?.this_week?.pay_eur ?? 0);
+  const workedMinutes = parseHHMMToMinutes(dash?.this_week?.hhmm || "00:00");
+  const rate = Number(dash?.this_week?.hourly_rate ?? ME?.hourly_rate ?? getSavedRate() ?? 0);
+  const rosterTotalMinutes = Number(rosterWeek?.totalMinutes ?? 0);
+  const rosterPlannedSoFarMinutes = Number(rosterWeek?.scheduledSoFarMinutes ?? 0);
+  const expectedWeeklyPay = rosterTotalMinutes > 0 && Number.isFinite(rate) && rate > 0
+    ? (rosterTotalMinutes / 60) * rate
+    : 0;
+  const expectedSoFarPay = expectedWeeklyPay > 0 && rosterTotalMinutes > 0
+    ? expectedWeeklyPay * (rosterPlannedSoFarMinutes / rosterTotalMinutes)
+    : 0;
+  const hoursLeftMinutes = Math.max(0, rosterTotalMinutes - workedMinutes);
+  const payLeft = Math.max(0, expectedWeeklyPay - earnedPay);
+  const todayShift = todayRoster || rosterWeek?.todayDay || null;
+  const shiftIn = safeText(todayShift?.shift_in || "");
+  const shiftOut = safeText(todayShift?.shift_out || "");
+  const hasShift = !!shiftIn && !!shiftOut && !todayShift?.day_off;
+  const shiftLabel = hasShift ? `Shift ${fmtHHMM(shiftIn)}–${fmtHHMM(shiftOut)}` : "Shift details unavailable";
+  const hasWeek = !!CLOCK?.has_week;
+  const live = !!CLOCK?.in_time && !CLOCK?.out_time;
+  const finished = !!CLOCK?.out_time;
+  const dayOff = !!todayShift?.day_off;
+
+  const onTrack = rosterTotalMinutes > 0
+    ? (earnedPay >= expectedSoFarPay && workedMinutes >= rosterPlannedSoFarMinutes)
+    : false;
+
+  hero.classList.remove("is-coach-neutral", "is-coach-good", "is-coach-warning", "is-coach-bad");
+
+  if (!hasWeek || (!live && !finished)) {
+    title.textContent = dayOff ? "Day off today" : "Ready to start your shift?";
+    if (expectedWeeklyPay > 0) {
+      line.textContent = dayOff
+        ? `${fmtEUR(earnedPay)} earned so far • ${fmtEUR(payLeft)} left to expected weekly pay`
+        : `${shiftLabel} today • Weekly target ${fmtEUR(expectedWeeklyPay)}`;
+    } else {
+      line.textContent = dayOff
+        ? `${fmtEUR(earnedPay)} earned so far`
+        : shiftLabel;
+    }
+    chip.textContent = dayOff ? "OFF" : "READY";
+    hero.classList.add("is-coach-neutral");
+    return;
+  }
+
+  if (live) {
+    if (onTrack) {
+      title.textContent = "You’re on track for your weekly pay";
+      line.textContent = expectedWeeklyPay > 0
+        ? `${fmtEUR(earnedPay)} earned • ${formatCoachHours(workedMinutes)} / ${formatCoachHours(rosterTotalMinutes)} rostered`
+        : `${fmtEUR(earnedPay)} earned • ${formatCoachHours(workedMinutes)} worked`;
+      chip.textContent = CLOCK?.break_running ? "BREAK" : "LIVE";
+      hero.classList.add("is-coach-good");
+    } else {
+      if (expectedWeeklyPay > 0) {
+        title.textContent = "You’re behind pace";
+        line.textContent = hoursLeftMinutes > 0
+          ? `${fmtEUR(earnedPay)} earned • ${formatCoachHours(hoursLeftMinutes)} left to finish your roster`
+          : `${fmtEUR(earnedPay)} earned • ${fmtEUR(payLeft)} left to expected weekly pay`;
+        hero.classList.add("is-coach-warning");
+      } else {
+        title.textContent = "You’re building momentum";
+        line.textContent = `${fmtEUR(earnedPay)} earned so far`;
+        hero.classList.add("is-coach-neutral");
+      }
+      chip.textContent = CLOCK?.break_running ? "BREAK" : "LIVE";
+    }
+    return;
+  }
+
+  if (finished) {
+    if (expectedWeeklyPay > 0 && earnedPay >= expectedWeeklyPay) {
+      title.textContent = "You already passed your scheduled pay";
+      line.textContent = `${fmtEUR(earnedPay)} earned • ${formatCoachPayGap(expectedWeeklyPay, earnedPay)}`;
+      hero.classList.add("is-coach-good");
+    } else if (expectedWeeklyPay > 0) {
+      title.textContent = "Weekly roster complete";
+      line.textContent = `${fmtEUR(earnedPay)} earned • ${fmtEUR(payLeft)} left to expected weekly pay`;
+      hero.classList.add("is-coach-warning");
+    } else {
+      title.textContent = earnedPay > 0 ? "Solid week 👊" : "Week complete";
+      line.textContent = earnedPay > 0 ? `${fmtEUR(earnedPay)} earned this week` : "No earnings tracked this week";
+      hero.classList.add("is-coach-neutral");
+    }
+    chip.textContent = "DONE";
+    return;
+  }
+
+  title.textContent = "Weekly progress";
+  line.textContent = expectedWeeklyPay > 0
+    ? `${fmtEUR(earnedPay)} earned so far • ${fmtEUR(payLeft)} left to expected weekly pay`
+    : `${fmtEUR(earnedPay)} earned so far`;
+  chip.textContent = "LIVE";
+  hero.classList.add("is-coach-neutral");
+}
+
+function getDeliveryItemsInRange(items, startYmd, endYmd) {
+  const start = parseFloat(String(startYmd || "").replace(/-/g, ""));
+  const end = parseFloat(String(endYmd || "").replace(/-/g, ""));
+  return (items || []).filter((item) => {
+    const raw = parseFloat(String(item?.work_date || "").replace(/-/g, ""));
+    return Number.isFinite(raw) && raw >= start && raw <= end;
+  });
+}
+
+function getDeliveryTopLocation(items) {
+  const tally = new Map();
+  (items || []).forEach((item) => {
+    const loc = safeText(item?.location || "");
+    if (!loc) return;
+    tally.set(loc, (tally.get(loc) || 0) + Number(item?.delivery_count || 0));
+  });
+  let best = null;
+  let bestCount = -1;
+  tally.forEach((count, loc) => {
+    if (count > bestCount) {
+      best = loc;
+      bestCount = count;
+    }
+  });
+  return best || "-";
+}
+
+function getDeliveryRecordWeek(items) {
+  const weekTotals = new Map();
+  (items || []).forEach((item) => {
+    const dt = ymdToDateObj(item?.work_date || todayYMD());
+    const key = `${dt.getFullYear()}-${tescoWeekNumber(dt)}`;
+    const current = weekTotals.get(key) || { total: 0, weekNumber: tescoWeekNumber(dt) };
+    current.total += Number(item?.delivery_count || 0);
+    weekTotals.set(key, current);
+  });
+
+  let best = { weekNumber: null, total: 0 };
+  weekTotals.forEach((value) => {
+    if (value.total > best.total) best = value;
+  });
+  return best;
+}
+
+function weekdayLong(dt) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: APP_TIMEZONE,
+    weekday: "long",
+  }).format(dt || new Date());
+}
+
+function getDeliveryCountInRange(items, startYmd, endYmd) {
+  return getDeliveryItemsInRange(items, startYmd, endYmd)
+    .reduce((sum, item) => sum + Number(item?.delivery_count || 0), 0);
+}
+
+function getBestDeliveryDay(trend) {
+  const rows = Array.isArray(trend) ? trend : [];
+  let best = null;
+  rows.forEach((row) => {
+    const value = Number(row?.value || 0);
+    if (!best || value > best.value) {
+      best = row ? { ...row, value } : null;
+    }
+  });
+  if (!best || best.value <= 0) return null;
+  return {
+    day: weekdayLong(ymdToDateObj(best.date || todayYMD())),
+    total: best.value,
+  };
+}
+
+function formatDeliveryWeekDelta(current, previous) {
+  const cur = Number(current || 0);
+  const prev = Number(previous || 0);
+  const diff = cur - prev;
+  if (!Number.isFinite(diff) || (cur <= 0 && prev <= 0)) return "same as last week";
+  if (diff === 0) return "same as last week";
+  return `${diff > 0 ? "+" : ""}${diff} vs last week`;
+}
+
+function getHomeDeliveryInsights(stats) {
+  const items = Array.isArray(stats?.items) ? stats.items : [];
+  const weekTotal = Number(stats?.week?.total ?? 0);
+  const weekTrend = Array.isArray(stats?.week?.trend) ? stats.week.trend : [];
+  const weekStart = mondayOfThisWeek(new Date());
+  const weekEnd = ymdAddDays(weekStart, 6);
+  const prevWeekStart = ymdAddDays(weekStart, -7);
+  const prevWeekEnd = ymdAddDays(weekStart, -1);
+  const weekItems = getDeliveryItemsInRange(items, weekStart, weekEnd);
+  const lastWeekTotal = getDeliveryCountInRange(items, prevWeekStart, prevWeekEnd);
+  const record = getDeliveryRecordWeek(items);
+  const bestDay = getBestDeliveryDay(weekTrend);
+  const weekRun1 = Number(stats?.week?.run_1 ?? 0);
+  const weekRun2 = Number(stats?.week?.run_2 ?? 0);
+  const topLocationAllTime = getDeliveryTopLocation(items);
+
+  return [
+    `This week: ${weekTotal} deliveries • ${formatDeliveryWeekDelta(weekTotal, lastWeekTotal)}`,
+    `Top location this week: ${getDeliveryTopLocation(weekItems)}`,
+    bestDay ? `Best day: ${bestDay.day} • ${bestDay.total} deliveries` : "Best day: —",
+    record.total > 0 ? `Record week: ${record.total} deliveries` : "Record week: —",
+    `Run split this week: R1 ${weekRun1} · R2 ${weekRun2}`,
+    `Most used location all time: ${topLocationAllTime}`,
+  ];
+}
+
+function stopDeliveryHomeInsights() {
+  if (DELIVERY_HOME_INSIGHT_TIMER) clearInterval(DELIVERY_HOME_INSIGHT_TIMER);
+  DELIVERY_HOME_INSIGHT_TIMER = null;
+  DELIVERY_HOME_INSIGHT_INDEX = 0;
+}
+
+function renderDeliveryHomeInsights(stats) {
+  if (!deliveriesInsightText) {
+    stopDeliveryHomeInsights();
+    return;
+  }
+
+  const insights = getHomeDeliveryInsights(stats);
+  if (!insights.length) {
+    stopDeliveryHomeInsights();
+    deliveriesInsightText.textContent = "Fast logging. Premium summaries.";
+    return;
+  }
+
+  const applyInsight = () => {
+    deliveriesInsightText.classList.remove("is-flash");
+    deliveriesInsightText.textContent = insights[DELIVERY_HOME_INSIGHT_INDEX % insights.length];
+    void deliveriesInsightText.offsetWidth;
+    deliveriesInsightText.classList.add("is-flash");
+  };
+
+  applyInsight();
+
+  if (DELIVERY_HOME_INSIGHT_TIMER) clearInterval(DELIVERY_HOME_INSIGHT_TIMER);
+  DELIVERY_HOME_INSIGHT_TIMER = setInterval(() => {
+    DELIVERY_HOME_INSIGHT_INDEX = (DELIVERY_HOME_INSIGHT_INDEX + 1) % insights.length;
+    applyInsight();
+  }, 3200);
 }
 
 function getTodayEarnedAmount() {
@@ -1363,11 +1719,25 @@ async function refreshAll() {
   await refreshClock();
   await refreshCurrentWeekTotalsSafe();
 
+  let todayRoster = null;
+  let rosterWeek = null;
+  try {
+    [todayRoster, rosterWeek] = await Promise.all([
+      loadTodayRosterHint(),
+      loadCurrentRosterWeekSummary(),
+    ]);
+  } catch {}
+
+  updateHomeCoachCard(LAST_DASH, todayRoster, rosterWeek);
+
   if (deliveriesWeekInline) {
+    let stats = DELIVERY_STATE;
     try {
-      const stats = await loadDeliveriesStats();
+      const loaded = await loadDeliveriesStats();
+      if (loaded) stats = loaded;
       if (stats) {
         deliveriesWeekInline.textContent = String(stats.week?.total ?? 0);
+        renderDeliveryHomeInsights(stats);
       }
     } catch {}
   }

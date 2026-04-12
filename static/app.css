@@ -41,14 +41,15 @@ body{
     radial-gradient(1200px 700px at 80% 8%, rgba(59,130,246,.20), transparent 48%),
     radial-gradient(900px 640px at 16% 18%, rgba(37,99,235,.12), transparent 52%),
     radial-gradient(700px 500px at 50% 100%, rgba(16,185,129,.08), transparent 52%),
-    linear-gradient(180deg, var(--bg1), var(--bg2) 42%, var(--bg3));
+  linear-gradient(180deg, var(--bg1), var(--bg2) 42%, var(--bg3));
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
 /* app container */
 .app{
-  width: min(560px, 100%);
+  width: min(430px, 100%);
   margin: 0 auto;
   padding: 18px 16px 16px;
 }
@@ -92,6 +93,19 @@ body{
   line-height: 1.35;
   font-weight: 900;
   letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.homeHeroCoachLine{
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .homeHeroChip{
   border-radius: 999px;
@@ -258,6 +272,7 @@ body{
   border-radius: 18px;
   background: rgba(255,255,255,.66);
   border: 1px solid rgba(15,23,42,.06);
+  min-width: 0;
 }
 .todayEarnSummaryKicker{
   font-size: 11px;
@@ -1055,10 +1070,6 @@ body{
 .deliveriesGatewayMeta{
   margin-top:8px;
 }
-.deliveriesGatewayDot{
-  margin:0 4px;
-  opacity:.7;
-}
 .formHint{
   color: var(--muted);
   font-weight:900;
@@ -1272,6 +1283,7 @@ body{
   .splitDivider{ width: 100%; height: 1px; }
   .homeHeroMeta{ grid-template-columns: 1fr; }
   .homeHeroTitle{ font-size: 17px; }
+  .homeHeroCoachLine{ font-size: 12px; }
   .bottomNav{
     width: min(560px, calc(100% - 14px));
     border-radius: 24px;
@@ -1284,7 +1296,6 @@ body{
   .statGrid--compact{ grid-template-columns: 1fr; }
   .deliveryGrid,
   .deliverySummaryGrid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .todayEarnSummary{ grid-template-columns: 1fr; }
 }
 /* ===== Current week header (label + add button) ===== */
 .cwHeader{
@@ -1589,7 +1600,7 @@ body{
 
 .teGrid{
   display:grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px 14px;
 }
 
@@ -1664,7 +1675,7 @@ body{
 
 .teGrid--2{
   display:grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -1696,6 +1707,12 @@ body{
 .teGrid,
 .teGrid--2 {
   width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.teGrid > *,
+.teGrid--2 > *{
+  min-width: 0;
 }
 
 /* remove qualquer limite herdado */
@@ -1705,6 +1722,15 @@ body{
 
 #cardDeliveries{
   margin-top: 14px;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(900px 220px at 0% 0%, rgba(37,99,235,.14), transparent 50%),
+    radial-gradient(500px 160px at 100% 0%, rgba(16,185,129,.10), transparent 55%),
+    linear-gradient(180deg, rgba(255,255,255,.92), rgba(248,250,252,.82)) !important;
+  border-color: rgba(37,99,235,.10);
+  box-shadow: 0 18px 46px rgba(15,23,42,.08);
 }
 
 #cardDeliveries .listTitle{
@@ -1714,9 +1740,71 @@ body{
 #cardDeliveries .reportsSub{
   font-size: 13px;
 }
-
-#deliveriesTopLocationInline{
-  margin-top: 6px;
+#cardDeliveries::before{
+  content:"";
+  position:absolute;
+  inset:-20% -30%;
+  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,.26) 46%, transparent 60%);
+  transform: translateX(-35%);
+  animation: deliveriesShimmer 8s linear infinite;
+  pointer-events:none;
+  z-index:0;
+}
+#cardDeliveries > *{
+  position:relative;
+  z-index:1;
+}
+.deliveriesInsightRail{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-top:10px;
+  padding-top:10px;
+  border-top: 1px solid rgba(15,23,42,.08);
+}
+.deliveriesInsightBadge{
+  display:inline-flex;
+  align-items:center;
+  min-height:22px;
+  padding:0 8px;
+  border-radius:999px;
+  background: rgba(37,99,235,.10);
+  color: var(--blue-700);
+  border: 1px solid rgba(37,99,235,.14);
+  font-size:11px;
+  font-weight:1000;
+  letter-spacing:.08em;
+}
+.deliveriesInsightDot{
+  width:8px;
+  height:8px;
+  border-radius:999px;
+  background: linear-gradient(180deg, #3b82f6, #22c55e);
+  box-shadow: 0 0 0 4px rgba(37,99,235,.08);
+  flex:0 0 auto;
+}
+.deliveriesInsightText{
+  min-width:0;
+  flex:1 1 auto;
+  color: var(--text);
+  font-size:12.5px;
+  font-weight:900;
+  letter-spacing:-.01em;
+  line-height:1.25;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.deliveriesInsightText.is-flash{
+  animation: deliveriesInsightFlash .55s ease;
+}
+@keyframes deliveriesShimmer{
+  0%{ transform: translateX(-28%); }
+  100%{ transform: translateX(28%); }
+}
+@keyframes deliveriesInsightFlash{
+  0%{ opacity:.45; transform: translateY(2px); }
+  100%{ opacity:1; transform: translateY(0); }
 }
 /* Top profile avatar button */
 .topAvatarBtn{
@@ -3011,6 +3099,7 @@ body{
     radial-gradient(380px 170px at 100% 0%, rgba(16,185,129,.12), transparent 62%),
     linear-gradient(180deg, rgba(255,255,255,.92), rgba(248,250,252,.84)) !important;
   border-color: rgba(255,255,255,.84) !important;
+  transition: border-color .22s ease, box-shadow .22s ease, transform .22s ease, background .22s ease;
 }
 
 .homeHeroTop{
@@ -3032,6 +3121,58 @@ body{
   letter-spacing: .12em;
   text-transform: uppercase;
   font-size: 10px;
+}
+
+.homeHero.is-coach-neutral{
+  background:
+    radial-gradient(600px 180px at 8% 0%, rgba(37,99,235,.14), transparent 58%),
+    radial-gradient(380px 170px at 100% 0%, rgba(16,185,129,.12), transparent 62%),
+    linear-gradient(180deg, rgba(255,255,255,.92), rgba(248,250,252,.84)) !important;
+}
+
+.homeHero.is-coach-good{
+  background:
+    radial-gradient(620px 180px at 8% 0%, rgba(47,181,106,.16), transparent 58%),
+    radial-gradient(380px 170px at 100% 0%, rgba(37,99,235,.08), transparent 62%),
+    linear-gradient(180deg, rgba(255,255,255,.94), rgba(248,253,250,.88)) !important;
+  border-color: rgba(47,181,106,.16) !important;
+  box-shadow: 0 24px 60px rgba(47,181,106,.10) !important;
+}
+
+.homeHero.is-coach-warning{
+  background:
+    radial-gradient(620px 180px at 8% 0%, rgba(217,119,6,.16), transparent 58%),
+    radial-gradient(380px 170px at 100% 0%, rgba(37,99,235,.08), transparent 62%),
+    linear-gradient(180deg, rgba(255,255,255,.94), rgba(255,250,244,.90)) !important;
+  border-color: rgba(217,119,6,.16) !important;
+  box-shadow: 0 24px 60px rgba(217,119,6,.10) !important;
+}
+
+.homeHero.is-coach-bad{
+  background:
+    radial-gradient(620px 180px at 8% 0%, rgba(239,68,68,.16), transparent 58%),
+    radial-gradient(380px 170px at 100% 0%, rgba(37,99,235,.08), transparent 62%),
+    linear-gradient(180deg, rgba(255,255,255,.94), rgba(255,247,247,.90)) !important;
+  border-color: rgba(239,68,68,.16) !important;
+  box-shadow: 0 24px 60px rgba(239,68,68,.10) !important;
+}
+
+.homeHero.is-coach-good .homeHeroChip{
+  background: linear-gradient(180deg, rgba(47,181,106,.16), rgba(47,181,106,.08));
+  border-color: rgba(47,181,106,.18);
+  color: #0f7f42;
+}
+
+.homeHero.is-coach-warning .homeHeroChip{
+  background: linear-gradient(180deg, rgba(217,119,6,.16), rgba(217,119,6,.08));
+  border-color: rgba(217,119,6,.18);
+  color: #b45309;
+}
+
+.homeHero.is-coach-bad .homeHeroChip{
+  background: linear-gradient(180deg, rgba(239,68,68,.16), rgba(239,68,68,.08));
+  border-color: rgba(239,68,68,.18);
+  color: #b91c1c;
 }
 
 .cwCard{

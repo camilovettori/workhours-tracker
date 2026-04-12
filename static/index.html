@@ -164,9 +164,11 @@
       <section class="homeHero card">
         <div class="homeHeroTop">
           <div>
-            <div class="homeHeroTitle">Track hours, pay and deliveries in one calm workspace.</div>
+            <div class="homeHeroKicker">Weekly progress coach</div>
+            <div id="homeCoachTitle" class="homeHeroTitle">Ready to start your shift?</div>
+            <div id="homeCoachLine" class="homeHeroCoachLine">Loading weekly progress…</div>
           </div>
-          <div class="homeHeroChip">V2 Pro</div>
+          <div id="homeCoachChip" class="homeHeroChip">READY</div>
         </div>
       </section>
 
@@ -291,8 +293,11 @@
         </div>
         <div class="reportsSub deliveriesGatewayMeta">
           This week: <strong id="deliveriesWeekInline">0</strong> deliveries
-          <span class="deliveriesGatewayDot">•</span>
-          Top: <span id="deliveriesTopLocationInline">-</span>
+        </div>
+        <div class="deliveriesInsightRail" aria-live="polite">
+          <span class="deliveriesInsightBadge">LIVE</span>
+          <span class="deliveriesInsightDot"></span>
+          <span id="deliveriesInsightText" class="deliveriesInsightText">Loading delivery insights…</span>
         </div>
       </section>
 
