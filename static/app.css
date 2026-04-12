@@ -240,6 +240,46 @@ body{
   font-weight: 900;
   margin-top: 8px;
 }
+.teValue--small{
+  font-size: 22px;
+  line-height: 1.05;
+}
+.todayEarnLive{
+  display:block;
+}
+.todayEarnSummary{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap:12px;
+  margin-top: 12px;
+}
+.todayEarnSummaryCol{
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(255,255,255,.66);
+  border: 1px solid rgba(15,23,42,.06);
+}
+.todayEarnSummaryKicker{
+  font-size: 11px;
+  font-weight: 1000;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.todayEarnSummaryItem{
+  padding-top: 10px;
+}
+.todayEarnSummaryItem + .todayEarnSummaryItem{
+  margin-top: 10px;
+  border-top: 1px solid rgba(15,23,42,.07);
+}
+.todayEarnSummaryLabel{
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--muted);
+  letter-spacing: .01em;
+}
 .cwActions{
   display:flex;
   gap: 12px;
@@ -448,22 +488,459 @@ body{
   font-weight:1000;
   letter-spacing:-.03em;
 }
+.deliveriesPage{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.deliveriesHeader{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  margin-bottom:2px;
+}
+.deliveriesHeaderCopy{
+  min-width:0;
+}
+.deliveriesTitle{
+  margin:0;
+  font-size: clamp(1.9rem, 6vw, 2.3rem);
+  line-height:1;
+  letter-spacing:-.055em;
+}
+.deliveriesSubtitle{
+  margin-top:6px;
+  max-width: 30ch;
+  font-size:14px;
+  line-height:1.45;
+  color: var(--muted-2);
+  font-weight:800;
+}
+.deliveriesHeaderActions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+.deliveriesHeaderActions .btn{
+  min-height:40px;
+  padding:0 14px;
+  border-radius: 14px;
+  font-size: 13px;
+}
+.deliverySectionHead{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:12px;
+}
+.deliverySectionTitle{
+  font-size:16px;
+  font-weight:1000;
+  letter-spacing:-.035em;
+  line-height:1.1;
+}
+.deliverySectionSub{
+  margin-top:4px;
+  font-size:13px;
+  line-height:1.45;
+  color: var(--muted-2);
+  font-weight:800;
+}
 .deliveryGrid{
   display:grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap:12px;
+  gap:10px;
+}
+.deliveryGrid--compact{
+  gap:10px;
+}
+.deliveryDateRow{
+  align-items:end;
+}
+.deliveryCompactHint{
+  align-self:end;
+  color: var(--muted-2);
+  font-weight:800;
+  font-size:13px;
+  line-height:1.45;
 }
 .deliveryPanel{
+  padding:12px;
+  border-radius:16px;
+  background: rgba(255,255,255,.74);
+  border:1px solid rgba(15,23,42,.08);
+  box-shadow: 0 10px 24px rgba(2,6,23,.05);
+}
+.deliveryPanelTitle{
+  font-size:13px;
+  font-weight:1000;
+  margin-bottom:8px;
+}
+.deliveryQuickCard,
+.deliverySummaryCard,
+.deliveryAnalyticsCard,
+.deliveryRecentCard{
+  margin-top:12px;
+}
+.deliveryQuickCard,
+.deliverySummaryCard,
+.deliveryAnalyticsCard,
+.deliveryRecentCard{
+  padding:16px;
+}
+.deliverySummaryGrid{
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.deliverySummaryGrid .statCard{
+  padding:12px;
+}
+.deliverySummaryGrid .statValue{
+  font-size:24px;
+}
+.deliverySummaryGrid .statLabel{
+  font-size:11px;
+}
+.deliveryDateCard,
+.deliveryRunChooserCard,
+.deliveryDayCard,
+.deliveryWeekCard{
+  margin-top:12px;
+}
+.deliveryDateNav{
+  display:grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items:center;
+  gap:10px;
+}
+.deliveryDateCenter{
+  min-width:0;
+  text-align:center;
+}
+.deliveryDateLabel{
+  font-size:20px;
+  font-weight:1000;
+  letter-spacing:-.045em;
+  line-height:1.05;
+}
+.deliveryDateMeta{
+  margin-top:4px;
+  font-size:13px;
+  font-weight:800;
+  color: var(--muted-2);
+}
+.deliveryDateBtn{
+  min-width: 44px;
+  padding-inline: 14px;
+}
+.deliveryRunChooser{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap:10px;
+}
+.deliveryRunChoice{
   padding:14px;
+  border-radius:18px;
+  border:1px solid rgba(15,23,42,.08);
+  background: rgba(255,255,255,.72);
+  box-shadow: 0 10px 24px rgba(2,6,23,.05);
+  text-align:left;
+}
+.deliveryRunChoice.is-filled{
+  background: linear-gradient(180deg, rgba(37,99,235,.10), rgba(255,255,255,.82));
+  border-color: rgba(37,99,235,.16);
+}
+.deliveryRunChoice.is-active{
+  border-color: rgba(37,99,235,.28);
+  background: linear-gradient(180deg, rgba(37,99,235,.14), rgba(255,255,255,.90));
+  box-shadow: 0 16px 34px rgba(37,99,235,.12);
+  transform: translateY(-1px);
+}
+.deliveryRunChoiceLabel{
+  display:block;
+  font-size:16px;
+  font-weight:1000;
+  letter-spacing:-.03em;
+}
+.deliveryRunChoiceSub{
+  display:block;
+  margin-top:4px;
+  font-size:12px;
+  line-height:1.35;
+  color: var(--muted-2);
+  font-weight:800;
+}
+.deliveryRunChoice.is-filled .deliveryRunChoiceSub{
+  color: var(--text);
+}
+.deliverySummaryList{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  margin-top: 8px;
+}
+.deliverySummaryRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  width:100%;
+  padding:12px 14px;
+  border-radius:16px;
+  background: rgba(255,255,255,.72);
+  border:1px solid rgba(15,23,42,.08);
+  box-shadow: 0 10px 24px rgba(2,6,23,.05);
+  text-align:left;
+}
+.deliverySummaryRow.is-filled{
+  border-color: rgba(37,99,235,.16);
+  background: rgba(255,255,255,.84);
+}
+.deliverySummaryRow.is-active{
+  border-color: rgba(37,99,235,.28);
+  background: linear-gradient(180deg, rgba(37,99,235,.10), rgba(255,255,255,.92));
+  box-shadow: 0 16px 34px rgba(37,99,235,.11);
+}
+.deliverySummaryRowLabel{
+  font-size:12px;
+  font-weight:1000;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  color: var(--muted);
+}
+.deliverySummaryRowMid{
+  flex:1 1 auto;
+  min-width:0;
+  text-align:center;
+  font-size:14px;
+  font-weight:900;
+  color: var(--text);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.deliverySummaryRowValue{
+  min-width:42px;
+  text-align:right;
+  font-size:14px;
+  font-weight:900;
+  color: var(--text);
+}
+.deliveryDayTotal{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+}
+.deliveryDayTotalLabel{
+  font-size:11px;
+  font-weight:1000;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color: var(--muted);
+}
+.deliveryDayTotalValue{
+  margin-top:3px;
+  font-size:30px;
+  font-weight:1000;
+  line-height:1;
+  letter-spacing:-.04em;
+}
+.deliveryDayTotalHint{
+  margin-top:4px;
+  font-size:12px;
+  font-weight:800;
+  color: var(--muted-2);
+}
+.deliveryWeekBoard{
+  display:grid;
+  grid-auto-flow:column;
+  grid-auto-columns: minmax(116px, 1fr);
+  gap:10px;
+  overflow-x:auto;
+  padding-bottom:2px;
+  scrollbar-width: thin;
+}
+.deliveryWeekDay{
+  text-align:left;
+  padding:12px;
   border-radius:18px;
   background: rgba(255,255,255,.72);
   border:1px solid rgba(15,23,42,.08);
   box-shadow: 0 10px 24px rgba(2,6,23,.05);
 }
-.deliveryPanelTitle{
+.deliveryWeekDay.is-active{
+  border-color: rgba(37,99,235,.20);
+  background: rgba(255,255,255,.86);
+}
+.deliveryWeekDay.is-selected{
+  border-color: rgba(37,99,235,.20);
+  box-shadow: 0 18px 38px rgba(37,99,235,.13);
+}
+.deliveryWeekDay.is-today{
+  border-color: rgba(245,158,11,.18);
+}
+.deliveryWeekDayHead{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:8px;
+}
+.deliveryWeekDayName{
   font-size:14px;
   font-weight:1000;
-  margin-bottom:10px;
+  letter-spacing:-.03em;
+}
+.deliveryWeekDayDate{
+  font-size:12px;
+  font-weight:800;
+  color: var(--muted-2);
+}
+.deliveryWeekDayLine{
+  display:block;
+  margin-top:6px;
+  font-size:11px;
+  line-height:1.35;
+  font-weight:900;
+  color: var(--muted-2);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.deliveryEditorOverlay{
+  position:fixed;
+  inset:0;
+  z-index:80;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  padding:12px;
+  background: rgba(15,23,42,.34);
+  backdrop-filter: blur(10px);
+}
+.deliveryEditorSheet{
+  width:min(560px, 100%);
+  border-radius:28px;
+  padding:16px;
+  background: rgba(255,255,255,.96);
+  border:1px solid rgba(15,23,42,.08);
+  box-shadow: 0 24px 60px rgba(15,23,42,.18);
+}
+.deliveryEditorHead{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:12px;
+}
+.deliveryEditorTitle{
+  font-size:20px;
+  font-weight:1000;
+  letter-spacing:-.04em;
+}
+.deliveryEditorDate{
+  margin-top:4px;
+  font-size:13px;
+  font-weight:800;
+  color: var(--muted-2);
+}
+.deliveryEditorClose{
+  width:40px;
+  height:40px;
+  border-radius:14px;
+  border:1px solid rgba(15,23,42,.08);
+  background: rgba(255,255,255,.82);
+  font-size:24px;
+  line-height:1;
+  font-weight:800;
+}
+.deliveryEditorSummary{
+  margin-top:12px;
+  padding:12px 14px;
+  border-radius:16px;
+  background: rgba(37,99,235,.08);
+  border:1px solid rgba(37,99,235,.12);
+  color: var(--text);
+  font-weight:900;
+  line-height:1.4;
+}
+.deliveryEditorGroup{
+  margin-top:14px;
+}
+.deliveryEditorLocations{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap:10px;
+  margin-top:8px;
+}
+.deliveryLocationBtn{
+  min-height:46px;
+  padding:0 14px;
+  border-radius:16px;
+  border:1px solid rgba(15,23,42,.08);
+  background: rgba(255,255,255,.72);
+  font-weight:900;
+  color: var(--muted);
+}
+.deliveryLocationBtn.is-active{
+  background: linear-gradient(180deg, rgba(37,99,235,.12), rgba(255,255,255,.86));
+  color: var(--blue-700);
+  border-color: rgba(37,99,235,.18);
+  box-shadow: 0 12px 24px rgba(37,99,235,.10);
+}
+.deliveryQtyGrid{
+  display:grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap:8px;
+  margin-top:8px;
+}
+.deliveryQtyBtn{
+  min-height:42px;
+  border-radius:14px;
+  border:1px solid rgba(15,23,42,.08);
+  background: rgba(255,255,255,.72);
+  font-weight:1000;
+  color: var(--muted);
+}
+.deliveryQtyBtn.is-active{
+  background: linear-gradient(180deg, rgba(16,185,129,.16), rgba(255,255,255,.86));
+  color: #0f7a3c;
+  border-color: rgba(16,185,129,.22);
+}
+.deliveryEditorFooter{
+  margin-top:14px;
+  display:flex;
+  justify-content:flex-end;
+}
+.deliveryEditorSave{
+  min-width: 44%;
+}
+.deliveryDayCard.is-savedFlash{
+  animation: deliveryFlash .9s ease;
+}
+@keyframes deliveryFlash{
+  0%{ box-shadow: 0 0 0 0 rgba(37,99,235,.18); }
+  60%{ box-shadow: 0 0 0 6px rgba(37,99,235,.08); }
+  100%{ box-shadow: 0 0 0 0 rgba(37,99,235,0); }
+}
+.deliveriesMsg{
+  margin-top:8px;
+}
+.deliveryAnalyticsGrid{
+  display:grid;
+  gap:12px;
+}
+.deliveryChartBlock{
+  padding-top:12px;
+  border-top:1px solid rgba(15,23,42,.08);
+}
+.deliveryChartBlock:first-child{
+  padding-top:0;
+  border-top:0;
+}
+.chartCardTitleSmall{
+  font-size:14px;
+  font-weight:1000;
+  margin-bottom:8px;
+  letter-spacing:-.02em;
 }
 .toggleRow{
   display:flex;
@@ -518,14 +995,15 @@ body{
 .deliveriesList{
   display:flex;
   flex-direction:column;
-  gap:10px;
+  gap:8px;
 }
 .deliveryRow{
   display:flex;
+  align-items:flex-start;
   justify-content:space-between;
   gap:12px;
-  padding:14px;
-  border-radius:18px;
+  padding:12px;
+  border-radius:16px;
   background: rgba(255,255,255,.72);
   border:1px solid rgba(15,23,42,.08);
   box-shadow: 0 10px 24px rgba(2,6,23,.05);
@@ -534,13 +1012,27 @@ body{
   border-color: rgba(37,99,235,.22);
   box-shadow: 0 14px 30px rgba(2,6,23,.08);
 }
-.deliveryRowMain{ min-width:0; }
-.deliveryRowDate{ font-weight:1000; font-size:15px; }
-.deliveryRowMeta{
+.deliveryRowMain{
+  min-width:0;
+  flex:1 1 auto;
+}
+.deliveryRowTopLine{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:12px;
+}
+.deliveryRowDate{
+  font-weight:1000;
+  font-size:14px;
+  letter-spacing:-.02em;
+}
+.deliveryRowSummary{
   margin-top:6px;
   color: var(--muted);
-  font-weight:900;
+  font-weight:800;
   line-height:1.4;
+  font-size:13px;
 }
 .deliveryRowSide{
   display:flex;
@@ -551,11 +1043,22 @@ body{
   flex:0 0 auto;
 }
 .deliveryRowTotal{
-  font-size:26px;
+  font-size:22px;
   font-weight:1000;
   line-height:1;
 }
-.deliveryEditBtn{ white-space: nowrap; }
+.deliveryEditBtn{
+  white-space: nowrap;
+  flex:0 0 auto;
+  align-self:flex-start;
+}
+.deliveriesGatewayMeta{
+  margin-top:8px;
+}
+.deliveriesGatewayDot{
+  margin:0 4px;
+  opacity:.7;
+}
 .formHint{
   color: var(--muted);
   font-weight:900;
@@ -777,9 +1280,11 @@ body{
   }
   .navItem{ padding: 11px 8px; font-size: 12px; }
   .grid2,
-  .deliveryGrid,
   .statGrid,
   .statGrid--compact{ grid-template-columns: 1fr; }
+  .deliveryGrid,
+  .deliverySummaryGrid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .todayEarnSummary{ grid-template-columns: 1fr; }
 }
 /* ===== Current week header (label + add button) ===== */
 .cwHeader{
@@ -1196,6 +1701,22 @@ body{
 /* remove qualquer limite herdado */
 .card.cwCard {
   overflow: hidden;
+}
+
+#cardDeliveries{
+  margin-top: 14px;
+}
+
+#cardDeliveries .listTitle{
+  font-size: 16px;
+}
+
+#cardDeliveries .reportsSub{
+  font-size: 13px;
+}
+
+#deliveriesTopLocationInline{
+  margin-top: 6px;
 }
 /* Top profile avatar button */
 .topAvatarBtn{

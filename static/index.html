@@ -190,6 +190,40 @@
                 <div id="todayEarnPay" class="teValue">€ . </div>
               </div>
             </div>
+
+            <div id="todayEarnSummary" class="todayEarnSummary hidden">
+              <div class="todayEarnSummaryCol">
+                <div class="todayEarnSummaryKicker">Today</div>
+                <div class="todayEarnSummaryItem">
+                  <div class="todayEarnSummaryLabel">Hours worked today</div>
+                  <div id="todayEarnDayHours" class="teValue teValue--small">00:00:00</div>
+                </div>
+                <div class="todayEarnSummaryItem">
+                  <div class="todayEarnSummaryLabel">Earned today</div>
+                  <div id="todayEarnDayEarned" class="teValue teValue--small">€0.00</div>
+                </div>
+                <div class="todayEarnSummaryItem">
+                  <div class="todayEarnSummaryLabel">Deliveries done today</div>
+                  <div id="todayEarnDayDeliveries" class="teValue teValue--small">0</div>
+                </div>
+              </div>
+
+              <div class="todayEarnSummaryCol">
+                <div class="todayEarnSummaryKicker">This week</div>
+                <div class="todayEarnSummaryItem">
+                  <div class="todayEarnSummaryLabel">Current week total</div>
+                  <div id="todayEarnWeekTotal" class="teValue teValue--small">â‚¬0.00</div>
+                </div>
+                <div class="todayEarnSummaryItem">
+                  <div class="todayEarnSummaryLabel">Total hours this week</div>
+                  <div id="todayEarnWeekHours" class="teValue teValue--small">00:00</div>
+                </div>
+                <div class="todayEarnSummaryItem">
+                  <div class="todayEarnSummaryLabel">Expected earnings</div>
+                  <div id="todayEarnExpected" class="teValue teValue--small">â€”</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -247,6 +281,21 @@
         </div>
       </section>
 
+      <section class="card card--reports" id="cardDeliveries">
+        <div class="listRowTop">
+          <div>
+            <div class="listTitle">🚚 Deliveries Tracker</div>
+            <div class="reportsSub">Fast logging for mobile runs</div>
+          </div>
+          <div class="chev">›</div>
+        </div>
+        <div class="reportsSub deliveriesGatewayMeta">
+          This week: <strong id="deliveriesWeekInline">0</strong> deliveries
+          <span class="deliveriesGatewayDot">•</span>
+          Top: <span id="deliveriesTopLocationInline">-</span>
+        </div>
+      </section>
+
       <!-- BANK HOLIDAYS CARD -->
       <section class="card card--list" id="cardHolidays">
         <div class="listRowTop">
@@ -260,21 +309,11 @@
       <!-- REPORTS CARD -->
       <section class="card card--reports" id="cardReports">
         <div class="listRowTop">
-          <div class="listTitle">📅 Week Summary</div>
+          <div class="listTitle">🗓 Week Summary</div>
           <div class="reportsSub">Weeks • Edit • Print</div>
           <div class="chev">›</div>
         </div>
         <div class="reportsSub">View your work summaries</div>
-      </section>
-
-      <section class="card card--reports" id="cardDeliveries">
-        <div class="listRowTop">
-          <div class="listTitle">🚚 Deliveries Tracker</div>
-          <div class="reportsSub">Runs • Stats • Charts</div>
-          <div class="chev">›</div>
-        </div>
-        <div class="reportsSub">Log Dublin 8 and Dublin 15 runs</div>
-        <div class="reportsSub">This week: <strong id="deliveriesWeekInline">0</strong> deliveries</div>
       </section>
 
       <section class="card card--reports" id="cardSettings">

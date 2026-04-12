@@ -11,175 +11,123 @@
   <link rel="manifest" href="/static/manifest.webmanifest" />
   <link rel="icon" href="/static/logo.png" />
   <link rel="stylesheet" href="/static/app.css?v=1003" />
-
-  <style>
-    .deliveriesWrap{ width:min(980px,100%); margin:0 auto; padding:22px 16px 120px; }
-    .sectionHead{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
-    .sectionTitle{ font-size:38px; font-weight:1000; letter-spacing:-.03em; line-height:1; margin:0; }
-    .sectionSub{ margin-top:6px; color: var(--muted); font-weight:900; }
-    .stack{ display:grid; gap:14px; }
-    .chartCard{ padding:16px; }
-    .chartCardTitle{ font-weight:1000; font-size:16px; margin-bottom:10px; }
-    .chartHint{ color: var(--muted); font-weight:900; font-size:13px; margin-top:6px; }
-    .heroStrip{
-      margin-bottom:14px;
-      padding:16px;
-      border-radius:24px;
-      background:
-        radial-gradient(700px 200px at 100% 0%, rgba(37,99,235,.14), transparent 58%),
-        rgba(255,255,255,.72);
-      border:1px solid rgba(255,255,255,.72);
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(18px) saturate(140%);
-    }
-    .heroStripTitle{
-      font-size:18px;
-      font-weight:1000;
-      letter-spacing:-.02em;
-    }
-    .heroStripSub{
-      margin-top:6px;
-      color:var(--muted);
-      font-weight:900;
-      line-height:1.45;
-    }
-  </style>
 </head>
 <body>
-  <main class="deliveriesWrap">
-    <header class="sectionHead">
-      <div>
-        <h1 class="sectionTitle">Deliveries</h1>
-        <div class="sectionSub">Fast daily logging for Dublin 8 and Dublin 15 runs</div>
+  <main class="deliveriesWrap deliveriesPage">
+    <header class="deliveriesHeader">
+      <div class="deliveriesHeaderCopy">
+        <h1 class="deliveriesTitle">Deliveries</h1>
+        <div class="deliveriesSubtitle">Tap a date, pick a run, and log it fast on mobile.</div>
       </div>
-      <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
+      <div class="deliveriesHeaderActions">
         <button id="btnDeliveriesToday" class="btn btn--pill btn--soft" type="button">Today</button>
         <button id="btnDeliveriesRefresh" class="btn btn--pill btn--ghost" type="button">Refresh</button>
         <button id="btnHome" class="btn btn--pill btn--ghost" type="button" onclick="location.href='/'">Home</button>
       </div>
     </header>
 
-    <section class="heroStrip">
-      <div class="heroStripTitle">Premium delivery logging</div>
-      <div class="heroStripSub">Keep Run 1 and Run 2 clean, editable, and easy to scan on a phone.</div>
-    </section>
-
-    <section class="card card--big">
-      <div class="statGrid">
-        <div class="statCard">
-          <div class="statLabel">This week</div>
-          <div id="deliveriesWeekTotal" class="statValue">0</div>
+    <section class="card card--big deliveryDateCard">
+      <div class="deliveryDateNav">
+        <button id="deliveryDatePrev" class="btn btn--pill btn--ghost deliveryDateBtn" type="button" aria-label="Previous day">&larr;</button>
+        <div class="deliveryDateCenter">
+          <div id="deliveriesSelectedDateLabel" class="deliveryDateLabel">Today</div>
+          <div id="deliveriesSelectedWeekLabel" class="deliveryDateMeta">Tesco Week --</div>
         </div>
-        <div class="statCard">
-          <div class="statLabel">This month</div>
-          <div id="deliveriesMonthTotal" class="statValue">0</div>
-        </div>
-        <div class="statCard">
-          <div class="statLabel">Avg / day</div>
-          <div id="deliveriesAvgDay" class="statValue">0.0</div>
-        </div>
-        <div class="statCard">
-          <div class="statLabel">Top location</div>
-          <div id="deliveriesTopLocation" class="statValue">—</div>
-        </div>
+        <button id="deliveryDateNext" class="btn btn--pill btn--ghost deliveryDateBtn" type="button" aria-label="Next day">&rarr;</button>
       </div>
     </section>
 
-    <section class="card card--big">
-      <form id="deliveriesForm" class="formStack">
-        <div class="grid2">
-          <label class="field">
-            <span>Date</span>
-            <input id="deliveriesDate" type="date" required />
-          </label>
-          <div class="formHint">
-            Save both runs for the day in one tap. You can still edit past days from the list below.
-          </div>
+    <section class="card card--big deliveryRunChooserCard">
+      <div class="deliverySectionHead">
+        <div>
+          <div class="deliverySectionTitle">Choose a run</div>
+          <div class="deliverySectionSub">Tap one to edit location and quantity.</div>
         </div>
-
-        <div class="deliveryGrid">
-          <section class="deliveryPanel">
-            <div class="deliveryPanelTitle">Run 1</div>
-            <label class="field">
-              <span>Location</span>
-              <select id="run1Location">
-                <option>Dublin 8</option>
-                <option>Dublin 15</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Deliveries</span>
-              <input id="run1Count" type="number" min="0" step="1" value="0" required />
-            </label>
-          </section>
-
-          <section class="deliveryPanel">
-            <div class="deliveryPanelTitle">Run 2</div>
-            <label class="field">
-              <span>Location</span>
-              <select id="run2Location">
-                <option>Dublin 15</option>
-                <option>Dublin 8</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Deliveries</span>
-              <input id="run2Count" type="number" min="0" step="1" value="0" required />
-            </label>
-          </section>
-        </div>
-
-        <div class="rowActions">
-          <button class="pill pill--green" type="submit">Save deliveries</button>
-        </div>
-        <div id="deliveriesMsg" class="msg" aria-live="polite"></div>
-      </form>
-    </section>
-
-    <section class="stack">
-      <section class="card chartCard">
-        <div class="chartCardTitle">Weekly deliveries trend</div>
-        <div id="deliveriesWeekChart" class="chartStack"></div>
-      </section>
-
-      <section class="card chartCard">
-        <div class="chartCardTitle">Monthly deliveries trend</div>
-        <div id="deliveriesMonthChart" class="chartStack"></div>
-      </section>
-
-      <section class="card chartCard">
-        <div class="chartCardTitle">Location distribution</div>
-        <div id="deliveriesLocationChart" class="chartStack"></div>
-      </section>
-    </section>
-
-    <section class="card card--big">
-      <div class="statGrid statGrid--compact">
-        <div class="statCard">
-          <div class="statLabel">Avg / week</div>
-          <div id="deliveriesAvgWeek" class="statValue">0.0</div>
-        </div>
-        <div class="statCard">
-          <div class="statLabel">Run 1 total</div>
-          <div id="deliveriesRun1Total" class="statValue">0</div>
-        </div>
-        <div class="statCard">
-          <div class="statLabel">Run 2 total</div>
-          <div id="deliveriesRun2Total" class="statValue">0</div>
-        </div>
+      </div>
+      <div class="deliveryRunChooser">
+        <button id="deliveryRun1Btn" class="deliveryRunChoice" type="button">
+          <span class="deliveryRunChoiceLabel">Run 1</span>
+          <span id="deliveryRun1State" class="deliveryRunChoiceSub">Not set</span>
+        </button>
+        <button id="deliveryRun2Btn" class="deliveryRunChoice" type="button">
+          <span class="deliveryRunChoiceLabel">Run 2</span>
+          <span id="deliveryRun2State" class="deliveryRunChoiceSub">Not set</span>
+        </button>
       </div>
     </section>
 
-    <section class="card card--big">
-      <div class="listRowTop">
-        <div class="listTitle">Recent deliveries</div>
-        <div class="reportsSub">Tap a row to load the day</div>
+    <section class="card card--big deliveryDayCard">
+      <div class="deliverySectionHead">
+        <div>
+          <div class="deliverySectionTitle">Day summary</div>
+          <div class="deliverySectionSub">Current saved state for the selected date.</div>
+        </div>
+        <div class="deliveryDayTotal">
+          <div class="deliveryDayTotalLabel">TOTAL TODAY</div>
+          <div id="deliveriesDayTotal" class="deliveryDayTotalValue">0</div>
+          <div class="deliveryDayTotalHint">across Run 1 and Run 2</div>
+        </div>
       </div>
-      <div id="deliveriesList" class="deliveriesList"></div>
+
+      <div class="deliverySummaryList">
+        <button id="deliverySummaryRun1" class="deliverySummaryRow" type="button">
+          <span class="deliverySummaryRowLabel">Run 1</span>
+          <span id="deliveriesRun1Location" class="deliverySummaryRowMid">Tap to add</span>
+          <span id="deliveriesRun1Summary" class="deliverySummaryRowValue">—</span>
+        </button>
+        <button id="deliverySummaryRun2" class="deliverySummaryRow" type="button">
+          <span class="deliverySummaryRowLabel">Run 2</span>
+          <span id="deliveriesRun2Location" class="deliverySummaryRowMid">Tap to add</span>
+          <span id="deliveriesRun2Summary" class="deliverySummaryRowValue">—</span>
+        </button>
+      </div>
+
+      <div id="deliveriesMsg" class="msg deliveriesMsg" aria-live="polite"></div>
+    </section>
+
+    <section class="card card--big deliveryWeekCard">
+      <div class="deliverySectionHead">
+        <div>
+          <div class="deliverySectionTitle">Week view</div>
+          <div class="deliverySectionSub">Linked to the selected date and Tesco week.</div>
+        </div>
+      </div>
+      <div id="deliveriesWeekBoard" class="deliveryWeekBoard" aria-label="Weekly delivery summary"></div>
     </section>
 
     <div class="safeSpace"></div>
   </main>
+
+  <div id="deliveryEditorOverlay" class="deliveryEditorOverlay hidden" aria-hidden="true">
+    <div class="deliveryEditorSheet" role="dialog" aria-modal="true" aria-labelledby="deliveryEditorTitle">
+      <div class="deliveryEditorHead">
+        <div>
+          <div id="deliveryEditorTitle" class="deliveryEditorTitle">Run 1</div>
+          <div id="deliveryEditorDate" class="deliveryEditorDate">Sun 12/04</div>
+        </div>
+        <button id="deliveryEditorClose" class="deliveryEditorClose" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div id="deliveryEditorSummary" class="deliveryEditorSummary">Choose a location and a quantity.</div>
+
+      <div class="deliveryEditorGroup">
+        <div class="deliverySectionSub">Location</div>
+        <div class="deliveryEditorLocations">
+          <button id="deliveryEditorLocation8" class="deliveryLocationBtn" type="button">Dublin 8</button>
+          <button id="deliveryEditorLocation15" class="deliveryLocationBtn" type="button">Dublin 15</button>
+        </div>
+      </div>
+
+      <div class="deliveryEditorGroup">
+        <div class="deliverySectionSub">Quantity</div>
+        <div id="deliveryEditorQtyGrid" class="deliveryQtyGrid" aria-label="Delivery quantity"></div>
+      </div>
+
+      <div class="deliveryEditorFooter">
+        <button id="deliveryEditorSave" class="pill pill--green deliveryEditorSave" type="button">Save run</button>
+      </div>
+    </div>
+  </div>
 
   <script defer src="/static/app.js?v=1003"></script>
 </body>

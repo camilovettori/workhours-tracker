@@ -1,4 +1,4 @@
-/* =========================
+﻿/* =========================
    Work Hours Tracker - app.js (v18)
    FULL REBUILD (bugfix + cleanup)
 
@@ -417,6 +417,7 @@ const cardReports  = $("cardReports");
 const cardDeliveries = $("cardDeliveries");
 const cardSettings = $("cardSettings");
 const deliveriesWeekInline = $("deliveriesWeekInline");
+const deliveriesTopLocationInline = $("deliveriesTopLocationInline");
 
 const navHome    = $("navHome");
 const navHistory = $("navHistory");
@@ -963,19 +964,91 @@ async function sendReset() {
 /* =========================
    Today Earnings (LIVE)
 ========================= */
+function getTodayWorkedSeconds() {
+  if (!CLOCK?.in_time) return 0;
+
+  const now = new Date();
+  const [ih, im] = String(CLOCK.in_time).split(":").map(Number);
+  const inDt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), ih || 0, im || 0, 0);
+
+  let endDt = now;
+  if (CLOCK.out_time) {
+    const [oh, om] = String(CLOCK.out_time).split(":").map(Number);
+    endDt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), oh || 0, om || 0, 0);
+  }
+
+  const rawWorkedSec = Math.max(0, Math.floor((endDt - inDt) / 1000));
+  const breakMin = Number(CLOCK.break_minutes || 0);
+  return Math.max(0, rawWorkedSec - breakMin * 60);
+}
+
+function getTodayDeliveriesDone() {
+  const items = Array.isArray(DELIVERY_STATE?.items) ? DELIVERY_STATE.items : [];
+  const today = todayYMD();
+  return items
+    .filter((item) => item?.work_date === today)
+    .reduce((sum, item) => sum + Number(item?.delivery_count || 0), 0);
+}
+
+function getTodayEarnedAmount() {
+  if (!CLOCK?.has_week || !CLOCK?.in_time) return 0;
+
+  const rate =
+    Number(ME?.hourly_rate ?? 0) ||
+    Number(LAST_DASH?.this_week?.hourly_rate ?? 0) ||
+    Number(getSavedRate() ?? 0);
+
+  if (!Number.isFinite(rate) || rate <= 0) return 0;
+
+  const workedSec = getTodayWorkedSeconds();
+  return (workedSec / 3600) * rate * Number(window.TODAY_MULT || 1);
+}
+
+function getExpectedEarningsText() {
+  const expected = Number(LAST_DASH?.this_week?.pay_eur);
+  if (Number.isFinite(expected)) return fmtEUR(expected);
+  return "—";
+}
+
 function updateTodayEarningsUI() {
   const tHHMM  = $("todayEarnHHMM");
   const tPAY   = $("todayEarnPay");
   const tSTATE = $("todayEarnState");
   const tCard  = document.getElementById("todayEarnCard");
+  const tLive   = tCard?.querySelector(".teGrid.teGrid--2");
+  const tSummary = $("todayEarnSummary");
+  const tDayHours = $("todayEarnDayHours");
+  const tDayEarned = $("todayEarnDayEarned");
+  const tDayDeliveries = $("todayEarnDayDeliveries");
+  const tWeekTotal = $("todayEarnWeekTotal");
+  const tWeekHours = $("todayEarnWeekHours");
+  const tExpected = $("todayEarnExpected");
 
   const isLive =
     !!CLOCK?.has_week &&
     !!CLOCK?.in_time &&
     !CLOCK?.out_time &&
     !CLOCK?.break_running;
+  const isSummary = !!CLOCK?.has_week && !!CLOCK?.in_time && !!CLOCK?.out_time;
 
   if (tCard) tCard.classList.toggle("is-live", isLive);
+  if (tCard) tCard.classList.toggle("is-summary", isSummary);
+  if (tLive) tLive.classList.toggle("hidden", isSummary);
+  if (tSummary) tSummary.classList.toggle("hidden", !isSummary);
+
+  if (isSummary) {
+    if (tSTATE) tSTATE.textContent = "SUMMARY";
+    if (tDayHours) tDayHours.textContent = secondsToHHMMSS(getTodayWorkedSeconds());
+    if (tDayEarned) tDayEarned.textContent = fmtEUR(getTodayEarnedAmount());
+    if (tDayDeliveries) tDayDeliveries.textContent = String(getTodayDeliveriesDone());
+    if (tWeekTotal) tWeekTotal.textContent = fmtEUR(Number(LAST_DASH?.this_week?.pay_eur ?? 0));
+    if (tWeekHours) tWeekHours.textContent = String(cwHHMM?.textContent || "00:00");
+    if (tExpected) tExpected.textContent = getExpectedEarningsText();
+    if (tHHMM) tHHMM.textContent = String(cwHHMM?.textContent || "00:00");
+    if (tPAY) tPAY.textContent = String(cwPay?.textContent || fmtEUR(0));
+    return;
+  }
+
   if (!tHHMM || !tPAY) return;
 
   if (!CLOCK?.has_week || !CLOCK?.in_time) {
@@ -1011,19 +1084,7 @@ function updateTodayEarningsUI() {
     if (tSTATE) tSTATE.textContent = "LIVE";
   }
 
-  const now = new Date();
-  const [ih, im] = String(CLOCK.in_time).split(":").map(Number);
-  const inDt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), ih || 0, im || 0, 0);
-
-  let endDt = now;
-  if (CLOCK.out_time) {
-    const [oh, om] = String(CLOCK.out_time).split(":").map(Number);
-    endDt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), oh || 0, om || 0, 0);
-  }
-
-  let workedSec = Math.max(0, Math.floor((endDt - inDt) / 1000));
-  const brMin = Number(CLOCK.break_minutes || 0);
-  workedSec = Math.max(0, workedSec - brMin * 60);
+  const workedSec = getTodayWorkedSeconds();
 
   const eur = (workedSec / 3600) * rate * Number(window.TODAY_MULT || 1);
 
@@ -1670,6 +1731,14 @@ async function createWeekFromPage(ev) {
    Deliveries page
 ========================= */
 const DELIVERY_LOC_OPTIONS = ["Dublin 8", "Dublin 15"];
+const DELIVERY_QTY_OPTIONS = Array.from({ length: 15 }, (_, i) => i + 1);
+
+let DELIVERY_PAGE_STATE = {
+  selectedDate: todayYMD(),
+  stats: null,
+  selectedDay: { work_date: todayYMD(), items: [] },
+  editor: { open: false, runNo: 1, location: DELIVERY_LOC_OPTIONS[0], quantity: 1 },
+};
 
 function groupDeliveriesByDay(items) {
   const map = new Map();
@@ -1703,26 +1772,36 @@ function renderBarChart(container, items, options = {}) {
 
 function deliveryPageElements() {
   return {
-    form: $("deliveriesForm"),
-    date: $("deliveriesDate"),
-    run1Count: $("run1Count"),
-    run1Location: $("run1Location"),
-    run2Count: $("run2Count"),
-    run2Location: $("run2Location"),
+    datePrev: $("deliveryDatePrev"),
+    dateNext: $("deliveryDateNext"),
+    selectedDateLabel: $("deliveriesSelectedDateLabel"),
+    selectedWeekLabel: $("deliveriesSelectedWeekLabel"),
+    dayTotal: $("deliveriesDayTotal"),
+    dayTotalHint: $("deliveriesDayTotalHint"),
+    run1Summary: $("deliveriesRun1Summary"),
+    run1Location: $("deliveriesRun1Location"),
+    run2Summary: $("deliveriesRun2Summary"),
+    run2Location: $("deliveriesRun2Location"),
+    summaryRun1: $("deliverySummaryRun1"),
+    summaryRun2: $("deliverySummaryRun2"),
+    run1Btn: $("deliveryRun1Btn"),
+    run2Btn: $("deliveryRun2Btn"),
+    run1State: $("deliveryRun1State"),
+    run2State: $("deliveryRun2State"),
+    weekBoard: $("deliveriesWeekBoard"),
     msg: $("deliveriesMsg"),
-    weekTotal: $("deliveriesWeekTotal"),
-    monthTotal: $("deliveriesMonthTotal"),
-    avgDay: $("deliveriesAvgDay"),
-    avgWeek: $("deliveriesAvgWeek"),
-    topLocation: $("deliveriesTopLocation"),
-    run1Total: $("deliveriesRun1Total"),
-    run2Total: $("deliveriesRun2Total"),
-    weekChart: $("deliveriesWeekChart"),
-    monthChart: $("deliveriesMonthChart"),
-    locationChart: $("deliveriesLocationChart"),
-    list: $("deliveriesList"),
+    editorOverlay: $("deliveryEditorOverlay"),
+    editorClose: $("deliveryEditorClose"),
+    editorTitle: $("deliveryEditorTitle"),
+    editorDate: $("deliveryEditorDate"),
+    editorSummary: $("deliveryEditorSummary"),
+    editorLocation8: $("deliveryEditorLocation8"),
+    editorLocation15: $("deliveryEditorLocation15"),
+    editorQtyGrid: $("deliveryEditorQtyGrid"),
+    editorSave: $("deliveryEditorSave"),
     refreshBtn: $("btnDeliveriesRefresh"),
     todayBtn: $("btnDeliveriesToday"),
+    homeBtn: $("btnHome"),
   };
 }
 
@@ -1730,140 +1809,333 @@ async function loadDeliveriesStats() {
   const res = await api("/api/deliveries/stats");
   if (!res) return null;
   DELIVERY_STATE = res;
+  DELIVERY_PAGE_STATE.stats = res;
   return res;
 }
 
 function populateDeliveryForm(dayPayload) {
-  const els = deliveryPageElements();
-  if (!els.date) return;
-  const dateValue = dayPayload?.work_date || todayYMD();
-  els.date.value = dateValue;
+  const normalized = normalizeDeliveryDay(dayPayload, dayPayload?.work_date || DELIVERY_PAGE_STATE.selectedDate || todayYMD());
+  DELIVERY_PAGE_STATE.selectedDate = normalized.work_date;
+  DELIVERY_PAGE_STATE.selectedDay = normalized;
+}
 
-  const items = Array.isArray(dayPayload?.items) ? dayPayload.items : [];
-  const run1 = items.find((item) => Number(item.run_no) === 1);
-  const run2 = items.find((item) => Number(item.run_no) === 2);
+function formatDeliveryDateLabel(workDate) {
+  try {
+    const d = ymdToDateObj(workDate);
+    return `${weekdayShort(d)} ${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}`;
+  } catch {
+    return workDate || "";
+  }
+}
 
-  if (els.run1Count) els.run1Count.value = String(run1?.delivery_count ?? 0);
-  if (els.run1Location) els.run1Location.value = run1?.location || DELIVERY_LOC_OPTIONS[0];
-  if (els.run2Count) els.run2Count.value = String(run2?.delivery_count ?? 0);
-  if (els.run2Location) els.run2Location.value = run2?.location || DELIVERY_LOC_OPTIONS[1];
+function formatDeliveryDaySummary(run) {
+  if (!run) return { location: "Not set", qty: "—", state: "Not set" };
+  const qty = Number(run.delivery_count || 0);
+  return {
+    location: `${deliveryLocationAbbrev(run.location)} • ${qty} deliveries`,
+    qty: String(qty),
+    state: `${deliveryLocationAbbrev(run.location)} • ${qty} deliveries`,
+  };
+}
+
+function deliveryLocationAbbrev(location) {
+  const text = safeText(location).toLowerCase();
+  if (text.includes("15")) return "D15";
+  if (text.includes("8")) return "D8";
+  return safeText(location) || "-";
+}
+
+function normalizeDeliveryDay(dayPayload, fallbackDate) {
+  const items = Array.isArray(dayPayload?.items)
+    ? dayPayload.items
+        .map((item) => ({
+          ...item,
+          run_no: Number(item.run_no || 0),
+          delivery_count: Number(item.delivery_count || 0),
+          location: safeText(item.location || ""),
+        }))
+        .filter((item) => item.run_no === 1 || item.run_no === 2)
+        .sort((a, b) => Number(a.run_no) - Number(b.run_no))
+    : [];
+
+  return {
+    work_date: dayPayload?.work_date || fallbackDate || todayYMD(),
+    items,
+  };
+}
+
+function getDeliveryRun(day, runNo) {
+  const items = Array.isArray(day?.items) ? day.items : [];
+  return items.find((item) => Number(item.run_no) === Number(runNo)) || null;
+}
+
+function getDeliveryDayTotal(day) {
+  const items = Array.isArray(day?.items) ? day.items : [];
+  return items.reduce((sum, item) => sum + Number(item.delivery_count || 0), 0);
+}
+
+function getDeliveryWeekDays(dateValue) {
+  const start = sundayOfThisWeek(ymdToDateObj(dateValue || todayYMD()));
+  return Array.from({ length: 7 }, (_, idx) => ymdAddDays(start, idx));
+}
+
+function getSelectedDeliveryWeekLabel(dateValue) {
+  return `Tesco Week ${tescoWeekNumber(ymdToDateObj(dateValue || todayYMD()))}`;
 }
 
 async function loadDeliveryDay(dateValue) {
   const target = dateValue || todayYMD();
   const res = await api(`/api/deliveries/day?date_ymd=${encodeURIComponent(target)}`);
-  if (res) populateDeliveryForm(res);
+  populateDeliveryForm(res || { work_date: target, items: [] });
+  return DELIVERY_PAGE_STATE.selectedDay;
 }
 
-function renderDeliveryList(items) {
+function renderDeliveryPage() {
   const els = deliveryPageElements();
-  if (!els.list) return;
-  const groups = groupDeliveriesByDay(items);
-  if (!groups.length) {
-    els.list.innerHTML = `<div class="emptyState">No deliveries logged yet.</div>`;
-    return;
+  if (!els.selectedDateLabel) return;
+
+  const day = DELIVERY_PAGE_STATE.selectedDay || { work_date: DELIVERY_PAGE_STATE.selectedDate, items: [] };
+  const selectedDate = day.work_date || DELIVERY_PAGE_STATE.selectedDate || todayYMD();
+  const weekDays = getDeliveryWeekDays(selectedDate);
+
+  if (els.selectedDateLabel) {
+    const label = formatDeliveryDateLabel(selectedDate);
+    els.selectedDateLabel.textContent =
+      selectedDate === todayYMD() ? `Today · ${label}` : label;
+  }
+  if (els.selectedWeekLabel) {
+    els.selectedWeekLabel.textContent = getSelectedDeliveryWeekLabel(selectedDate);
   }
 
-  els.list.innerHTML = groups.map(([workDate, rows]) => {
-    const label = rows.map((r) => `Run ${r.run_no} • ${r.location} • ${r.delivery_count}`).join("<br>");
-    const total = rows.reduce((sum, r) => sum + Number(r.delivery_count || 0), 0);
-    return `
-      <article class="deliveryRow">
-        <div class="deliveryRowMain">
-          <div class="deliveryRowDate">${workDate}</div>
-          <div class="deliveryRowMeta">${label}</div>
-        </div>
-        <div class="deliveryRowSide">
-          <div class="deliveryRowTotal">${total}</div>
-          <button class="btn btn--pill btn--ghost deliveryEditBtn" type="button" data-day="${workDate}">Edit day</button>
-        </div>
-      </article>
-    `;
-  }).join("");
+  if (els.dayTotal) {
+    els.dayTotal.textContent = String(getDeliveryDayTotal(day));
+  }
 
-  els.list.querySelectorAll("[data-day]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const day = btn.getAttribute("data-day");
-      if (!day) return;
-      await loadDeliveryDay(day);
+  const run1 = getDeliveryRun(day, 1);
+  const run2 = getDeliveryRun(day, 2);
+
+  const r1 = formatDeliveryDaySummary(run1);
+  const r2 = formatDeliveryDaySummary(run2);
+
+  if (els.run1Location) els.run1Location.textContent = r1.location;
+  if (els.run2Location) els.run2Location.textContent = r2.location;
+  if (els.run1Summary) els.run1Summary.textContent = r1.qty;
+  if (els.run2Summary) els.run2Summary.textContent = r2.qty;
+  if (els.run1State) els.run1State.textContent = r1.state;
+  if (els.run2State) els.run2State.textContent = r2.state;
+
+  if (els.run1Btn) {
+    els.run1Btn.classList.toggle("is-filled", !!run1);
+    els.run1Btn.classList.toggle("is-active", DELIVERY_PAGE_STATE.editor.open && DELIVERY_PAGE_STATE.editor.runNo === 1);
+  }
+  if (els.run2Btn) {
+    els.run2Btn.classList.toggle("is-filled", !!run2);
+    els.run2Btn.classList.toggle("is-active", DELIVERY_PAGE_STATE.editor.open && DELIVERY_PAGE_STATE.editor.runNo === 2);
+  }
+  if (els.summaryRun1) {
+    els.summaryRun1.classList.toggle("is-filled", !!run1);
+    els.summaryRun1.classList.toggle("is-active", DELIVERY_PAGE_STATE.editor.open && DELIVERY_PAGE_STATE.editor.runNo === 1);
+  }
+  if (els.summaryRun2) {
+    els.summaryRun2.classList.toggle("is-filled", !!run2);
+    els.summaryRun2.classList.toggle("is-active", DELIVERY_PAGE_STATE.editor.open && DELIVERY_PAGE_STATE.editor.runNo === 2);
+  }
+
+  if (els.weekBoard) {
+    const items = Array.isArray(DELIVERY_PAGE_STATE.stats?.items) ? DELIVERY_PAGE_STATE.stats.items : [];
+    const dayMap = new Map();
+    items.forEach((item) => {
+      if (!dayMap.has(item.work_date)) dayMap.set(item.work_date, []);
+      dayMap.get(item.work_date).push(item);
     });
-  });
 
-  els.list.querySelectorAll(".deliveryRow").forEach((row) => {
-    row.addEventListener("click", async (ev) => {
-      if (ev.target.closest("button")) return;
-      const btn = row.querySelector("[data-day]");
-      if (btn) await loadDeliveryDay(btn.getAttribute("data-day"));
+    els.weekBoard.innerHTML = weekDays.map((ymd) => {
+      const rows = (dayMap.get(ymd) || []).slice().sort((a, b) => Number(a.run_no) - Number(b.run_no));
+      const d1 = getDeliveryRun({ items: rows }, 1);
+      const d2 = getDeliveryRun({ items: rows }, 2);
+      const active = ymd === selectedDate ? " is-selected" : "";
+      const isToday = ymd === todayYMD() ? " is-today" : "";
+      return `
+        <button class="deliveryWeekDay${active}${isToday}" type="button" data-date="${ymd}">
+          <span class="deliveryWeekDayHead">
+            <span class="deliveryWeekDayName">${weekdayShort(ymdToDateObj(ymd))}</span>
+            <span class="deliveryWeekDayDate">${pad2(ymdToDateObj(ymd).getDate())}/${pad2(ymdToDateObj(ymd).getMonth() + 1)}</span>
+          </span>
+          <span class="deliveryWeekDayLine">${d1 ? `R1 ${Number(d1.delivery_count || 0)} · ${deliveryLocationAbbrev(d1.location)}` : "—"}</span>
+          <span class="deliveryWeekDayLine">${d2 ? `R2 ${Number(d2.delivery_count || 0)} · ${deliveryLocationAbbrev(d2.location)}` : "—"}</span>
+        </button>
+      `;
+    }).join("");
+
+    els.weekBoard.querySelectorAll("[data-date]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const date = btn.getAttribute("data-date");
+        if (!date) return;
+        await loadDeliveryDay(date);
+        renderDeliveryPage();
+      });
     });
-  });
+  }
+
+  renderDeliveryEditor();
 }
 
-function renderDeliveriesStats(stats) {
+function openDeliveryEditor(runNo) {
+  const day = DELIVERY_PAGE_STATE.selectedDay || { work_date: DELIVERY_PAGE_STATE.selectedDate, items: [] };
+  const current = getDeliveryRun(day, runNo);
+  DELIVERY_PAGE_STATE.editor = {
+    open: true,
+    runNo,
+    location: current?.location || DELIVERY_LOC_OPTIONS[runNo === 2 ? 1 : 0],
+    quantity: Math.max(1, Math.min(15, Number(current?.delivery_count || 1))),
+  };
+  renderDeliveryEditor();
   const els = deliveryPageElements();
-  if (!stats) return;
-
-  if (els.weekTotal) els.weekTotal.textContent = String(stats.week?.total ?? 0);
-  if (els.monthTotal) els.monthTotal.textContent = String(stats.month?.total ?? 0);
-  if (els.avgDay) els.avgDay.textContent = String(stats.month?.avg_per_day ?? 0);
-  if (els.avgWeek) els.avgWeek.textContent = String(stats.month?.avg_per_week ?? 0);
-  if (els.topLocation) els.topLocation.textContent = stats.most_frequent_location || "—";
-  if (els.run1Total) els.run1Total.textContent = String(stats.month?.run_1 ?? 0);
-  if (els.run2Total) els.run2Total.textContent = String(stats.month?.run_2 ?? 0);
-
-  renderBarChart(els.weekChart, stats.week?.trend || []);
-  renderBarChart(els.monthChart, stats.month?.trend || []);
-  renderBarChart(els.locationChart, stats.location_breakdown || []);
+  if (els.editorOverlay) {
+    els.editorOverlay.classList.remove("hidden");
+    els.editorOverlay.setAttribute("aria-hidden", "false");
+  }
+  renderDeliveryPage();
 }
 
-async function refreshDeliveriesPage() {
-  const stats = await loadDeliveriesStats();
-  if (!stats) return;
-  renderDeliveriesStats(stats);
-  renderDeliveryList(stats.items || []);
-}
-
-async function saveDeliveriesDay(ev) {
-  ev?.preventDefault?.();
+function closeDeliveryEditor() {
+  DELIVERY_PAGE_STATE.editor.open = false;
   const els = deliveryPageElements();
-  if (els.msg) els.msg.textContent = "";
+  if (els.editorOverlay) {
+    els.editorOverlay.classList.add("hidden");
+    els.editorOverlay.setAttribute("aria-hidden", "true");
+  }
+  renderDeliveryPage();
+}
+
+function renderDeliveryEditor() {
+  const els = deliveryPageElements();
+  const editor = DELIVERY_PAGE_STATE.editor || {};
+  const selectedDate = DELIVERY_PAGE_STATE.selectedDate || todayYMD();
+
+  if (els.editorTitle) els.editorTitle.textContent = `Run ${editor.runNo || 1}`;
+  if (els.editorDate) els.editorDate.textContent = formatDeliveryDateLabel(selectedDate);
+  if (els.editorSummary) {
+    els.editorSummary.textContent = `Selected: ${editor.location || "-"} · ${editor.quantity || 1} deliveries`;
+  }
+
+  if (els.editorLocation8) {
+    els.editorLocation8.classList.toggle("is-active", editor.location === "Dublin 8");
+  }
+  if (els.editorLocation15) {
+    els.editorLocation15.classList.toggle("is-active", editor.location === "Dublin 15");
+  }
+
+  if (els.editorQtyGrid) {
+    els.editorQtyGrid.innerHTML = DELIVERY_QTY_OPTIONS.map((qty) => {
+      const active = Number(editor.quantity || 1) === qty ? " is-active" : "";
+      return `<button class="deliveryQtyBtn${active}" type="button" data-qty="${qty}">${qty}</button>`;
+    }).join("");
+
+    els.editorQtyGrid.querySelectorAll("[data-qty]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        DELIVERY_PAGE_STATE.editor.quantity = Number(btn.getAttribute("data-qty") || 1);
+        renderDeliveryEditor();
+      });
+    });
+  }
+
+  if (els.editorLocation8) {
+    els.editorLocation8.onclick = () => {
+      DELIVERY_PAGE_STATE.editor.location = "Dublin 8";
+      renderDeliveryEditor();
+    };
+  }
+  if (els.editorLocation15) {
+    els.editorLocation15.onclick = () => {
+      DELIVERY_PAGE_STATE.editor.location = "Dublin 15";
+      renderDeliveryEditor();
+    };
+  }
+}
+
+async function saveDeliveryEditor() {
+  const els = deliveryPageElements();
+  const editor = DELIVERY_PAGE_STATE.editor || {};
+  const day = DELIVERY_PAGE_STATE.selectedDay || { work_date: DELIVERY_PAGE_STATE.selectedDate, items: [] };
+  const run1 = getDeliveryRun(day, 1);
+  const run2 = getDeliveryRun(day, 2);
+
+  const payload = {
+    work_date: DELIVERY_PAGE_STATE.selectedDate || todayYMD(),
+    run_1_count: Number(run1?.delivery_count || 0),
+    run_1_location: safeText(run1?.location || DELIVERY_LOC_OPTIONS[0]),
+    run_2_count: Number(run2?.delivery_count || 0),
+    run_2_location: safeText(run2?.location || DELIVERY_LOC_OPTIONS[1]),
+  };
+
+  const key = Number(editor.runNo || 1) === 2 ? "run_2" : "run_1";
+  payload[`${key}_count`] = Number(editor.quantity || 1);
+  payload[`${key}_location`] = safeText(editor.location || DELIVERY_LOC_OPTIONS[0]);
 
   try {
-    const work_date = (els.date?.value || todayYMD()).trim();
-    const payload = {
-      work_date,
-      run_1_count: Number(els.run1Count?.value || 0),
-      run_1_location: safeText(els.run1Location?.value || DELIVERY_LOC_OPTIONS[0]),
-      run_2_count: Number(els.run2Count?.value || 0),
-      run_2_location: safeText(els.run2Location?.value || DELIVERY_LOC_OPTIONS[1]),
-    };
-
     await api("/api/deliveries/day", {
       method: "PUT",
       body: JSON.stringify(payload),
     });
 
-    await refreshDeliveriesPage();
+    closeDeliveryEditor();
     if (els.msg) els.msg.textContent = "Deliveries saved.";
+    const dayCard = document.querySelector(".deliveryDayCard");
+    if (dayCard) {
+      dayCard.classList.add("is-savedFlash");
+      setTimeout(() => dayCard.classList.remove("is-savedFlash"), 900);
+    }
+    await refreshDeliveriesPage();
   } catch (e) {
     if (els.msg) els.msg.textContent = e.message || "Failed to save deliveries";
   }
 }
 
+async function refreshDeliveriesPage() {
+  await loadDeliveriesStats();
+  await loadDeliveryDay(DELIVERY_PAGE_STATE.selectedDate || todayYMD());
+  renderDeliveryPage();
+}
+
+async function setSelectedDeliveryDate(dateValue) {
+  const target = dateValue || todayYMD();
+  await loadDeliveryDay(target);
+  renderDeliveryPage();
+}
+
 async function initDeliveriesPage() {
   const els = deliveryPageElements();
-  if (els.date && !els.date.value) els.date.value = todayYMD();
-  if (els.run1Location && !els.run1Location.value) els.run1Location.value = DELIVERY_LOC_OPTIONS[0];
-  if (els.run2Location && !els.run2Location.value) els.run2Location.value = DELIVERY_LOC_OPTIONS[1];
 
-  els.form?.addEventListener("submit", saveDeliveriesDay);
+  DELIVERY_PAGE_STATE.selectedDate = todayYMD();
+  DELIVERY_PAGE_STATE.selectedDay = { work_date: DELIVERY_PAGE_STATE.selectedDate, items: [] };
+  DELIVERY_PAGE_STATE.editor = {
+    open: false,
+    runNo: 1,
+    location: DELIVERY_LOC_OPTIONS[0],
+    quantity: 1,
+  };
+
   els.refreshBtn?.addEventListener("click", refreshDeliveriesPage);
-  els.todayBtn?.addEventListener("click", () => {
-    if (els.date) els.date.value = todayYMD();
-    loadDeliveryDay(todayYMD()).catch(() => {});
+  els.todayBtn?.addEventListener("click", () => setSelectedDeliveryDate(todayYMD()));
+  els.datePrev?.addEventListener("click", async () => {
+    await setSelectedDeliveryDate(ymdAddDays(DELIVERY_PAGE_STATE.selectedDate, -1));
+  });
+  els.dateNext?.addEventListener("click", async () => {
+    await setSelectedDeliveryDate(ymdAddDays(DELIVERY_PAGE_STATE.selectedDate, 1));
+  });
+  els.run1Btn?.addEventListener("click", () => openDeliveryEditor(1));
+  els.run2Btn?.addEventListener("click", () => openDeliveryEditor(2));
+  els.summaryRun1?.addEventListener("click", () => openDeliveryEditor(1));
+  els.summaryRun2?.addEventListener("click", () => openDeliveryEditor(2));
+  els.editorClose?.addEventListener("click", closeDeliveryEditor);
+  els.editorSave?.addEventListener("click", saveDeliveryEditor);
+  els.editorOverlay?.addEventListener("click", (ev) => {
+    if (ev.target === els.editorOverlay) closeDeliveryEditor();
   });
 
   await refreshDeliveriesPage();
-  await loadDeliveryDay(todayYMD());
+  renderDeliveryPage();
 }
 
 /* =========================
@@ -2384,3 +2656,4 @@ let dayWatcherStarted = false;
     else go("/");
   }
 })();
+
