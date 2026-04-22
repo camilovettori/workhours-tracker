@@ -404,10 +404,11 @@ def init_db() -> None:
         add_col_if_missing(conn, "bank_holidays", "paid_week", "INTEGER")
         add_col_if_missing(conn, "bank_holidays", "applicable", "INTEGER NOT NULL DEFAULT 1")
         add_col_if_missing(conn, "roster_days", "status", "TEXT DEFAULT 'WORK'")
-        
 
         ensure_bh_indexes(conn)
         ensure_clock_tables(conn)
+        ensure_v2_tables(conn)
+        sync_tesco_week_numbers(conn)
 
         conn.commit()
 
@@ -741,6 +742,8 @@ def require_user(req: Request) -> int:
     uid = verify_token(tok) if tok else None
     if not uid:
         raise HTTPException(401, "Unauthorized")
+    with db() as conn:
+        ensure_current_week_for_user(conn, uid)
     return uid
 
 
@@ -1388,15 +1391,255 @@ def sunday_start(dt: date) -> date:
     return dt - timedelta(days=(dt.weekday() + 1) % 7)
 
 
+def tesco_fiscal_year_start(fiscal_year: int) -> date:
+    """
+    Tesco Ireland fiscal year starts on the Sunday on or nearest to 1st March.
+    If March 1st is Mon-Thu, go back to the previous Sunday.
+    If March 1st is Fri-Sat, go forward to the next Sunday.
+    """
+    march1 = date(int(fiscal_year), 3, 1)
+    weekday = march1.weekday()  # Mon=0 ... Sun=6
+    if weekday == 6:
+        return march1
+    if weekday <= 3:
+        return march1 - timedelta(days=weekday + 1)
+    return march1 + timedelta(days=6 - weekday)
+
+
+def tesco_fiscal_week(d: date) -> tuple[int, int]:
+    """
+    Returns (fiscal_year, week_number) for a given date using Tesco Ireland calendar.
+    Weeks run Sunday to Saturday.
+    """
+    fiscal_year = int(d.year)
+    start = tesco_fiscal_year_start(fiscal_year)
+
+    if d < start:
+        fiscal_year -= 1
+        start = tesco_fiscal_year_start(fiscal_year)
+    else:
+        next_start = tesco_fiscal_year_start(fiscal_year + 1)
+        if d >= next_start:
+            fiscal_year += 1
+            start = next_start
+
+    week_number = ((d - start).days // 7) + 1
+    return fiscal_year, week_number
+
+
 def tesco_week_number(dt: date) -> int:
-    """
-    Tesco roster weeks are Sunday -> Saturday and numbered from the Sunday-based
-    week that contains the date, instead of ISO Monday-based weeks.
-    """
-    year_start = date(dt.year, 1, 1)
-    days_since_year_start = (dt - year_start).days
-    year_start_offset = (year_start.weekday() + 1) % 7
-    return (days_since_year_start + year_start_offset) // 7 + 1
+    return tesco_fiscal_week(dt)[1]
+
+
+def sync_tesco_week_numbers(conn: sqlite3.Connection) -> None:
+    for table in ("weeks", "rosters"):
+        try:
+            rows = conn.execute(
+                f"SELECT id, start_date, week_number FROM {table} WHERE start_date IS NOT NULL"
+            ).fetchall()
+        except Exception:
+            continue
+
+        for row in rows:
+            try:
+                start = sunday_start(parse_ymd(row["start_date"]))
+                _fiscal_year, week_number = tesco_fiscal_week(start)
+            except Exception:
+                continue
+
+            if int(row["week_number"] or 0) != int(week_number):
+                conn.execute(
+                    f"UPDATE {table} SET week_number=? WHERE id=?",
+                    (int(week_number), int(row["id"])),
+                )
+
+
+def current_user_hourly_rate(conn: sqlite3.Connection, uid: int) -> float:
+    row = conn.execute(
+        "SELECT hourly_rate FROM users WHERE id=?",
+        (uid,),
+    ).fetchone()
+    if not row or row["hourly_rate"] is None:
+        return 0.0
+    try:
+        return float(row["hourly_rate"])
+    except Exception:
+        return 0.0
+
+
+def create_week_record(
+    conn: sqlite3.Connection,
+    uid: int,
+    start_date: str,
+    hourly_rate: float,
+) -> sqlite3.Row:
+    normalized_start = sunday_start(parse_ymd(start_date)).isoformat()
+    _fiscal_year, week_number = tesco_fiscal_week(parse_ymd(normalized_start))
+    conn.execute(
+        "INSERT INTO weeks(user_id,week_number,start_date,hourly_rate,created_at) VALUES (?,?,?,?,?)",
+        (uid, int(week_number), normalized_start, float(hourly_rate), now()),
+    )
+    conn.commit()
+    return conn.execute(
+        "SELECT * FROM weeks WHERE user_id=? AND start_date=? ORDER BY id DESC LIMIT 1",
+        (uid, normalized_start),
+    ).fetchone()
+
+
+def ensure_current_week_for_user(conn: sqlite3.Connection, uid: int) -> Optional[sqlite3.Row]:
+    today = local_now().date()
+    weeks = conn.execute(
+        "SELECT * FROM weeks WHERE user_id=? ORDER BY date(start_date) ASC, id ASC",
+        (uid,),
+    ).fetchall()
+
+    if not weeks:
+        start = sunday_start(today)
+        return create_week_record(conn, uid, start.isoformat(), current_user_hourly_rate(conn, uid))
+
+    current = None
+    past = []
+    for w in weeks:
+        try:
+            start = parse_ymd(w["start_date"])
+        except Exception:
+            continue
+        end = start + timedelta(days=6)
+        if start <= today <= end:
+            current = w
+            break
+        if start <= today:
+            past.append(w)
+
+    if current:
+        return current
+
+    if not past:
+        return weeks[0]
+
+    latest = past[-1]
+    hourly_rate = current_user_hourly_rate(conn, uid)
+
+    while True:
+        try:
+            start = parse_ymd(latest["start_date"])
+        except Exception:
+            return latest
+
+        end = start + timedelta(days=6)
+        if today <= end:
+            return latest
+
+        next_start = (start + timedelta(days=7)).isoformat()
+        existing = conn.execute(
+            "SELECT * FROM weeks WHERE user_id=? AND start_date=? ORDER BY id DESC LIMIT 1",
+            (uid, next_start),
+        ).fetchone()
+        if existing:
+            latest = existing
+            continue
+
+        latest = create_week_record(
+            conn,
+            uid,
+            next_start,
+            hourly_rate,
+        )
+
+
+def build_week_payload(
+    conn: sqlite3.Connection,
+    uid: int,
+    w: sqlite3.Row,
+    include_entries: bool = True,
+) -> tuple[dict, int, float]:
+    rate = float(w["hourly_rate"] or 0.0)
+    start_date = w["start_date"]
+    roster_week = conn.execute(
+        """
+        SELECT week_number
+        FROM rosters
+        WHERE user_id=? AND start_date=?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (uid, start_date),
+    ).fetchone()
+    if roster_week and roster_week["week_number"] is not None:
+        week_number = int(roster_week["week_number"])
+    else:
+        _fy, week_number = tesco_fiscal_week(parse_ymd(start_date))
+
+    rows = conn.execute(
+        """
+        SELECT id, work_date, time_in, time_out, break_minutes, note, bh_paid, multiplier, extra_authorized
+        FROM entries
+        WHERE user_id=? AND week_id=?
+        ORDER BY work_date ASC, id ASC
+        """,
+        (uid, int(w["id"])),
+    ).fetchall()
+
+    entries = []
+    total_min = 0
+    total_pay = 0.0
+
+    for r in rows:
+        authorized = bool(int(r["extra_authorized"] or 0) == 1)
+        m, meta = minutes_paid_between(
+            conn,
+            uid,
+            r["work_date"],
+            r["time_in"],
+            r["time_out"],
+            int(r["break_minutes"] or 0),
+            authorized,
+        )
+
+        mult = float(r["multiplier"] or 1.0)
+        total_min += int(m)
+        total_pay += (m / 60.0) * rate * mult
+
+        if include_entries:
+            break_eff = effective_break_minutes(r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
+            d = parse_ymd(r["work_date"])
+            entries.append(
+                {
+                    "id": int(r["id"]),
+                    "week_id": int(w["id"]),
+                    "work_date": r["work_date"],
+                    "weekday": weekday_short_en(d),
+                    "date_ddmmyyyy": ddmmyyyy(d),
+                    "time_in": r["time_in"] or "",
+                    "time_out": r["time_out"] or "",
+                    "break_minutes": int(break_eff),
+                    "note": r["note"],
+                    "bh_paid": (None if r["bh_paid"] is None else bool(int(r["bh_paid"]))),
+                    "multiplier": float(r["multiplier"] or 1.0),
+                    "worked_hhmm": f"{int(m)//60:02d}:{int(m)%60:02d}",
+                    "pay_eur": round((m / 60.0) * rate * mult, 2),
+                    "time_in_real": r["time_in"] or "",
+                    "time_out_real": r["time_out"] or "",
+                    "time_in_paid": meta.get("paid_in_hhmm") or "",
+                    "time_out_paid": meta.get("paid_out_hhmm") or "",
+                    "extra_authorized": 1 if authorized else 0,
+                }
+            )
+
+    payload = {
+        "id": int(w["id"]),
+        "week_number": int(week_number),
+        "start_date": start_date,
+        "hourly_rate": rate,
+        "totals": {
+            "total_hhmm": f"{total_min//60:02d}:{total_min%60:02d}",
+            "total_pay": round(total_pay, 2),
+        },
+    }
+    if include_entries:
+        payload["entries"] = entries
+
+    return payload, total_min, total_pay
 
 
 # ======================================================
@@ -2098,10 +2341,11 @@ def decide_clock_time(kind: str, real_now: str, official: Optional[str], authori
 
 
 
-def ensure_week_from_roster(conn: sqlite3.Connection, uid: int, week_number: int, start_date: str) -> int:
+def ensure_week_from_roster(conn: sqlite3.Connection, uid: int, start_date: str) -> int:
+    normalized_start = sunday_start(parse_ymd(start_date)).isoformat()
     row = conn.execute(
-        "SELECT id FROM weeks WHERE user_id=? AND week_number=? LIMIT 1",
-        (uid, int(week_number)),
+        "SELECT id FROM weeks WHERE user_id=? AND start_date=? LIMIT 1",
+        (uid, normalized_start),
     ).fetchone()
     if row:
         return int(row["id"])
@@ -2119,7 +2363,7 @@ def ensure_week_from_roster(conn: sqlite3.Connection, uid: int, week_number: int
 
     conn.execute(
         "INSERT INTO weeks(user_id,week_number,start_date,hourly_rate,created_at) VALUES (?,?,?,?,?)",
-        (uid, int(week_number), start_date, float(hourly_rate), now()),
+        (uid, tesco_fiscal_week(parse_ymd(normalized_start))[1], normalized_start, float(hourly_rate), now()),
     )
     conn.commit()
     return int(conn.execute("SELECT last_insert_rowid() id").fetchone()["id"])
@@ -2137,7 +2381,7 @@ def roster_list(req: Request):
             SELECT id, week_number, start_date
             FROM rosters
             WHERE user_id=?
-            ORDER BY CAST(week_number AS INTEGER) DESC, date(start_date) DESC, id DESC
+            ORDER BY date(start_date) DESC, id DESC
             """,
             (uid,),
         ).fetchall()
@@ -2242,6 +2486,39 @@ def roster_day_lookup(req: Request, date_ymd: str = Query(..., description="YYYY
         }
 
 
+@app.get("/api/roster/current")
+def roster_current(req: Request):
+    uid = require_user(req)
+    today = today_ymd()
+
+    with db() as conn:
+        ro = roster_for_date(conn, uid, today)
+        if not ro:
+            return {
+                "has_roster": False,
+                "work_date": today,
+                "week_number": None,
+                "start_date": None,
+                "day_off": True,
+                "shift_in": None,
+                "shift_out": None,
+                "status": "OFF",
+            }
+
+        fiscal_year, week_number = tesco_fiscal_week(parse_ymd(today))
+        return {
+            "has_roster": True,
+            "work_date": today,
+            "fiscal_year": fiscal_year,
+            "week_number": week_number,
+            "start_date": ro["start_date"],
+            "day_off": bool(int(ro["day_off"] or 0)),
+            "shift_in": ro["shift_in"],
+            "shift_out": ro["shift_out"],
+            "status": roster_day_status_from_row(ro),
+        }
+
+
 @app.get("/api/roster/{roster_id}")
 def roster_get(roster_id: int, req: Request):
     uid = require_user(req)
@@ -2304,31 +2581,33 @@ def roster_create(p: RosterCreate, req: Request):
     if not p.days or len(p.days) != 7:
         raise HTTPException(400, "days must have 7 items (Sun..Sat)")
 
-    start = parse_ymd(p.start_date)
+    start = sunday_start(parse_ymd(p.start_date))
+    start_date = start.isoformat()
+    _fiscal_year, week_number = tesco_fiscal_week(parse_ymd(start_date))
 
     with db() as conn:
         dup = conn.execute(
             """
             SELECT id
             FROM rosters
-            WHERE user_id=? AND week_number=? AND start_date=?
+            WHERE user_id=? AND start_date=?
             LIMIT 1
             """,
-            (uid, int(p.week_number), p.start_date),
+            (uid, start_date),
         ).fetchone()
 
         if dup:
             wk = conn.execute(
-                "SELECT id FROM weeks WHERE user_id=? AND week_number=? LIMIT 1",
-                (uid, int(p.week_number)),
+                "SELECT id FROM weeks WHERE user_id=? AND start_date=? LIMIT 1",
+                (uid, start_date),
             ).fetchone()
             return {"ok": True, "id": int(dup["id"]), "week_id": int(wk["id"]) if wk else None}
 
-        week_id = ensure_week_from_roster(conn, uid, int(p.week_number), p.start_date)
+        week_id = ensure_week_from_roster(conn, uid, start_date)
 
         conn.execute(
             "INSERT INTO rosters(user_id,week_number,start_date,created_at) VALUES (?,?,?,?)",
-            (uid, int(p.week_number), p.start_date, now()),
+            (uid, int(week_number), start_date, now()),
         )
         roster_id = int(conn.execute("SELECT last_insert_rowid() id").fetchone()["id"])
 
@@ -2412,46 +2691,22 @@ def list_weeks(req: Request):
             """
             SELECT * FROM weeks
             WHERE user_id=?
-            ORDER BY week_number DESC, start_date DESC
+            ORDER BY date(start_date) DESC, id DESC
             """,
             (uid,),
         ).fetchall()
 
         out = []
         for w in rows:
-            entries = conn.execute(
-                """
-                SELECT work_date, time_in, time_out, break_minutes, multiplier, extra_authorized
-                FROM entries
-                WHERE user_id=? AND week_id=?
-                """,
-                (uid, int(w["id"])),
-            ).fetchall()
-
-            total_min = 0
-            total_pay = 0.0
-            rate = float(w["hourly_rate"] or 0.0)
-
-            for e in entries:
-                authorized = bool(int(e["extra_authorized"] or 0) == 1)
-                m, _meta = minutes_paid_between(
-                    conn, uid, e["work_date"],
-                    e["time_in"], e["time_out"],
-                    int(e["break_minutes"] or 0),
-                    authorized
-                )
-                mult = float(e["multiplier"] or 1.0)
-                total_min += int(m)
-                total_pay += (m / 60.0) * rate * mult
-
+            payload, _total_min, _total_pay = build_week_payload(conn, uid, w, include_entries=False)
             out.append(
                 {
-                    "id": int(w["id"]),
-                    "week_number": int(w["week_number"]),
-                    "start_date": w["start_date"],
-                    "hourly_rate": float(w["hourly_rate"] or 0),
-                    "total_hhmm": f"{total_min//60:02d}:{total_min%60:02d}",
-                    "total_pay": round(total_pay, 2),
+                    "id": payload["id"],
+                    "week_number": payload["week_number"],
+                    "start_date": payload["start_date"],
+                    "hourly_rate": payload["hourly_rate"],
+                    "total_hhmm": payload["totals"]["total_hhmm"],
+                    "total_pay": payload["totals"]["total_pay"],
                 }
             )
 
@@ -2462,10 +2717,12 @@ def list_weeks(req: Request):
 @app.post("/api/weeks")
 def create_week(p: WeekCreate, req: Request):
     uid = require_user(req)
+    start_date = sunday_start(parse_ymd(p.start_date)).isoformat()
+    _fiscal_year, week_number = tesco_fiscal_week(parse_ymd(start_date))
     with db() as conn:
         conn.execute(
             "INSERT INTO weeks(user_id,week_number,start_date,hourly_rate,created_at) VALUES (?,?,?,?,?)",
-            (uid, int(p.week_number), p.start_date, float(p.hourly_rate), now()),
+            (uid, int(week_number), start_date, float(p.hourly_rate), now()),
         )
         conn.commit()
     return {"ok": True}
@@ -2478,69 +2735,8 @@ def get_week(week_id: int, req: Request):
         w = conn.execute("SELECT * FROM weeks WHERE id=? AND user_id=?", (week_id, uid)).fetchone()
         if not w:
             raise HTTPException(404, "Week not found")
-
-        rows = conn.execute(
-            "SELECT * FROM entries WHERE week_id=? AND user_id=? ORDER BY work_date ASC",
-            (week_id, uid),
-        ).fetchall()
-
-        entries = []
-        total_min = 0
-        total_pay = 0.0
-        rate = float(w["hourly_rate"] or 0.0)
-
-        for r in rows:
-            authorized = bool(int(r["extra_authorized"] or 0) == 1)
-            m, meta = minutes_paid_between(
-                conn, uid, r["work_date"],
-                r["time_in"], r["time_out"],
-                int(r["break_minutes"] or 0),
-                authorized
-            )
-
-            mult = float(r["multiplier"] or 1.0)
-            total_min += int(m)
-            total_pay += (m / 60.0) * rate * mult
-
-            break_eff = effective_break_minutes(r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
-            d = parse_ymd(r["work_date"])
-
-            entries.append(
-                {
-                    "id": int(r["id"]),
-                    "week_id": int(r["week_id"]),
-                    "work_date": r["work_date"],
-                    "weekday": weekday_short_en(d),
-                    "date_ddmmyyyy": ddmmyyyy(d),
-                    "time_in": r["time_in"] or "",
-                    "time_out": r["time_out"] or "",
-                    "break_minutes": int(break_eff),
-                    "note": r["note"],
-                    "bh_paid": (None if r["bh_paid"] is None else bool(int(r["bh_paid"]))),
-                    "multiplier": float(r["multiplier"] or 1.0),
-
-                    "worked_hhmm": f"{int(m)//60:02d}:{int(m)%60:02d}",
-
-                    "time_in_real": r["time_in"] or "",
-                    "time_out_real": r["time_out"] or "",
-                    "time_in_paid": meta.get("paid_in_hhmm") or "",
-                    "time_out_paid": meta.get("paid_out_hhmm") or "",
-
-                    "extra_authorized": 1 if authorized else 0,
-                }
-            )
-
-        return {
-            "id": int(w["id"]),
-            "week_number": int(w["week_number"]),
-            "start_date": w["start_date"],
-            "hourly_rate": float(w["hourly_rate"] or 0),
-            "totals": {
-                "total_hhmm": f"{total_min//60:02d}:{total_min%60:02d}",
-                "total_pay": round(total_pay, 2)
-            },
-            "entries": entries,
-        }
+        payload, _total_min, _total_pay = build_week_payload(conn, uid, w, include_entries=True)
+        return payload
 
 
 
@@ -2686,65 +2882,23 @@ def dashboard(req: Request):
             (uid,),
         ).fetchall()
 
-        current_week = get_week_for_today_strict(conn, uid)
+        current_week = get_current_week(conn, uid)
 
         # Totals (all time)
         total_min_all = 0
         total_pay_all = 0.0
 
         for w in weeks:
-            rate = float(w["hourly_rate"] or 0.0)
-
-            rows = conn.execute(
-                """
-                SELECT work_date, time_in, time_out, break_minutes, multiplier, extra_authorized
-                FROM entries
-                WHERE user_id=? AND week_id=?
-                """,
-                (uid, int(w["id"])),
-            ).fetchall()
-
-            for r in rows:
-                authorized = bool(int(r["extra_authorized"] or 0) == 1)
-                m, _meta = minutes_paid_between(
-                    conn, uid, r["work_date"],
-                    r["time_in"], r["time_out"],
-                    int(r["break_minutes"] or 0),
-                    authorized
-                )
-
-                mult = float(r["multiplier"] or 1.0)
-                total_min_all += int(m)
-                total_pay_all += (m / 60.0) * rate * mult
+            _payload, week_min, week_pay = build_week_payload(conn, uid, w, include_entries=False)
+            total_min_all += int(week_min)
+            total_pay_all += float(week_pay)
 
         # Totals (this week)
         this_week_min = 0
         this_week_pay = 0.0
 
         if current_week:
-            rate = float(current_week["hourly_rate"] or 0.0)
-
-            rows = conn.execute(
-                """
-                SELECT work_date, time_in, time_out, break_minutes, multiplier, extra_authorized
-                FROM entries
-                WHERE user_id=? AND week_id=?
-                """,
-                (uid, int(current_week["id"])),
-            ).fetchall()
-
-            for r in rows:
-                authorized = bool(int(r["extra_authorized"] or 0) == 1)
-                m, _meta = minutes_paid_between(
-                    conn, uid, r["work_date"],
-                    r["time_in"], r["time_out"],
-                    int(r["break_minutes"] or 0),
-                    authorized
-                )
-
-                mult = float(r["multiplier"] or 1.0)
-                this_week_min += int(m)
-                this_week_pay += (m / 60.0) * rate * mult
+            _payload, this_week_min, this_week_pay = build_week_payload(conn, uid, current_week, include_entries=False)
 
         # Bank holidays
         supported_years = [y for y in (2025, 2026) if irish_bank_holidays(y)]
@@ -2797,27 +2951,9 @@ def dashboard(req: Request):
 @app.get("/api/report/week/current")
 def report_current_week(req: Request):
     uid = require_user(req)
-    today = local_now().date().isoformat()
 
     with db() as conn:
-        w = conn.execute(
-            """
-            SELECT *
-            FROM weeks
-            WHERE user_id = ?
-              AND date(start_date) <= date(?)
-              AND date(start_date, '+6 day') >= date(?)
-            ORDER BY start_date DESC
-            LIMIT 1
-            """,
-            (uid, today, today),
-        ).fetchone()
-
-        if not w:
-            w = conn.execute(
-                "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date DESC LIMIT 1",
-                (uid,),
-            ).fetchone()
+        w = get_current_week(conn, uid)
 
         if not w:
             return {
@@ -2828,75 +2964,20 @@ def report_current_week(req: Request):
                 "totals": {"hhmm": "00:00", "pay_eur": 0.0},
             }
 
-        rate = float(w["hourly_rate"] or 0.0)
-
-        rows = conn.execute(
-            """
-            SELECT id, work_date, time_in, time_out, break_minutes, multiplier, extra_authorized
-            FROM entries
-            WHERE user_id=? AND week_id=?
-            ORDER BY work_date ASC
-            """,
-            (uid, int(w["id"])),
-        ).fetchall()
-
-        entries = []
-        total_min = 0
-        total_pay = 0.0
-
-        for r in rows:
-            authorized = bool(int(r["extra_authorized"] or 0) == 1)
-
-            m, meta = minutes_paid_between(
-                conn, uid, r["work_date"],
-                r["time_in"], r["time_out"],
-                int(r["break_minutes"] or 0),
-                authorized
-            )
-
-            mult = float(r["multiplier"] or 1.0)
-            total_min += int(m)
-            total_pay += (m / 60.0) * rate * mult
-
-            d = parse_ymd(r["work_date"])
-            break_eff = effective_break_minutes(r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
-
-            entries.append(
-                {
-                    "id": int(r["id"]),
-                    "work_date": r["work_date"],
-                    "weekday": weekday_short_en(d),
-                    "date_ddmmyyyy": ddmmyyyy(d),
-
-                    "time_in": r["time_in"] or "",
-                    "time_out": r["time_out"] or "",
-
-                    "time_in_real": r["time_in"] or "",
-                    "time_out_real": r["time_out"] or "",
-                    "time_in_paid": meta.get("paid_in_hhmm") or "",
-                    "time_out_paid": meta.get("paid_out_hhmm") or "",
-
-                    "break_minutes": int(break_eff),
-                    "worked_hhmm": f"{int(m)//60:02d}:{int(m)%60:02d}",
-                    "pay_eur": round((m / 60.0) * rate * mult, 2),
-
-                    "extra_authorized": 1 if authorized else 0,
-                }
-            )
-
+        payload, _total_min, _total_pay = build_week_payload(conn, uid, w, include_entries=True)
         return {
             "ok": True,
             "has_week": True,
             "week": {
-                "id": int(w["id"]),
-                "week_number": int(w["week_number"]),
-                "start_date": w["start_date"],
-                "hourly_rate": rate,
+                "id": payload["id"],
+                "week_number": payload["week_number"],
+                "start_date": payload["start_date"],
+                "hourly_rate": payload["hourly_rate"],
             },
-            "entries": entries,
+            "entries": payload.get("entries", []),
             "totals": {
-                "hhmm": f"{total_min//60:02d}:{total_min%60:02d}",
-                "pay_eur": round(total_pay, 2),
+                "hhmm": payload["totals"]["total_hhmm"],
+                "pay_eur": payload["totals"]["total_pay"],
             },
         }
 
@@ -2905,7 +2986,7 @@ def report_current_week(req: Request):
 # CLOCK (IN / OUT / BREAK) + EXTRA CONFIRM
 # ======================================================
 def get_current_week(conn: sqlite3.Connection, uid: int) -> Optional[sqlite3.Row]:
-    return get_week_for_today_strict(conn, uid)
+    return ensure_current_week_for_user(conn, uid)
 
 
 

@@ -93,12 +93,33 @@ function ymdToDateObj(ymd) {
   return new Date(y || 1970, (m || 1) - 1, d || 1);
 }
 function isSunday(dt) { return datePartsInDublin(dt).weekday === "Sun"; }
-function isoWeekNumber(d = new Date()) {
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const dayNum = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+function tescoFiscalYearStart(fiscalYear) {
+  const march1 = new Date(Number(fiscalYear) || 1970, 2, 1);
+  const day = march1.getDay(); // Sun=0..Sat=6
+  if (day === 0) return march1;
+  if (day <= 4) {
+    march1.setDate(march1.getDate() - day);
+    return march1;
+  }
+  march1.setDate(march1.getDate() + (7 - day));
+  return march1;
+}
+function tescoFiscalWeek(d = new Date()) {
+  const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  let fiscalYear = dt.getFullYear();
+  let start = tescoFiscalYearStart(fiscalYear);
+  if (dt < start) {
+    fiscalYear -= 1;
+    start = tescoFiscalYearStart(fiscalYear);
+  } else {
+    const nextStart = tescoFiscalYearStart(fiscalYear + 1);
+    if (dt >= nextStart) {
+      fiscalYear += 1;
+      start = nextStart;
+    }
+  }
+  const weekNumber = Math.floor((dt - start) / 86400000 / 7) + 1;
+  return { fiscalYear, weekNumber };
 }
 function mondayOfThisWeek(d = new Date()) {
   const x = new Date(d);
@@ -107,7 +128,6 @@ function mondayOfThisWeek(d = new Date()) {
   x.setDate(x.getDate() + diff);
   return ymdFromDate(x);
 }
-function weekStartMondayISO(d = new Date()) { return mondayOfThisWeek(d); }
 function sundayOfThisWeek(d = new Date()) {
   const x = new Date(d);
   const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(datePartsInDublin(d).weekday);
@@ -115,12 +135,7 @@ function sundayOfThisWeek(d = new Date()) {
   return ymdFromDate(x);
 }
 function tescoWeekNumber(d = new Date()) {
-  const p = datePartsInDublin(d);
-  const dt = new Date(Number(p.year) || 1970, (Number(p.month) || 1) - 1, Number(p.day) || 1);
-  const yearStart = new Date(dt.getFullYear(), 0, 1);
-  const daysSinceYearStart = Math.floor((dt.setHours(0,0,0,0) - yearStart.setHours(0,0,0,0)) / 86400000);
-  const yearStartOffset = (yearStart.getDay() + 1) % 7;
-  return Math.floor((daysSinceYearStart + yearStartOffset) / 7) + 1;
+  return tescoFiscalWeek(d).weekNumber;
 }
 function ymdAddDays(ymd, add) {
   if (!ymd) return "";
@@ -1098,7 +1113,9 @@ async function loadCurrentRosterWeekSummary() {
 }
 
 function loadTodayRosterHint() {
-  return api(`/api/roster/day?date_ymd=${encodeURIComponent(todayYMD())}`).catch(() => null);
+  return api("/api/roster/current")
+    .then((r) => (r?.has_roster ? r : null))
+    .catch(() => null);
 }
 
 function updateHomeCoachCard(dash, todayRoster, rosterWeek) {
@@ -1918,6 +1935,28 @@ async function handleOvertimePrompt(resObj) {
   return { proceed: true, authorized: false, reason };
 }
 
+async function showRosterRequiredModal() {
+  const goToRoster = await showYesNoModal({
+    title: "Roster required",
+    message: "No roster found for this week. Please create your roster before clocking in.",
+    icon: "📅",
+    yesText: "Go to Roster",
+    noText: "Go to Roster",
+    hint: "",
+  });
+
+  if (goToRoster) go("/roster");
+  return false;
+}
+
+async function getCurrentRosterForClock() {
+  try {
+    return await api("/api/roster/current");
+  } catch {
+    return null;
+  }
+}
+
 async function validateBeforeClockIn() {
 
   // 1️⃣ Check Hourly Rate
@@ -1931,18 +1970,13 @@ async function validateBeforeClockIn() {
 
   // 2️⃣ Check current week roster exists
   try {
-    const todayYmd = ymdFromDate(new Date());
-    const roster = await api(`/api/roster/day?date_ymd=${encodeURIComponent(todayYmd)}`);
-
-    if (!roster) {
-      alert("Add your Week Roster First.");
-      go("/roster");
+    const roster = await getCurrentRosterForClock();
+    if (!roster?.has_roster) {
+      await showRosterRequiredModal();
       return false;
     }
-
   } catch {
-    alert("Add your Week Roster First.");
-    go("/roster");
+    await showRosterRequiredModal();
     return false;
   }
 
@@ -1965,21 +1999,11 @@ async function doClockIn() {
       return;
     }
 
-    // 2️⃣ CHECK ROSTER FOR TODAY
-    const todayYmd = ymdFromDate(new Date());
+    // 2️⃣ CHECK ROSTER FOR CURRENT FISCAL WEEK
+    const rosterToday = await getCurrentRosterForClock();
 
-    let rosterToday = null;
-
-    try {
-      rosterToday = await api(
-        `/api/roster/day?date_ymd=${encodeURIComponent(todayYmd)}`
-      );
-    } catch {
-      rosterToday = null;
-    }
-
-    if (!rosterToday) {
-      alert("Add your Week Roster First.");
+    if (!rosterToday?.has_roster) {
+      await showRosterRequiredModal();
       return;
     }
 

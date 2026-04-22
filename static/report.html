@@ -331,13 +331,6 @@ function fmtEUR(n){
   try { return v.toLocaleString(undefined, { style:"currency", currency:"EUR" }); }
   catch { return "€" + v.toFixed(2); }
 }
-function fmtHHMMFromMinutes(mins){
-  const m = Math.max(0, Math.floor(Number(mins || 0)));
-  const hh = Math.floor(m / 60);
-  const mm = m % 60;
-  return String(hh).padStart(2,"0") + ":" + String(mm).padStart(2,"0");
-}
-
 async function api(path, opts = {}){
   const res = await fetch(path, {
     credentials:"include",
@@ -372,49 +365,16 @@ function back(){
   else if (history.length > 1) history.back();
   else location.href = "/";
 }
-function minutesFromHHMM(hhmm){
-  if(!hhmm || !String(hhmm).includes(":")) return 0;
-  const [h,m] = String(hhmm).split(":").map(x=>parseInt(x,10));
-  return (Number.isFinite(h)?h:0)*60 + (Number.isFinite(m)?m:0);
-}
-function ymdToDateObj(ymd){
-  const [y,m,d] = String(ymd).split("-").map(Number);
-  return new Date(y, (m||1)-1, d||1);
-}
-
-/* =========================
-   Bank Holiday lookup (cache)
-========================= */
-const bhCache = new Map();
-async function bhLookup(dateYmd){
-  if (!dateYmd) return null;
-  if (bhCache.has(dateYmd)) return bhCache.get(dateYmd);
-  const r = await api(`/api/bank-holidays/lookup?date_ymd=${encodeURIComponent(dateYmd)}`);
-  bhCache.set(dateYmd, r);
-  return r;
-}
-function isBhTrue(bh){
-  if (!bh) return false;
-  return bh.is_bh === true || bh.is_bank_holiday === true || bh.isBH === true;
-}
-
-/* =========================
-   Premium multiplier (Sunday/BH)
-========================= */
-async function premiumForDateYmd(ymd){
-  let mult = 1;
-
-  // Sunday
-  const dt = ymdToDateObj(ymd);
-  if (dt.getDay() === 0) mult = Math.max(mult, 1.5);
-
-  // Bank Holiday
-  try{
-    const bh = await bhLookup(ymd);
-    if (isBhTrue(bh)) mult = Math.max(mult, 1.5);
-  }catch{}
-
-  return mult;
+function tescoFiscalYearStart(fiscalYear) {
+  const march1 = new Date(Number(fiscalYear) || 1970, 2, 1);
+  const day = march1.getDay();
+  if (day === 0) return march1;
+  if (day <= 4) {
+    march1.setDate(march1.getDate() - day);
+    return march1;
+  }
+  march1.setDate(march1.getDate() + (7 - day));
+  return march1;
 }
 
 /* =========================
@@ -431,13 +391,25 @@ async function loadMe(){
 /* =========================
    Add week modal helpers
 ========================= */
-function isoWeekNumber(d = new Date()) {
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const dayNum = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+function tescoWeekNumber(d = new Date()) {
+  const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  let fiscalYear = dt.getFullYear();
+  let start = tescoFiscalYearStart(fiscalYear);
+
+  if (dt < start) {
+    fiscalYear -= 1;
+    start = tescoFiscalYearStart(fiscalYear);
+  } else {
+    const nextStart = tescoFiscalYearStart(fiscalYear + 1);
+    if (dt >= nextStart) {
+      fiscalYear += 1;
+      start = nextStart;
+    }
+  }
+
+  return Math.floor((dt - start) / 86400000 / 7) + 1;
 }
+
 // IMPORTANT: your app uses week start as SUNDAY in other pages
 function sundayOfThisWeek(d = new Date()){
   const x = new Date(d);
@@ -449,7 +421,7 @@ function sundayOfThisWeek(d = new Date()){
 }
 function openAddWeekModal2(defaultRate = 0){
   $("addWeekErr2").textContent = "";
-  $("aw2WeekNumber").value = String(isoWeekNumber(new Date()));
+  $("aw2WeekNumber").value = String(tescoWeekNumber(new Date()));
   $("aw2StartDate").value = sundayOfThisWeek(new Date());
   $("aw2HourlyRate").value = String(Number(defaultRate || 0).toFixed(2));
   show($("addWeekModal2"));
@@ -458,13 +430,15 @@ function closeAddWeekModal2(){
   hide($("addWeekModal2"));
   $("addWeekErr2").textContent = "";
 }
+function closeDayModal() {
+  hide($("dayModal"));
+}
 
 /* =========================
    State
 ========================= */
 let ACTIVE_WEEK_ID = null;
 let ACTIVE_ENTRY_ID = null;
-let ACTIVE_WEEK_RATE = 0;
 
 /* =========================
    Edit modal
@@ -530,32 +504,6 @@ function closeDayModal() {
 }
 
 /* =========================
-   Calculate week pay with premium (LIST view)
-========================= */
-async function calcWeekPayWithPremium(weekObj, fallbackRate = 0){
-  const rate = Number(weekObj?.hourly_rate || 0) || Number(fallbackRate || 0);
-  const entries = Array.isArray(weekObj?.entries) ? weekObj.entries : [];
-  let total = 0;
-
-  const uniqueDates = [...new Set(entries.map(e => e.work_date).filter(Boolean))];
-  await Promise.all(uniqueDates.map(d => bhLookup(d).catch(()=>null)));
-
-  for (const e of entries) {
-    const mins = minutesFromHHMM(e.worked_hhmm || "00:00");
-    if (!mins) continue;
-
-    let mult = Number(e.multiplier || 1);
-    if (e.work_date) {
-      const prem = await premiumForDateYmd(e.work_date);
-      mult = Math.max(mult, prem);
-    }
-
-    total += (mins / 60) * rate * mult;
-  }
-  return total;
-}
-
-/* =========================
    Views
 ========================= */
 async function loadList(){
@@ -567,7 +515,6 @@ async function loadList(){
   $("listMsg").textContent = "Loading...";
 
   try{
-    const me = await loadMe();
     const weeks = await api("/api/weeks", { method:"GET" });
 
     if(!weeks || !weeks.length){
@@ -594,20 +541,6 @@ async function loadList(){
       item.addEventListener("click", () => goWeek(w.id));
       $("weeksList").appendChild(item);
 
-      // update pay (premium) without blocking UI
-      (async () => {
-        try{
-          const full = await api("/api/weeks/" + w.id, { method:"GET" });
-          const rateFromProfile = Number(me?.hourly_rate || 0);
-          const rateForCalc = rateFromProfile > 0 ? rateFromProfile : Number(full?.hourly_rate || 0);
-
-          const pay = await calcWeekPayWithPremium(full, rateForCalc);
-          const eurEl = item.querySelector('[data-week-pay="1"]');
-          if (eurEl) eurEl.textContent = fmtEUR(pay);
-        }catch{
-          // keep original value
-        }
-      })();
     }
   }catch(e){
     $("listMsg").textContent = "";
@@ -629,25 +562,13 @@ async function loadDetail(weekId){
   $("totalPay").textContent = "€0.00";
 
   try{
-    const me = await loadMe();
     const w = await api("/api/weeks/" + weekId, { method:"GET" });
 
-    const rateFromProfile = Number(me?.hourly_rate || 0);
-    const rateFromWeek = Number(w?.hourly_rate || 0);
-    ACTIVE_WEEK_RATE = rateFromProfile > 0 ? rateFromProfile : rateFromWeek;
-
     $("subTitle").textContent = `Week ${w.week_number} • Weekly report`;
-    $("rateText").textContent = `€${Number(ACTIVE_WEEK_RATE || 0).toFixed(2)} / hour`;
+    $("rateText").textContent = `€${Number(w?.hourly_rate || 0).toFixed(2)} / hour`;
     $("startDateText").textContent = w.start_date || "—";
 
     const entries = Array.isArray(w.entries) ? w.entries : [];
-
-    // prefetch BH for unique dates
-    const uniqueDates = [...new Set(entries.map(x => x.work_date).filter(Boolean))];
-    await Promise.all(uniqueDates.map(d => bhLookup(d).catch(()=>null)));
-
-    let totalMin = 0;
-    let totalPay = 0;
 
     if(!entries.length){
       const tr = document.createElement("tr");
@@ -655,18 +576,7 @@ async function loadDetail(weekId){
       $("rows").appendChild(tr);
     } else {
       for(const e of entries){
-        const mins = minutesFromHHMM(e.worked_hhmm || "00:00");
-        totalMin += mins;
-
-        let mult = Number(e.multiplier || 1);
-        if (e.work_date) {
-          const prem = await premiumForDateYmd(e.work_date);
-          mult = Math.max(mult, prem);
-        }
-
-        const rowPay = (mins/60) * Number(ACTIVE_WEEK_RATE || 0) * mult;
-        totalPay += rowPay;
-
+        const rowPay = Number(e.pay_eur ?? 0);
         const tr = document.createElement("tr");
         tr.className = "rowClick";
         tr.dataset.entryId = e.id;
@@ -708,8 +618,8 @@ async function loadDetail(weekId){
       }
     }
 
-    $("totalHHMM").textContent = fmtHHMMFromMinutes(totalMin);
-    $("totalPay").textContent  = fmtEUR(totalPay);
+    $("totalHHMM").textContent = w?.totals?.total_hhmm || "00:00";
+    $("totalPay").textContent  = fmtEUR(Number(w?.totals?.total_pay ?? 0));
 
   }catch(e){
     $("detailErr").textContent = "Error loading report: " + (e.message || "failed");

@@ -698,11 +698,34 @@
       return `${y}-${m}-${dd}`;
     }
     function tescoWeekNumber(d = new Date()) {
-      const dt = new Date(d);
-      const yearStart = new Date(dt.getFullYear(), 0, 1);
-      const daysSinceYearStart = Math.floor((dt.setHours(0,0,0,0) - yearStart.setHours(0,0,0,0)) / 86400000);
-      const yearStartOffset = (yearStart.getDay() + 1) % 7;
-      return Math.floor((daysSinceYearStart + yearStartOffset) / 7) + 1;
+      const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+      function fiscalYearStart(year) {
+        const march1 = new Date(year, 2, 1);
+        const day = march1.getDay();
+        if (day === 0) return march1;
+        if (day <= 4) {
+          march1.setDate(march1.getDate() - day);
+          return march1;
+        }
+        march1.setDate(march1.getDate() + (7 - day));
+        return march1;
+      }
+
+      let fiscalYear = dt.getFullYear();
+      let start = fiscalYearStart(fiscalYear);
+      if (dt < start) {
+        fiscalYear -= 1;
+        start = fiscalYearStart(fiscalYear);
+      } else {
+        const nextStart = fiscalYearStart(fiscalYear + 1);
+        if (dt >= nextStart) {
+          fiscalYear += 1;
+          start = nextStart;
+        }
+      }
+
+      return Math.floor((dt - start) / 86400000 / 7) + 1;
     }
     function sundayOfTescoWeek(d = new Date()) {
       return sundayOfThisWeek(d);
