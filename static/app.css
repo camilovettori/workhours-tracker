@@ -3542,30 +3542,30 @@ body{
 /* Global bottom nav */
 .bottomNav{
   position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: calc(16px + env(safe-area-inset-bottom));
-  width: min(560px, calc(100% - 32px));
-  height: 56px;
-  padding: 6px;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 4px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  min-height: 60px;
+  padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
   background: var(--color-background-primary, #fff);
   border-top: 0.5px solid var(--color-border-tertiary, rgba(15,23,42,.10));
-  border-radius: 18px 18px 28px 28px;
-  box-shadow: 0 16px 40px rgba(15,23,42,.14);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -10px 28px rgba(15,23,42,.12);
   backdrop-filter: blur(18px) saturate(150%);
   z-index: 80;
 }
 
 .navItem{
+  flex: 1 1 0;
   min-width: 0;
   min-height: 44px;
   height: 44px;
-  width: 100%;
   border: 0;
-  border-radius: 14px;
+  border-radius: 12px;
   background: transparent;
   color: var(--color-text-secondary, var(--muted));
   display: flex;
@@ -3573,30 +3573,37 @@ body{
   align-items: center;
   justify-content: center;
   gap: 2px;
-  padding: 4px 2px 3px;
+  padding: 2px 2px 1px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 900;
   line-height: 1;
   white-space: nowrap;
+  overflow: visible;
+  text-align: center;
 }
 
 .navIcon{
   display:block;
-  width: 20px;
-  height: 20px;
-  flex: 0 0 20px;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
   fill: none !important;
   stroke: currentColor !important;
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
   overflow: visible;
+  pointer-events: none;
 }
 
 .navLabel{
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
+  white-space: nowrap;
+  overflow: visible;
+  text-align: center;
+  color: inherit;
 }
 
 .navItem--active{
