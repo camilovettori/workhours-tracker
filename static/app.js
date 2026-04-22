@@ -3092,6 +3092,9 @@ async function routeAfterAuth() {
    Navigation (data-route)
 ========================= */
 document.addEventListener("DOMContentLoaded", () => {
+  if (window.__WH_BOTTOM_NAV_BOUND__) return;
+  window.__WH_BOTTOM_NAV_BOUND__ = true;
+
   document.querySelectorAll("[data-route]").forEach((el) => {
     el.addEventListener("click", () => {
       const r = el.getAttribute("data-route");
