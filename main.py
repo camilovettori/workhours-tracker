@@ -1269,6 +1269,16 @@ def min_to_hhmm(m: int) -> str:
     return f"{m//60:02d}:{m%60:02d}"
 
 
+def _parse_hhmm_naive(value: Optional[str]) -> Optional[datetime]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text[:5], "%H:%M")
+    except Exception:
+        return None
+
+
 def detect_shift(time_in: Optional[str]):
     if not time_in:
         return None
@@ -1290,6 +1300,33 @@ def effective_break_minutes(t_in: Optional[str], t_out: Optional[str], break_rea
     if not t_in or not t_out:
         return 0
     return max(BREAK_FIXED_MIN, int(break_real or 0))
+
+
+def compute_week_entry_summary(
+    time_in: Optional[str],
+    time_out: Optional[str],
+    break_minutes: Optional[int],
+    hourly_rate: float,
+    multiplier: float,
+) -> tuple[Optional[int], float]:
+    if not time_in or not time_out:
+        return None, 0.0
+
+    in_dt = _parse_hhmm_naive(time_in)
+    out_dt = _parse_hhmm_naive(time_out)
+    if not in_dt or not out_dt:
+        return None, 0.0
+
+    gross_minutes = int((out_dt - in_dt).total_seconds() / 60)
+    if gross_minutes < 0:
+        gross_minutes += 24 * 60
+
+    net_minutes = gross_minutes - int(break_minutes or 0)
+    if net_minutes < 0:
+        net_minutes = 0
+
+    gross_pay = (net_minutes / 60.0) * float(hourly_rate or 0.0) * float(multiplier or 1.0)
+    return int(net_minutes), gross_pay
 
 def clamp(v: int, lo: int, hi: int) -> int:
     return max(lo, min(hi, v))
@@ -1596,22 +1633,16 @@ def build_week_payload(
 
     for r in rows:
         authorized = bool(int(r["extra_authorized"] or 0) == 1)
-        m, meta = minutes_paid_between(
-            conn,
-            uid,
-            r["work_date"],
+        mult = float(r["multiplier"] or 1.0)
+        m, pay = compute_week_entry_summary(
             r["time_in"],
             r["time_out"],
             int(r["break_minutes"] or 0),
-            authorized,
+            rate,
+            mult,
         )
 
-        mult = float(r["multiplier"] or 1.0)
-        total_min += int(m)
-        total_pay += (m / 60.0) * rate * mult
-
         if include_entries:
-            break_eff = effective_break_minutes(r["time_in"], r["time_out"], int(r["break_minutes"] or 0))
             d = parse_ymd(r["work_date"])
             entries.append(
                 {
@@ -1622,19 +1653,23 @@ def build_week_payload(
                     "date_ddmmyyyy": ddmmyyyy(d),
                     "time_in": r["time_in"] or "",
                     "time_out": r["time_out"] or "",
-                    "break_minutes": int(break_eff),
+                    "break_minutes": int(r["break_minutes"] or 0),
                     "note": r["note"],
                     "bh_paid": (None if r["bh_paid"] is None else bool(int(r["bh_paid"]))),
                     "multiplier": float(r["multiplier"] or 1.0),
-                    "worked_hhmm": f"{int(m)//60:02d}:{int(m)%60:02d}",
-                    "pay_eur": round((m / 60.0) * rate * mult, 2),
+                    "worked_hhmm": (min_to_hhmm(int(m)) if m is not None else ""),
+                    "pay_eur": round(float(pay or 0.0), 2),
                     "time_in_real": r["time_in"] or "",
                     "time_out_real": r["time_out"] or "",
-                    "time_in_paid": meta.get("paid_in_hhmm") or "",
-                    "time_out_paid": meta.get("paid_out_hhmm") or "",
+                    "time_in_paid": "",
+                    "time_out_paid": "",
                     "extra_authorized": 1 if authorized else 0,
                 }
             )
+
+        if m is not None:
+            total_min += int(m)
+            total_pay += float(pay or 0.0)
 
     payload = {
         "id": int(w["id"]),
@@ -1642,6 +1677,7 @@ def build_week_payload(
         "start_date": start_date,
         "hourly_rate": rate,
         "totals": {
+            "total_minutes": int(total_min),
             "total_hhmm": f"{total_min//60:02d}:{total_min%60:02d}",
             "total_pay": round(total_pay, 2),
         },
@@ -1813,7 +1849,7 @@ def build_report_current_week_payload(conn: sqlite3.Connection, uid: int) -> dic
             "has_week": False,
             "week": None,
             "entries": [],
-            "totals": {"hhmm": "00:00", "pay_eur": 0.0},
+            "totals": {"total_minutes": 0, "total_hhmm": "00:00", "total_pay": 0.0},
         }
 
     payload, _total_min, _total_pay = build_week_payload(conn, uid, w, include_entries=True)
@@ -1827,10 +1863,7 @@ def build_report_current_week_payload(conn: sqlite3.Connection, uid: int) -> dic
             "hourly_rate": payload["hourly_rate"],
         },
         "entries": payload.get("entries", []),
-        "totals": {
-            "hhmm": payload["totals"]["total_hhmm"],
-            "pay_eur": payload["totals"]["total_pay"],
-        },
+        "totals": payload["totals"],
     }
 
 

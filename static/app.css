@@ -24,6 +24,10 @@
   --orange:#d97706;
   --orange-soft:#fff7ed;
   --grayPill:#e9edf5;
+  --color-background-primary:#ffffff;
+  --color-text-secondary:#64748b;
+  --color-border-tertiary: rgba(15,23,42,.10);
+  --color-accent-green:#1D9E75;
 
   --r: 28px;
   --r2: 20px;
@@ -3533,4 +3537,93 @@ body{
 
 .toastItem--info{
   background: linear-gradient(180deg, rgba(15,23,42,.96), rgba(30,41,59,.96));
+}
+
+/* Global bottom nav */
+.bottomNav{
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  width: min(560px, calc(100% - 32px));
+  height: 56px;
+  padding: 6px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  background: var(--color-background-primary, #fff);
+  border-top: 0.5px solid var(--color-border-tertiary, rgba(15,23,42,.10));
+  border-radius: 18px 18px 28px 28px;
+  box-shadow: 0 16px 40px rgba(15,23,42,.14);
+  backdrop-filter: blur(18px) saturate(150%);
+  z-index: 80;
+}
+
+.navItem{
+  min-width: 0;
+  min-height: 44px;
+  height: 44px;
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--color-text-secondary, var(--muted));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 2px 3px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.navIcon{
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.navLabel{
+  font-size: 11px;
+  line-height: 1;
+}
+
+.navItem--active{
+  color: var(--color-accent-green, #1D9E75) !important;
+  background: rgba(29,158,117,.10);
+}
+
+.navItem--active .navIcon{
+  stroke: currentColor;
+}
+
+.homeView .safeSpace{
+  height: calc(72px + env(safe-area-inset-bottom));
+}
+
+.pill--red{
+  background: linear-gradient(180deg, #E24B4A, #c53f3f);
+  color: #fff;
+}
+
+.pill--orange{
+  background: linear-gradient(180deg, #c88a22, #BA7517);
+  color: #fff;
+}
+
+.todayEarnSub{
+  margin: 6px 0 12px;
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 800;
+  color: var(--muted);
 }

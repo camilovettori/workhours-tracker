@@ -32,7 +32,7 @@
         linear-gradient(180deg, rgba(248,250,252,.90), rgba(241,245,249,.90));
     }
 
-    .wrap{ width:min(980px,100%); margin:0 auto; padding:22px 16px 120px; }
+    .wrap{ width:min(980px,100%); margin:0 auto; padding:22px 16px 72px; }
     .top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
     .brand{ display:flex; align-items:center; gap:12px; }
     .brand img{ width:44px; height:44px; border-radius:14px; object-fit:cover; box-shadow: 0 8px 22px rgba(2,6,23,.10); }
@@ -900,10 +900,6 @@ button[id^="btnSave"]{
         </div>
       </div>
 
-      <div style="display:flex; gap:8px; align-items:center;">
-        <button id="btnHome" class="btnX btnGhost" type="button">Home</button>
-        <button id="btnBack" class="btnX btnBlue" type="button">Back</button>
-      </div>
     </header>
 
     <!-- PHOTO -->
@@ -1010,6 +1006,42 @@ button[id^="btnSave"]{
       </div>
     </section>
   </main>
+
+  <nav class="bottomNav" aria-label="Primary navigation">
+    <button id="navHome" class="navItem" type="button" data-route="/">
+      <svg class="navIcon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 9.5L10 3l7 6.5V19h-5v-5H8v5H3z"></path>
+      </svg>
+      <span class="navLabel">Home</span>
+    </button>
+    <button id="navRoster" class="navItem" type="button" data-route="/roster">
+      <svg class="navIcon" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+        <path d="M16 2v4M8 2v4M3 10h18"></path>
+      </svg>
+      <span class="navLabel">Roster</span>
+    </button>
+    <button id="navReport" class="navItem" type="button" data-route="/report">
+      <svg class="navIcon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 20 L3 13 L8 13 L8 20 M9 20 L9 8 L14 8 L14 20 M15 20 L15 3 L20 3 L20 20"></path>
+      </svg>
+      <span class="navLabel">Report</span>
+    </button>
+    <button id="navHolidays" class="navItem" type="button" data-route="/holidays">
+      <svg class="navIcon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"></path>
+        <path d="M12 6v6l4 2"></path>
+      </svg>
+      <span class="navLabel">Holidays</span>
+    </button>
+    <button id="navProfile" class="navItem navItem--active" type="button" data-route="/profile">
+      <svg class="navIcon" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="8" r="4"></circle>
+        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"></path>
+      </svg>
+      <span class="navLabel">Profile</span>
+    </button>
+  </nav>
 
   <!-- ACCOUNT MODAL -->
   <div id="bdAccount" class="backdrop hidden" aria-hidden="true">
@@ -1899,9 +1931,6 @@ if (openAdminBtn) {
     });
 
     // Nav
-    $("btnHome").addEventListener("click", () => location.href = "/");
-    $("btnBack").addEventListener("click", () => history.length > 1 ? history.back() : (location.href = "/"));
-
     // Init
     (async function init(){
       try{
@@ -1915,6 +1944,15 @@ applyAdminUIProfile();
       }catch(e){
         location.href = "/";
       }
+    })();
+
+    (() => {
+      document.querySelectorAll(".bottomNav [data-route]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const route = btn.getAttribute("data-route");
+          if (route) location.href = route;
+        });
+      });
     })();
   </script>
 </body>

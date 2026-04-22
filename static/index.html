@@ -182,6 +182,8 @@
               <div class="teLive" id="todayEarnState">OFF</div>
             </div>
 
+            <div id="todayEarnSub" class="todayEarnSub"></div>
+
             <div class="teGrid teGrid--2">
               <div class="teItem">
                 <div class="teLabel">Time</div>
@@ -282,6 +284,8 @@
           <span class="flex1"></span>
           <span>💪</span>
         </div>
+
+        <div id="noRosterBannerHost"></div>
       </section>
 
       <section class="card card--reports" id="cardDeliveries">
@@ -302,26 +306,6 @@
         </div>
       </section>
 
-      <!-- BANK HOLIDAYS CARD -->
-      <section class="card card--list" id="cardHolidays">
-        <div class="listRowTop">
-          <div class="listTitle">🏁 Bank Holidays</div>
-          <div class="chev">›</div>
-        </div>
-        <div class="bhLine"><span class="bhDot bhDot--b"></span> Paid: <strong id="bhPaid">0</strong></div>
-        <div class="bhLine"><span class="bhDot bhDot--o"></span> Not Paid: <strong id="bhRemain">0</strong></div>
-      </section>
-
-      <!-- REPORTS CARD -->
-      <section class="card card--reports" id="cardReports">
-        <div class="listRowTop">
-          <div class="listTitle">🗓 Week Summary</div>
-          <div class="reportsSub">Weeks • Edit • Print</div>
-          <div class="chev">›</div>
-        </div>
-        <div class="reportsSub">View your work summaries</div>
-      </section>
-
       <section class="card card--reports" id="cardSettings">
         <div class="listRowTop">
           <div class="listTitle">⚙️ Reminders & Schedule</div>
@@ -337,12 +321,40 @@
 
   </main>
 
-  <nav class="bottomNav hidden">
-    <button id="navHome" class="navItem navItem--active" type="button">Home</button>
-    <button id="navHistory" class="navItem" type="button">Roster</button>
-    <button id="navHolidays" class="navItem" type="button">Holidays</button>
-    <button id="navReports" class="navItem" type="button">Reports</button>
-    <button id="navProfile" class="navItem" type="button">Profile</button>
+  <nav class="bottomNav hidden" aria-label="Primary navigation">
+    <button id="navHome" class="navItem navItem--active" type="button" data-route="/">
+      <svg class="navIcon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 9.5L10 3l7 6.5V19h-5v-5H8v5H3z"></path>
+      </svg>
+      <span class="navLabel">Home</span>
+    </button>
+    <button id="navRoster" class="navItem" type="button" data-route="/roster">
+      <svg class="navIcon" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+        <path d="M16 2v4M8 2v4M3 10h18"></path>
+      </svg>
+      <span class="navLabel">Roster</span>
+    </button>
+    <button id="navReport" class="navItem" type="button" data-route="/report">
+      <svg class="navIcon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 20 L3 13 L8 13 L8 20 M9 20 L9 8 L14 8 L14 20 M15 20 L15 3 L20 3 L20 20"></path>
+      </svg>
+      <span class="navLabel">Report</span>
+    </button>
+    <button id="navHolidays" class="navItem" type="button" data-route="/holidays">
+      <svg class="navIcon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"></path>
+        <path d="M12 6v6l4 2"></path>
+      </svg>
+      <span class="navLabel">Holidays</span>
+    </button>
+    <button id="navProfile" class="navItem" type="button" data-route="/profile">
+      <svg class="navIcon" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="8" r="4"></circle>
+        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"></path>
+      </svg>
+      <span class="navLabel">Profile</span>
+    </button>
   </nav>
 
   <!-- app.js deve ser o único dono de binds -->

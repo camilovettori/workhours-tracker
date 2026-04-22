@@ -41,6 +41,16 @@ function setClockActionButtonBusy(btn, busy) {
   btn.disabled = !!busy;
 }
 
+function setClockActionButtonVisual(btn, variant, disabled) {
+  if (!btn) return;
+  const variants = ["pill--green", "pill--gray", "pill--orange", "pill--red"];
+  variants.forEach((cls) => btn.classList.remove(cls));
+  if (variant) btn.classList.add(variant);
+  btn.style.opacity = disabled ? "0.35" : "";
+  btn.style.pointerEvents = disabled ? "none" : "";
+  btn.disabled = !!disabled;
+}
+
 let __toastHost = null;
 function ensureToastHost() {
   if (__toastHost) return __toastHost;
@@ -480,6 +490,7 @@ const cwWeekBtn = $("cwWeekBtn");
 const cwWeekNo = $("cwWeekNo");
 const cwHHMM = $("cwHHMM") || $("cwHours");
 const cwPay  = $("cwPay")  || $("cwGross");
+const todayEarnSub = $("todayEarnSub");
 
 const btnIn    = $("btnIn");
 const btnOut   = $("btnOut");
@@ -499,12 +510,6 @@ const cardDeliveries = $("cardDeliveries");
 const cardSettings = $("cardSettings");
 const deliveriesWeekInline = $("deliveriesWeekInline");
 const deliveriesInsightText = $("deliveriesInsightText");
-
-const navHome    = $("navHome");
-const navHistory = $("navHistory");
-const navHolidays= $("navHolidays");
-const navReports = $("navReports");
-const navProfile = $("navProfile");
 
 /* =========================
    Add Week UI
@@ -657,7 +662,7 @@ function setBreakButtonRunning(running, remainingSec = null) {
   if (!btnBreak) return;
   const label = btnBreak.querySelector(".pillText");
   if (label) {
-    label.textContent = running ? "STOP" : "BREAK";
+    label.textContent = running ? "END BREAK" : "BREAK";
   }
   btnBreak.classList.toggle("is-breakRunning", running);
 }
@@ -1433,6 +1438,7 @@ function updateTodayEarningsUI() {
   const tHHMM  = $("todayEarnHHMM");
   const tPAY   = $("todayEarnPay");
   const tSTATE = $("todayEarnState");
+  const tSub   = todayEarnSub;
   const tCard  = document.getElementById("todayEarnCard");
   const tLive   = tCard?.querySelector(".teGrid.teGrid--2");
   const tSummary = $("todayEarnSummary");
@@ -1442,18 +1448,27 @@ function updateTodayEarningsUI() {
   const tWeekTotal = $("todayEarnWeekTotal");
   const tWeekHours = $("todayEarnWeekHours");
   const tExpected = $("todayEarnExpected");
-
+  const hasWeek = !!CLOCK?.has_week;
+  const hasIn = !!CLOCK?.in_time;
+  const hasOut = !!CLOCK?.out_time;
+  const onBreak = hasWeek && hasIn && !hasOut && !!CLOCK?.break_running;
   const isLive =
-    !!CLOCK?.has_week &&
-    !!CLOCK?.in_time &&
-    !CLOCK?.out_time &&
-    !CLOCK?.break_running;
-  const isSummary = !!CLOCK?.has_week && !!CLOCK?.in_time && !!CLOCK?.out_time;
+    hasWeek &&
+    hasIn &&
+    !hasOut &&
+    !onBreak;
+  const isSummary = hasWeek && hasIn && hasOut;
+  const isIdle = !hasWeek || !hasIn;
 
   if (tCard) tCard.classList.toggle("is-live", isLive);
   if (tCard) tCard.classList.toggle("is-summary", isSummary);
   if (tLive) tLive.classList.toggle("hidden", isSummary);
   if (tSummary) tSummary.classList.toggle("hidden", !isSummary);
+
+  setClockActionButtonVisual(btnIn, "pill--green", !isIdle);
+  setClockActionButtonVisual(btnOut, isLive ? "pill--red" : "pill--gray", !isLive);
+  setClockActionButtonVisual(btnBreak, (isLive || onBreak) ? "pill--orange" : "pill--gray", !(isLive || onBreak));
+  setBreakButtonRunning(onBreak);
 
   if (isSummary) {
     if (tSTATE) tSTATE.textContent = "SUMMARY";
@@ -1465,15 +1480,21 @@ function updateTodayEarningsUI() {
     if (tExpected) tExpected.textContent = getExpectedEarningsText();
     if (tHHMM) tHHMM.textContent = String(cwHHMM?.textContent || "00:00");
     if (tPAY) tPAY.textContent = String(cwPay?.textContent || fmtEUR(0));
+    if (tSub) {
+      tSub.textContent = hasOut
+        ? `Shift ended at ${fmtHHMM(CLOCK.out_time)}`
+        : "Shift complete";
+    }
     return;
   }
 
   if (!tHHMM || !tPAY) return;
 
-  if (!CLOCK?.has_week || !CLOCK?.in_time) {
+  if (isIdle) {
     tHHMM.textContent = "--:--:--";
     tPAY.textContent  = "€-.--";
     if (tSTATE) tSTATE.textContent = "OFF";
+    if (tSub) tSub.textContent = "Tap IN to start.";
     stopLiveTicker();
     return;
   }
@@ -1487,20 +1508,29 @@ function updateTodayEarningsUI() {
     tHHMM.textContent = "--:--:--";
     tPAY.textContent  = "€-.--";
     if (tSTATE) tSTATE.textContent = "RATE?";
+    if (tSub) tSub.textContent = "Add your hourly rate in Profile.";
     stopLiveTicker();
     return;
   }
 
-  if (CLOCK.break_running) {
+  if (onBreak) {
     if (tSTATE) tSTATE.textContent = "BREAK";
+    if (tSub) {
+      const breakStart = getLocalBreakStart();
+      tSub.textContent = breakStart
+        ? `On break since ${fmtHHMMFromEpoch(breakStart)}`
+        : "On break now";
+    }
     return;
   }
 
-  if (CLOCK.out_time) {
+  if (hasOut) {
     if (tSTATE) tSTATE.textContent = "DONE";
+    if (tSub) tSub.textContent = `Shift ended at ${fmtHHMM(CLOCK.out_time)}`;
     stopLiveTicker();
   } else {
     if (tSTATE) tSTATE.textContent = "LIVE";
+    if (tSub) tSub.textContent = `Clocked in at ${fmtHHMM(CLOCK.in_time)}`;
   }
 
   const workedSec = getTodayWorkedSeconds();
@@ -1741,6 +1771,7 @@ async function refreshCurrentWeekTotalsSafe(reportOverride) {
     }
 
     const hhmm =
+      rep?.totals?.total_hhmm ??
       rep?.totals?.hhmm ??
       rep?.totals?.hours_hhmm ??
       rep?.hhmm ??
@@ -1748,6 +1779,7 @@ async function refreshCurrentWeekTotalsSafe(reportOverride) {
       "00:00";
 
     const pay =
+      rep?.totals?.total_pay ??
       rep?.totals?.pay_eur ??
       rep?.totals?.gross_pay ??
       rep?.pay_eur ??
@@ -1810,6 +1842,31 @@ async function refreshAll() {
   const rosterSummary = home?.roster_summary || null;
   const todayRoster = rosterSummary?.current_day || rosterSummary || null;
   const rosterWeek = rosterSummary?.week || null;
+  const rosterExists = !!todayRoster?.has_roster;
+  const rosterBannerHost = $("noRosterBannerHost");
+
+  if (rosterBannerHost && home) {
+    const weekNo = Number(dash?.this_week?.week_number ?? home?.week?.week?.week_number ?? tescoWeekNumber(new Date()));
+    if (rosterExists) {
+      rosterBannerHost.innerHTML = "";
+    } else {
+      rosterBannerHost.innerHTML = `
+        <div id="noRosterBanner" style="
+          background:#FAEEDA; color:#633806;
+          border:0.5px solid #EF9F27;
+          border-radius:10px; padding:10px 14px;
+          font-size:13px; margin:8px 0; cursor:pointer;
+          display:flex; align-items:center; gap:8px;">
+          <span>⚠</span>
+          <span>No roster for week ${Number.isFinite(weekNo) && weekNo > 0 ? weekNo : "--"} — tap to create</span>
+        </div>`;
+      const rosterBanner = $("noRosterBanner");
+      if (rosterBanner && !rosterBanner.dataset.bound) {
+        rosterBanner.dataset.bound = "1";
+        rosterBanner.addEventListener("click", () => go("/roster"));
+      }
+    }
+  }
 
   updateHomeCoachCard(dash, todayRoster, rosterWeek);
 
@@ -3050,7 +3107,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const current = window.location.pathname;
 
   document.querySelectorAll(".navItem").forEach(btn => {
-    const route = btn.getAttribute("data-route");
+    const route = btn.getAttribute("data-active-route") || btn.getAttribute("data-route");
     if (route === current) {
       btn.classList.add("navItem--active");
     }
@@ -3074,7 +3131,6 @@ function bind() {
 
   const openProfile = () => go("/profile");
   btnOpenProfile?.addEventListener("click", openProfile);
-  navProfile?.addEventListener("click", openProfile);
 
   btnIn?.addEventListener("click", doClockIn);
   btnOut?.addEventListener("click", doClockOut);
@@ -3096,13 +3152,6 @@ function bind() {
 
   btnBackAddWeek?.addEventListener("click", backFromAddWeek);
   addWeekForm?.addEventListener("submit", createWeekFromPage);
-
-  navHome?.addEventListener("click", () => go("/"));
-  navHistory?.addEventListener("click", () => go("/roster"));
-  navHolidays?.addEventListener("click", () => go("/holidays"));
-  navReports?.addEventListener("click", () => go("/report"));
-  
-  
 
 }
 
