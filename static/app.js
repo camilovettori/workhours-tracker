@@ -32,6 +32,52 @@ function pathIs(p) { return window.location.pathname === p; }
 const LS_ME = "wh_me";
 const LS_AVATAR = "wh_avatar_url";
 let ME = null;
+let clockActionInProgress = false;
+
+function setClockActionButtonBusy(btn, busy) {
+  if (!btn) return;
+  btn.style.opacity = busy ? "0.5" : "";
+  btn.style.pointerEvents = busy ? "none" : "";
+  btn.disabled = !!busy;
+}
+
+let __toastHost = null;
+function ensureToastHost() {
+  if (__toastHost) return __toastHost;
+  if (!document.body) return null;
+
+  __toastHost = document.createElement("div");
+  __toastHost.className = "toastContainer";
+  __toastHost.setAttribute("aria-live", "polite");
+  __toastHost.setAttribute("aria-atomic", "true");
+  document.body.appendChild(__toastHost);
+  return __toastHost;
+}
+
+function showToast(message, type = "info") {
+  const host = ensureToastHost();
+  if (!host) return;
+
+  const toast = document.createElement("div");
+  const kind = ["success", "error", "info"].includes(type) ? type : "info";
+  toast.className = `toastItem toastItem--${kind}`;
+  toast.textContent = String(message || "");
+  host.appendChild(toast);
+
+  requestAnimationFrame(() => toast.classList.add("is-visible"));
+
+  const dismiss = () => {
+    toast.classList.remove("is-visible");
+    window.setTimeout(() => toast.remove(), 180);
+  };
+
+  const timer = window.setTimeout(dismiss, 3000);
+  toast.addEventListener("click", () => {
+    window.clearTimeout(timer);
+    dismiss();
+  });
+}
+window.showToast = showToast;
 
 /* =========================
    Format helpers
@@ -1494,10 +1540,21 @@ window.stopLiveTicker = stopLiveTicker;
 /* =========================
    Clock refresh (break-safe)
 ========================= */
-async function refreshClock() {
+async function refreshClock(clockOverride) {
   try {
-    const c = await api("/api/clock/today");
-    if (!c) return;
+    let c;
+    if (typeof clockOverride === "undefined") c = await api("/api/clock/today");
+    else c = clockOverride;
+    if (!c) {
+      c = {
+        ok: true,
+        has_week: true,
+        in_time: null,
+        out_time: null,
+        break_minutes: 0,
+        break_running: false,
+      };
+    }
 
     CLOCK = c;
     TODAY_WEEK_ID = c?.has_week ? (c.week_id ?? null) : null;
@@ -1672,9 +1729,11 @@ async function refreshClock() {
 /* =========================
    Current week totals (SAFE)
 ========================= */
-async function refreshCurrentWeekTotalsSafe() {
+async function refreshCurrentWeekTotalsSafe(reportOverride) {
   try {
-    const rep = await api("/api/report/week/current");
+    const rep = typeof reportOverride === "undefined"
+      ? await api("/api/report/week/current")
+      : reportOverride;
     if (!rep || rep?.has_week === false || rep?.ok === false) {
       if (cwHHMM) cwHHMM.textContent = "00:00";
       if (cwPay)  cwPay.textContent  = fmtEUR(0);
@@ -1708,55 +1767,58 @@ async function refreshCurrentWeekTotalsSafe() {
    Refresh all
 ========================= */
 async function refreshAll() {
+  let home = null;
   try {
-    const dash = await api("/api/dashboard");
-    if (dash) LAST_DASH = dash;
-
-    DASH_WEEK_ID =
-      LAST_DASH?.this_week?.id ||
-      LAST_DASH?.this_week?.week_id ||
-      null;
-
+    home = await api("/api/home");
+    if (home?.dashboard) LAST_DASH = home.dashboard;
+    if (home?.clock) CLOCK = home.clock;
+    if (home?.deliveries) {
+      DELIVERY_STATE = home.deliveries;
+      DELIVERY_PAGE_STATE.stats = home.deliveries;
+    }
+    if (typeof home?.today_multiplier !== "undefined") {
+      window.TODAY_MULT = Number(home.today_multiplier || 1);
+      _todayMultCache = { ymd: todayYMD(), value: window.TODAY_MULT };
+    }
   } catch (e) {
     if (e?.status === 401) { await enterLogin(); return; }
+    showToast("Connection error — data may be outdated", "error");
   }
 
-  await refreshTodayMultiplier();
+  const dash = home?.dashboard || LAST_DASH;
+
+  DASH_WEEK_ID =
+    dash?.this_week?.id ||
+    dash?.this_week?.week_id ||
+    null;
 
   if (cwWeekNo) {
     cwWeekNo.textContent =
-      LAST_DASH?.this_week?.week_number ? String(LAST_DASH.this_week.week_number) : "--";
+      dash?.this_week?.week_number ? String(dash.this_week.week_number) : "--";
   }
 
-  const paid = Number(LAST_DASH?.bank_holidays?.paid ?? 0);
-  const remaining = Number(LAST_DASH?.bank_holidays?.remaining ?? 0);
+  const paid = Number(dash?.bank_holidays?.paid ?? 0);
+  const remaining = Number(dash?.bank_holidays?.remaining ?? 0);
   if (bhPaid)   bhPaid.textContent   = String(paid);
   if (bhRemain) bhRemain.textContent = String(remaining);
 
-  await refreshClock();
-  await refreshCurrentWeekTotalsSafe();
+  if (home) {
+    await refreshClock(home?.clock ?? null);
+    await refreshCurrentWeekTotalsSafe(home?.week ?? null);
+  }
 
-  let todayRoster = null;
-  let rosterWeek = null;
-  try {
-    [todayRoster, rosterWeek] = await Promise.all([
-      loadTodayRosterHint(),
-      loadCurrentRosterWeekSummary(),
-    ]);
-  } catch {}
+  const rosterSummary = home?.roster_summary || null;
+  const todayRoster = rosterSummary?.current_day || rosterSummary || null;
+  const rosterWeek = rosterSummary?.week || null;
 
-  updateHomeCoachCard(LAST_DASH, todayRoster, rosterWeek);
+  updateHomeCoachCard(dash, todayRoster, rosterWeek);
 
   if (deliveriesWeekInline) {
-    let stats = DELIVERY_STATE;
-    try {
-      const loaded = await loadDeliveriesStats();
-      if (loaded) stats = loaded;
-      if (stats) {
-        deliveriesWeekInline.textContent = String(stats.week?.total ?? 0);
-        renderDeliveryHomeInsights(stats);
-      }
-    } catch {}
+    const stats = home?.deliveries || DELIVERY_STATE;
+    if (stats) {
+      deliveriesWeekInline.textContent = String(stats.week?.total ?? 0);
+      renderDeliveryHomeInsights(stats);
+    }
   }
 
   updateTodayEarningsUI();
@@ -1963,8 +2025,8 @@ async function validateBeforeClockIn() {
   const rate = Number(ME?.hourly_rate ?? 0);
 
   if (!rate || rate <= 0) {
-    alert("Add Hour Rate First.\nGo to Profile → Hourly Rate.");
-    go("/profile");
+    showToast("Add Hour Rate First. Go to Profile → Hourly Rate.", "error");
+    window.setTimeout(() => go("/profile"), 250);
     return false;
   }
 
@@ -1987,7 +2049,11 @@ async function validateBeforeClockIn() {
    Clock actions
 ========================= */
 
-async function doClockIn() {
+async function doClockIn(ev) {
+  if (clockActionInProgress) return;
+  clockActionInProgress = true;
+  const btn = ev?.currentTarget || btnIn || null;
+  setClockActionButtonBusy(btn, true);
   try {
 
     // 1️⃣ CHECK HOURLY RATE
@@ -1995,7 +2061,8 @@ async function doClockIn() {
     const rate = Number(me?.hourly_rate || 0);
 
     if (!rate || rate <= 0) {
-      alert("Add Hour Rate First.\nGo to Profile → Hourly Rate.");
+      showToast("Add Hour Rate First. Go to Profile → Hourly Rate.", "error");
+      window.setTimeout(() => go("/profile"), 250);
       return;
     }
 
@@ -2017,15 +2084,23 @@ async function doClockIn() {
     }
 
     await refreshAll();
+    showToast("Clocked in.", "success");
 
   } catch (e) {
-    alert(e?.message || "IN failed");
+    showToast(e?.message || "IN failed", "error");
+  } finally {
+    clockActionInProgress = false;
+    setClockActionButtonBusy(btn, false);
   }
 }
 
 
 
-async function doClockOut() {
+async function doClockOut(ev) {
+  if (clockActionInProgress) return;
+  clockActionInProgress = true;
+  const btn = ev?.currentTarget || btnOut || null;
+  setClockActionButtonBusy(btn, true);
   try {
     const r = await api("/api/clock/out", { method: "POST" });
 
@@ -2036,12 +2111,20 @@ async function doClockOut() {
     }
 
     await refreshAll();
+    showToast("Clocked out.", "success");
   } catch (e) {
-    alert(e?.message || "OUT failed");
+    showToast(e?.message || "OUT failed", "error");
+  } finally {
+    clockActionInProgress = false;
+    setClockActionButtonBusy(btn, false);
   }
 }
 
-async function doClockBreak() {
+async function doClockBreak(ev) {
+  if (clockActionInProgress) return;
+  clockActionInProgress = true;
+  const btn = ev?.currentTarget || btnBreak || null;
+  setClockActionButtonBusy(btn, true);
   // call permission request on user gesture (best)
   requestNotificationPermission();
 
@@ -2061,6 +2144,7 @@ async function doClockBreak() {
       startBreakCountdown(resumeSec);
 
       await refreshAll();
+      showToast("Break started.", "success");
       return;
     }
 
@@ -2071,9 +2155,13 @@ async function doClockBreak() {
 
     stopBreakCountdown(false);
     await refreshAll();
+    showToast("Break paused.", "success");
 
   } catch (e) {
-    alert(e?.message || "BREAK failed");
+    showToast(e?.message || "BREAK failed", "error");
+  } finally {
+    clockActionInProgress = false;
+    setClockActionButtonBusy(btn, false);
   }
 }
 
@@ -2115,9 +2203,12 @@ async function createWeekFromPage(ev) {
       body: JSON.stringify({ week_number, start_date, hourly_rate }),
     });
 
+    showToast("Week created.", "success");
+    await new Promise((resolve) => setTimeout(resolve, 250));
     go("/");
   } catch (e) {
     if (addWeekMsg) addWeekMsg.textContent = e.message || "Failed to create week";
+    showToast(e.message || "Failed to create week", "error");
   }
 }
 
@@ -2475,6 +2566,7 @@ async function saveDeliveryEditor() {
 
     closeDeliveryEditor();
     if (els.msg) els.msg.textContent = "Deliveries saved.";
+    showToast("Deliveries saved.", "success");
     const dayCard = document.querySelector(".deliveryDayCard");
     if (dayCard) {
       dayCard.classList.add("is-savedFlash");
@@ -2483,6 +2575,7 @@ async function saveDeliveryEditor() {
     await refreshDeliveriesPage();
   } catch (e) {
     if (els.msg) els.msg.textContent = e.message || "Failed to save deliveries";
+    showToast(e.message || "Failed to save deliveries", "error");
   }
 }
 
@@ -2615,8 +2708,10 @@ async function saveSettingsPage(ev) {
     await loadReminderConfig();
     requestNotificationPermission();
     if (els.msg) els.msg.textContent = "Settings saved.";
+    showToast("Settings saved.", "success");
   } catch (e) {
     if (els.msg) els.msg.textContent = e.message || "Failed to save settings";
+    showToast(e.message || "Failed to save settings", "error");
   }
 }
 
@@ -3006,7 +3101,6 @@ function bind() {
   navHistory?.addEventListener("click", () => go("/roster"));
   navHolidays?.addEventListener("click", () => go("/holidays"));
   navReports?.addEventListener("click", () => go("/report"));
-  document.addEventListener("DOMContentLoaded", enterRoster);
   
   
 

@@ -120,7 +120,8 @@
         <form id="addWeekForm" class="form">
           <label class="field">
             <span>Week number</span>
-            <input id="awWeekNumber" type="number" min="1" max="53" required />
+            <input id="awWeekNumber" type="number" min="1" max="53" disabled aria-disabled="true" />
+            <span class="fieldHint">Auto-calculated from start date</span>
           </label>
 
           <label class="field">

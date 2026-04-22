@@ -108,11 +108,6 @@
 
   </style>
 </head>
-  
-</body>
-</html>
-
-
 <body>
 
 <!-- DAY DETAILS MODAL -->
@@ -279,7 +274,8 @@
       <form id="addWeekForm2" class="form">
         <label class="field">
           <span>Week number</span>
-          <input id="aw2WeekNumber" type="number" min="1" max="53" required />
+          <input id="aw2WeekNumber" type="number" min="1" max="53" disabled aria-disabled="true" />
+          <span class="fieldHint">Auto-calculated from start date</span>
         </label>
 
         <label class="field">
@@ -331,11 +327,11 @@ function fmtEUR(n){
   try { return v.toLocaleString(undefined, { style:"currency", currency:"EUR" }); }
   catch { return "€" + v.toFixed(2); }
 }
-async function api(path, opts = {}){
-  const res = await fetch(path, {
-    credentials:"include",
-    headers: { "Content-Type":"application/json", ...(opts.headers||{}) },
-    ...opts
+    async function api(path, opts = {}){
+      const res = await fetch(path, {
+        credentials:"include",
+        headers: { "Content-Type":"application/json", ...(opts.headers||{}) },
+        ...opts
   });
   const ct = res.headers.get("content-type") || "";
   const data = ct.includes("application/json") ? await res.json() : await res.text();
@@ -344,9 +340,46 @@ async function api(path, opts = {}){
     const e = new Error(msg);
     e.status = res.status;
     throw e;
-  }
-  return data;
-}
+      }
+      return data;
+    }
+
+    let __toastHost = null;
+    function ensureToastHost() {
+      if (__toastHost) return __toastHost;
+      if (!document.body) return null;
+
+      __toastHost = document.createElement("div");
+      __toastHost.className = "toastContainer";
+      __toastHost.setAttribute("aria-live", "polite");
+      __toastHost.setAttribute("aria-atomic", "true");
+      document.body.appendChild(__toastHost);
+      return __toastHost;
+    }
+
+    function showToast(message, type = "info") {
+      const host = ensureToastHost();
+      if (!host) return;
+
+      const toast = document.createElement("div");
+      const kind = ["success", "error", "info"].includes(type) ? type : "info";
+      toast.className = `toastItem toastItem--${kind}`;
+      toast.textContent = String(message || "");
+      host.appendChild(toast);
+
+      requestAnimationFrame(() => toast.classList.add("is-visible"));
+
+      const dismiss = () => {
+        toast.classList.remove("is-visible");
+        window.setTimeout(() => toast.remove(), 180);
+      };
+
+      const timer = window.setTimeout(dismiss, 3000);
+      toast.addEventListener("click", () => {
+        window.clearTimeout(timer);
+        dismiss();
+      });
+    }
 
 /* =========================
    Helpers
@@ -671,9 +704,11 @@ $("addWeekForm2").addEventListener("submit", async (ev) => {
     });
 
     closeAddWeekModal2();
+    showToast("Week created.", "success");
     await loadList();
   }catch(e){
     $("addWeekErr2").textContent = e.message || "Failed to create week";
+    showToast(e.message || "Failed to create week", "error");
     if(e.status === 401) location.href = "/";
   }
 });

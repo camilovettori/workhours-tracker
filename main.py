@@ -1078,7 +1078,17 @@ async def upload_avatar(req: Request, file: UploadFile = File(...)):
 
 @app.get("/uploads/avatars/{fname}")
 def get_avatar(fname: str, req: Request):
-    require_user(req)
+    uid = require_user(req)
+    with db() as conn:
+        row = conn.execute(
+            "SELECT avatar_path FROM users WHERE id=?",
+            (uid,),
+        ).fetchone()
+
+    avatar_path = row["avatar_path"] if row and row["avatar_path"] else ""
+    if not avatar_path or Path(avatar_path).name != fname:
+        raise HTTPException(403, "Forbidden")
+
     p = (AVATARS_DIR / fname).resolve()
     if not str(p).startswith(str(AVATARS_DIR.resolve())):
         raise HTTPException(400, "Invalid file")
@@ -1642,6 +1652,400 @@ def build_week_payload(
     return payload, total_min, total_pay
 
 
+def build_clock_today_payload(conn: sqlite3.Connection, uid: int) -> dict:
+    ensure_clock_tables(conn)
+
+    w = get_current_week(conn, uid)
+    if not w:
+        return {
+            "ok": True,
+            "has_week": False,
+            "in_time": None,
+            "out_time": None,
+            "break_minutes": 0,
+            "break_running": False,
+        }
+
+    work_date = today_ymd()
+    e = get_today_entry(conn, uid, int(w["id"]), work_date)
+    if not e:
+        return {
+            "ok": True,
+            "has_week": True,
+            "week_id": int(w["id"]),
+            "work_date": work_date,
+            "in_time": None,
+            "out_time": None,
+            "break_minutes": 0,
+            "break_running": False,
+        }
+
+    st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
+
+    if not st or st["work_date"] != work_date:
+        conn.execute(
+            """
+            INSERT INTO clock_state(user_id,week_id,work_date,in_time,out_time,break_running,break_start,break_minutes,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(user_id) DO UPDATE SET
+              week_id=excluded.week_id,
+              work_date=excluded.work_date,
+              in_time=excluded.in_time,
+              out_time=excluded.out_time,
+              break_running=0,
+              break_start=NULL,
+              break_minutes=excluded.break_minutes,
+              updated_at=excluded.updated_at
+            """,
+            (
+                uid,
+                int(w["id"]),
+                work_date,
+                e["time_in"],
+                e["time_out"],
+                0,
+                None,
+                int(e["break_minutes"] or 0),
+                now(),
+            ),
+        )
+        conn.commit()
+        st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
+    else:
+        conn.execute(
+            """
+            UPDATE clock_state
+            SET week_id=?,
+                in_time=?,
+                out_time=?,
+                break_minutes=?,
+                updated_at=?
+            WHERE user_id=? AND work_date=?
+            """,
+            (int(w["id"]), e["time_in"], e["time_out"], int(e["break_minutes"] or 0), now(), uid, work_date),
+        )
+        conn.commit()
+        st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
+
+    return {
+        "ok": True,
+        "has_week": True,
+        "week_id": int(w["id"]),
+        "work_date": work_date,
+        "in_time": st["in_time"],
+        "out_time": st["out_time"],
+        "break_minutes": int(st["break_minutes"] or 0),
+        "break_running": bool(int(st["break_running"] or 0)),
+    }
+
+
+def build_dashboard_payload(conn: sqlite3.Connection, uid: int) -> dict:
+    weeks = conn.execute(
+        "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date ASC",
+        (uid,),
+    ).fetchall()
+
+    current_week = get_current_week(conn, uid)
+
+    total_min_all = 0
+    total_pay_all = 0.0
+    for w in weeks:
+        _payload, week_min, week_pay = build_week_payload(conn, uid, w, include_entries=False)
+        total_min_all += int(week_min)
+        total_pay_all += float(week_pay)
+
+    this_week_min = 0
+    this_week_pay = 0.0
+    this_week_payload = None
+    if current_week:
+        this_week_payload, this_week_min, this_week_pay = build_week_payload(conn, uid, current_week, include_entries=False)
+
+    supported_years = [y for y in (2025, 2026) if irish_bank_holidays(y)]
+    bh_years_out = []
+    total_allowance = 0
+    total_paid = 0
+
+    for y in supported_years:
+        ensure_bh_for_year(conn, uid, y)
+        rows = conn.execute(
+            """
+            SELECT paid
+            FROM bank_holidays
+            WHERE user_id=? AND year=?
+              AND applicable=1
+              AND date(bh_date) <= date('now')
+            """,
+            (uid, y),
+        ).fetchall()
+
+        allowance = len(rows)
+        paid = sum(1 for r in rows if int(r["paid"] or 0) == 1)
+        not_paid = allowance - paid
+
+        bh_years_out.append({"year": y, "allowance": allowance, "paid": paid, "not_paid": not_paid})
+        total_allowance += allowance
+        total_paid += paid
+
+    total_remaining = total_allowance - total_paid
+
+    return {
+        "this_week": {
+            "id": (int(this_week_payload["id"]) if this_week_payload else (int(current_week["id"]) if current_week else None)),
+            "week_number": (int(this_week_payload["week_number"]) if this_week_payload else (int(current_week["week_number"]) if current_week else None)),
+            "hourly_rate": (float(this_week_payload["hourly_rate"]) if this_week_payload else (float(current_week["hourly_rate"] or 0.0) if current_week else 0.0)),
+            "hhmm": f"{this_week_min//60:02d}:{this_week_min%60:02d}",
+            "pay_eur": round(this_week_pay, 2),
+        },
+        "bank_holidays_years": bh_years_out,
+        "bank_holidays": {"allowance": total_allowance, "paid": total_paid, "remaining": total_remaining},
+        "all_time": {
+            "hhmm": f"{total_min_all//60:02d}:{total_min_all%60:02d}",
+            "pay_eur": round(total_pay_all, 2),
+        },
+    }
+
+
+def build_report_current_week_payload(conn: sqlite3.Connection, uid: int) -> dict:
+    w = get_current_week(conn, uid)
+    if not w:
+        return {
+            "ok": True,
+            "has_week": False,
+            "week": None,
+            "entries": [],
+            "totals": {"hhmm": "00:00", "pay_eur": 0.0},
+        }
+
+    payload, _total_min, _total_pay = build_week_payload(conn, uid, w, include_entries=True)
+    return {
+        "ok": True,
+        "has_week": True,
+        "week": {
+            "id": payload["id"],
+            "week_number": payload["week_number"],
+            "start_date": payload["start_date"],
+            "hourly_rate": payload["hourly_rate"],
+        },
+        "entries": payload.get("entries", []),
+        "totals": {
+            "hhmm": payload["totals"]["total_hhmm"],
+            "pay_eur": payload["totals"]["total_pay"],
+        },
+    }
+
+
+def build_roster_week_summary(conn: sqlite3.Connection, uid: int) -> Optional[dict]:
+    today = today_ymd()
+    ro = roster_for_date(conn, uid, today)
+    if not ro:
+        return None
+
+    roster_id = int(ro["roster_id"])
+    rows = conn.execute(
+        """
+        SELECT work_date, day_off, shift_in, shift_out, status
+        FROM roster_days
+        WHERE roster_id=? AND user_id=?
+        ORDER BY date(work_date) ASC, id ASC
+        """,
+        (roster_id, uid),
+    ).fetchall()
+
+    days = []
+    total_minutes = 0
+    scheduled_so_far_minutes = 0
+    today_dt = parse_ymd(today)
+
+    for row in rows:
+        day_off = bool(int(row["day_off"] or 0))
+        has_shift = bool(row["shift_in"] and row["shift_out"] and not day_off)
+        minutes = 0
+        if has_shift:
+            minutes = max(0, hhmm_to_min(row["shift_out"]) - hhmm_to_min(row["shift_in"]))
+
+        day_payload = {
+            "work_date": row["work_date"],
+            "day_off": day_off,
+            "shift_in": row["shift_in"],
+            "shift_out": row["shift_out"],
+            "status": roster_day_status_from_row(row),
+            "minutes": minutes,
+        }
+        days.append(day_payload)
+        total_minutes += minutes
+
+        try:
+            row_date = parse_ymd(row["work_date"])
+            if row_date <= today_dt:
+                scheduled_so_far_minutes += minutes
+        except Exception:
+            pass
+
+    today_day = next((day for day in days if day["work_date"] == today), None)
+
+    return {
+        "id": roster_id,
+        "weekNumber": int(ro["week_number"]),
+        "startDate": ro["start_date"],
+        "days": days,
+        "totalMinutes": total_minutes,
+        "scheduledSoFarMinutes": scheduled_so_far_minutes,
+        "todayDay": today_day,
+    }
+
+
+def build_roster_current_payload(conn: sqlite3.Connection, uid: int) -> dict:
+    today = today_ymd()
+    ro = roster_for_date(conn, uid, today)
+    if not ro:
+        return {
+            "has_roster": False,
+            "work_date": today,
+            "week_number": None,
+            "start_date": None,
+            "day_off": True,
+            "shift_in": None,
+            "shift_out": None,
+            "status": "OFF",
+        }
+
+    fiscal_year, week_number = tesco_fiscal_week(parse_ymd(today))
+    return {
+        "has_roster": True,
+        "work_date": today,
+        "fiscal_year": fiscal_year,
+        "week_number": week_number,
+        "start_date": ro["start_date"],
+        "day_off": bool(int(ro["day_off"] or 0)),
+        "shift_in": ro["shift_in"],
+        "shift_out": ro["shift_out"],
+        "status": roster_day_status_from_row(ro),
+    }
+
+
+def build_deliveries_stats_payload(conn: sqlite3.Connection, uid: int) -> dict:
+    today = local_now().date()
+    month_start = today.replace(day=1)
+    week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=6)
+
+    ensure_v2_defaults(conn, uid)
+    rows = conn.execute(
+        """
+        SELECT work_date, run_no, location, delivery_count
+        FROM deliveries
+        WHERE user_id=?
+        ORDER BY date(work_date) ASC, run_no ASC, id ASC
+        """,
+        (uid,),
+    ).fetchall()
+
+    deliveries = [
+        {
+            "work_date": r["work_date"],
+            "run_no": int(r["run_no"]),
+            "location": r["location"],
+            "delivery_count": int(r["delivery_count"] or 0),
+        }
+        for r in rows
+    ]
+
+    def sum_in_range(start_d: date, end_d: date) -> Dict[str, Any]:
+        filtered = [r for r in deliveries if start_d <= parse_ymd(r["work_date"]) <= end_d]
+        total = sum(int(r["delivery_count"] or 0) for r in filtered)
+        run_1 = sum(int(r["delivery_count"] or 0) for r in filtered if int(r["run_no"]) == 1)
+        run_2 = sum(int(r["delivery_count"] or 0) for r in filtered if int(r["run_no"]) == 2)
+        by_location: Dict[str, int] = {loc: 0 for loc in DELIVERY_LOCATIONS}
+        for r in filtered:
+            by_location[r["location"]] = by_location.get(r["location"], 0) + int(r["delivery_count"] or 0)
+        distinct_days = len({r["work_date"] for r in filtered}) or 1
+        distinct_weeks = len({
+            f"{parse_ymd(r['work_date']).isocalendar().year}-{parse_ymd(r['work_date']).isocalendar().week}"
+            for r in filtered
+        }) or 1
+        trend: Dict[str, int] = {}
+        for r in filtered:
+            trend[r["work_date"]] = trend.get(r["work_date"], 0) + int(r["delivery_count"] or 0)
+        return {
+            "total": total,
+            "run_1": run_1,
+            "run_2": run_2,
+            "by_location": by_location,
+            "avg_per_day": round(total / distinct_days, 2) if distinct_days else 0.0,
+            "avg_per_week": round(total / distinct_weeks, 2) if distinct_weeks else 0.0,
+            "trend": trend,
+        }
+
+    week = sum_in_range(week_start, week_end)
+    month = sum_in_range(month_start, today)
+
+    weekly_trend = []
+    for i in range(7):
+        d = week_start + timedelta(days=i)
+        weekly_trend.append(
+            {
+                "date": d.isoformat(),
+                "label": weekday_short_en(d),
+                "value": int(week["trend"].get(d.isoformat(), 0)),
+            }
+        )
+
+    monthly_trend = []
+    cursor = month_start
+    while cursor <= today:
+        monthly_trend.append(
+            {
+                "date": cursor.isoformat(),
+                "label": f"{cursor.day:02d}",
+                "value": int(month["trend"].get(cursor.isoformat(), 0)),
+            }
+        )
+        cursor += timedelta(days=1)
+
+    location_breakdown = [
+        {"location": loc, "count": int(month["by_location"].get(loc, 0))}
+        for loc in DELIVERY_LOCATIONS
+    ]
+    most_frequent_location = max(location_breakdown, key=lambda item: item["count"], default={"location": None, "count": 0})
+
+    return {
+        "ok": True,
+        "week": {
+            "total": int(week["total"]),
+            "run_1": int(week["run_1"]),
+            "run_2": int(week["run_2"]),
+            "avg_per_day": week["avg_per_day"],
+            "avg_per_week": week["avg_per_week"],
+            "trend": weekly_trend,
+        },
+        "month": {
+            "total": int(month["total"]),
+            "run_1": int(month["run_1"]),
+            "run_2": int(month["run_2"]),
+            "avg_per_day": month["avg_per_day"],
+            "avg_per_week": month["avg_per_week"],
+            "trend": monthly_trend,
+        },
+        "items": deliveries,
+        "most_frequent_location": most_frequent_location["location"],
+    }
+
+
+def build_home_payload(conn: sqlite3.Connection, uid: int) -> dict:
+    today = today_ymd()
+    return {
+        "clock": build_clock_today_payload(conn, uid),
+        "dashboard": build_dashboard_payload(conn, uid),
+        "week": build_report_current_week_payload(conn, uid),
+        "roster_summary": {
+            "current_day": build_roster_current_payload(conn, uid),
+            "week": build_roster_week_summary(conn, uid),
+        },
+        "deliveries": build_deliveries_stats_payload(conn, uid),
+        "today_multiplier": multiplier_for_date(conn, uid, today),
+    }
+
+
 # ======================================================
 # MULTIPLIER (Sunday / BH paid)
 # ======================================================
@@ -2005,113 +2409,8 @@ def deliveries_delete(delivery_id: int, req: Request):
 @app.get("/api/deliveries/stats")
 def deliveries_stats(req: Request):
     uid = require_user(req)
-    today = local_now().date()
-    month_start = today.replace(day=1)
-    week_start = today - timedelta(days=today.weekday())
-    week_end = week_start + timedelta(days=6)
-
     with db() as conn:
-        ensure_v2_defaults(conn, uid)
-        rows = conn.execute(
-            """
-            SELECT work_date, run_no, location, delivery_count
-            FROM deliveries
-            WHERE user_id=?
-            ORDER BY date(work_date) ASC, run_no ASC, id ASC
-            """,
-            (uid,),
-        ).fetchall()
-
-        deliveries = [
-            {
-                "work_date": r["work_date"],
-                "run_no": int(r["run_no"]),
-                "location": r["location"],
-                "delivery_count": int(r["delivery_count"] or 0),
-            }
-            for r in rows
-        ]
-
-        def sum_in_range(start_d: date, end_d: date) -> Dict[str, Any]:
-            filtered = [r for r in deliveries if start_d <= parse_ymd(r["work_date"]) <= end_d]
-            total = sum(int(r["delivery_count"] or 0) for r in filtered)
-            run_1 = sum(int(r["delivery_count"] or 0) for r in filtered if int(r["run_no"]) == 1)
-            run_2 = sum(int(r["delivery_count"] or 0) for r in filtered if int(r["run_no"]) == 2)
-            by_location: Dict[str, int] = {loc: 0 for loc in DELIVERY_LOCATIONS}
-            for r in filtered:
-                by_location[r["location"]] = by_location.get(r["location"], 0) + int(r["delivery_count"] or 0)
-            distinct_days = len({r["work_date"] for r in filtered}) or 1
-            distinct_weeks = len({
-                f"{parse_ymd(r['work_date']).isocalendar().year}-{parse_ymd(r['work_date']).isocalendar().week}"
-                for r in filtered
-            }) or 1
-            trend: Dict[str, int] = {}
-            for r in filtered:
-                trend[r["work_date"]] = trend.get(r["work_date"], 0) + int(r["delivery_count"] or 0)
-            return {
-                "total": total,
-                "run_1": run_1,
-                "run_2": run_2,
-                "by_location": by_location,
-                "avg_per_day": round(total / distinct_days, 2) if distinct_days else 0.0,
-                "avg_per_week": round(total / distinct_weeks, 2) if distinct_weeks else 0.0,
-                "trend": trend,
-            }
-
-        week = sum_in_range(week_start, week_end)
-        month = sum_in_range(month_start, today)
-
-        weekly_trend = []
-        for i in range(7):
-            d = week_start + timedelta(days=i)
-            weekly_trend.append(
-                {
-                    "date": d.isoformat(),
-                    "label": weekday_short_en(d),
-                    "value": int(week["trend"].get(d.isoformat(), 0)),
-                }
-            )
-
-        monthly_trend = []
-        cursor = month_start
-        while cursor <= today:
-            monthly_trend.append(
-                {
-                    "date": cursor.isoformat(),
-                    "label": f"{cursor.day:02d}",
-                    "value": int(month["trend"].get(cursor.isoformat(), 0)),
-                }
-            )
-            cursor += timedelta(days=1)
-
-        location_breakdown = [
-            {"location": loc, "count": int(month["by_location"].get(loc, 0))}
-            for loc in DELIVERY_LOCATIONS
-        ]
-        most_frequent_location = max(location_breakdown, key=lambda item: item["count"], default={"location": None, "count": 0})
-
-        return {
-            "ok": True,
-            "week": {
-                "total": int(week["total"]),
-                "run_1": int(week["run_1"]),
-                "run_2": int(week["run_2"]),
-                "avg_per_day": week["avg_per_day"],
-                "avg_per_week": week["avg_per_week"],
-                "trend": weekly_trend,
-            },
-            "month": {
-                "total": int(month["total"]),
-                "run_1": int(month["run_1"]),
-                "run_2": int(month["run_2"]),
-                "avg_per_day": month["avg_per_day"],
-                "avg_per_week": month["avg_per_week"],
-                "trend": monthly_trend,
-            },
-            "location_breakdown": location_breakdown,
-            "most_frequent_location": most_frequent_location["location"],
-            "items": deliveries,
-        }
+        return build_deliveries_stats_payload(conn, uid)
 
 
 # ======================================================
@@ -2286,7 +2585,15 @@ def day_details(entry_id: int, req: Request):
 def roster_for_date(conn: sqlite3.Connection, uid: int, ymd: str) -> Optional[sqlite3.Row]:
     return conn.execute(
         """
-        SELECT rd.shift_in, rd.shift_out, rd.day_off, rd.status
+        SELECT
+            r.id AS roster_id,
+            r.week_number,
+            r.start_date,
+            rd.work_date,
+            rd.shift_in,
+            rd.shift_out,
+            rd.day_off,
+            rd.status
         FROM roster_days rd
         JOIN rosters r ON r.id = rd.roster_id
         WHERE rd.user_id=? AND rd.work_date=?
@@ -2489,34 +2796,8 @@ def roster_day_lookup(req: Request, date_ymd: str = Query(..., description="YYYY
 @app.get("/api/roster/current")
 def roster_current(req: Request):
     uid = require_user(req)
-    today = today_ymd()
-
     with db() as conn:
-        ro = roster_for_date(conn, uid, today)
-        if not ro:
-            return {
-                "has_roster": False,
-                "work_date": today,
-                "week_number": None,
-                "start_date": None,
-                "day_off": True,
-                "shift_in": None,
-                "shift_out": None,
-                "status": "OFF",
-            }
-
-        fiscal_year, week_number = tesco_fiscal_week(parse_ymd(today))
-        return {
-            "has_roster": True,
-            "work_date": today,
-            "fiscal_year": fiscal_year,
-            "week_number": week_number,
-            "start_date": ro["start_date"],
-            "day_off": bool(int(ro["day_off"] or 0)),
-            "shift_in": ro["shift_in"],
-            "shift_out": ro["shift_out"],
-            "status": roster_day_status_from_row(ro),
-        }
+        return build_roster_current_payload(conn, uid)
 
 
 @app.get("/api/roster/{roster_id}")
@@ -2862,7 +3143,17 @@ def upsert_entry(week_id: int, p: EntryUpsert, req: Request):
 def delete_entry(entry_id: int, req: Request):
     uid = require_user(req)
     with db() as conn:
+        ensure_clock_tables(conn)
+        row = conn.execute(
+            "SELECT work_date FROM entries WHERE id=? AND user_id=?",
+            (entry_id, uid),
+        ).fetchone()
         ok = conn.execute("DELETE FROM entries WHERE id=? AND user_id=?", (entry_id, uid)).rowcount
+        if row and row["work_date"]:
+            conn.execute(
+                "DELETE FROM clock_state WHERE user_id=? AND work_date=?",
+                (uid, row["work_date"]),
+            )
         conn.commit()
     if not ok:
         raise HTTPException(404, "Not found")
@@ -2877,68 +3168,11 @@ def dashboard(req: Request):
     uid = require_user(req)
 
     with db() as conn:
-        weeks = conn.execute(
-            "SELECT * FROM weeks WHERE user_id=? ORDER BY start_date ASC",
-            (uid,),
-        ).fetchall()
-
-        current_week = get_current_week(conn, uid)
-
-        # Totals (all time)
-        total_min_all = 0
-        total_pay_all = 0.0
-
-        for w in weeks:
-            _payload, week_min, week_pay = build_week_payload(conn, uid, w, include_entries=False)
-            total_min_all += int(week_min)
-            total_pay_all += float(week_pay)
-
-        # Totals (this week)
-        this_week_min = 0
-        this_week_pay = 0.0
-
-        if current_week:
-            _payload, this_week_min, this_week_pay = build_week_payload(conn, uid, current_week, include_entries=False)
-
-        # Bank holidays
-        supported_years = [y for y in (2025, 2026) if irish_bank_holidays(y)]
-        bh_years_out = []
-        total_allowance = 0
-        total_paid = 0
-
-        for y in supported_years:
-            ensure_bh_for_year(conn, uid, y)
-            rows = conn.execute(
-                """
-                SELECT paid
-                FROM bank_holidays
-                WHERE user_id=? AND year=?
-                  AND applicable=1
-                  AND date(bh_date) <= date('now')
-                """,
-                (uid, y),
-            ).fetchall()
-
-            allowance = len(rows)
-            paid = sum(1 for r in rows if int(r["paid"] or 0) == 1)
-            not_paid = allowance - paid
-
-            bh_years_out.append({"year": y, "allowance": allowance, "paid": paid, "not_paid": not_paid})
-            total_allowance += allowance
-            total_paid += paid
-
-        total_remaining = total_allowance - total_paid
-
+        payload = build_dashboard_payload(conn, uid)
         return {
-            "this_week": {
-                "id": (int(current_week["id"]) if current_week else None),
-                "week_number": (int(current_week["week_number"]) if current_week else None),
-                "hourly_rate": (float(current_week["hourly_rate"] or 0.0) if current_week else 0.0),
-                "hhmm": f"{this_week_min//60:02d}:{this_week_min%60:02d}",
-                "pay_eur": round(this_week_pay, 2),
-            },
-            "bank_holidays_years": bh_years_out,
-            "bank_holidays": {"allowance": total_allowance, "paid": total_paid, "remaining": total_remaining},
+            "this_week": payload["this_week"],
+            "bank_holidays_years": payload["bank_holidays_years"],
+            "bank_holidays": payload["bank_holidays"],
         }
 
 
@@ -2953,33 +3187,14 @@ def report_current_week(req: Request):
     uid = require_user(req)
 
     with db() as conn:
-        w = get_current_week(conn, uid)
+        return build_report_current_week_payload(conn, uid)
 
-        if not w:
-            return {
-                "ok": True,
-                "has_week": False,
-                "week": None,
-                "entries": [],
-                "totals": {"hhmm": "00:00", "pay_eur": 0.0},
-            }
 
-        payload, _total_min, _total_pay = build_week_payload(conn, uid, w, include_entries=True)
-        return {
-            "ok": True,
-            "has_week": True,
-            "week": {
-                "id": payload["id"],
-                "week_number": payload["week_number"],
-                "start_date": payload["start_date"],
-                "hourly_rate": payload["hourly_rate"],
-            },
-            "entries": payload.get("entries", []),
-            "totals": {
-                "hhmm": payload["totals"]["total_hhmm"],
-                "pay_eur": payload["totals"]["total_pay"],
-            },
-        }
+@app.get("/api/home")
+def api_home(req: Request):
+    uid = require_user(req)
+    with db() as conn:
+        return build_home_payload(conn, uid)
 
 
 # ======================================================
@@ -3030,11 +3245,15 @@ def get_week_for_today_strict(conn: sqlite3.Connection, uid: int) -> Optional[sq
 
 
 
-def get_or_create_today_entry(conn: sqlite3.Connection, uid: int, week_id: int, work_date: str) -> sqlite3.Row:
-    row = conn.execute(
+def get_today_entry(conn: sqlite3.Connection, uid: int, week_id: int, work_date: str) -> Optional[sqlite3.Row]:
+    return conn.execute(
         "SELECT * FROM entries WHERE user_id=? AND week_id=? AND work_date=?",
         (uid, week_id, work_date),
     ).fetchone()
+
+
+def create_today_entry(conn: sqlite3.Connection, uid: int, week_id: int, work_date: str) -> sqlite3.Row:
+    row = get_today_entry(conn, uid, week_id, work_date)
     if row:
         return row
 
@@ -3054,89 +3273,17 @@ def get_or_create_today_entry(conn: sqlite3.Connection, uid: int, week_id: int, 
     )
     conn.commit()
 
-    return conn.execute(
-        "SELECT * FROM entries WHERE user_id=? AND week_id=? AND work_date=?",
-        (uid, week_id, work_date),
-    ).fetchone()
+    row = get_today_entry(conn, uid, week_id, work_date)
+    if not row:
+        raise HTTPException(500, "Failed to create entry")
+    return row
 
 
 @app.get("/api/clock/today")
 def clock_today(req: Request):
     uid = require_user(req)
     with db() as conn:
-        ensure_clock_tables(conn)
-
-        w = get_current_week(conn, uid)
-        if not w:
-            return {
-                "ok": True,
-                "has_week": False,
-                "in_time": None,
-                "out_time": None,
-                "break_minutes": 0,
-                "break_running": False,
-            }
-
-        work_date = today_ymd()
-        e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
-
-        st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
-
-        if not st or st["work_date"] != work_date:
-            conn.execute(
-                """
-                INSERT INTO clock_state(user_id,week_id,work_date,in_time,out_time,break_running,break_start,break_minutes,updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(user_id) DO UPDATE SET
-                  week_id=excluded.week_id,
-                  work_date=excluded.work_date,
-                  in_time=excluded.in_time,
-                  out_time=excluded.out_time,
-                  break_running=0,
-                  break_start=NULL,
-                  break_minutes=excluded.break_minutes,
-                  updated_at=excluded.updated_at
-                """,
-                (
-                    uid,
-                    int(w["id"]),
-                    work_date,
-                    e["time_in"],
-                    e["time_out"],
-                    0,
-                    None,
-                    int(e["break_minutes"] or 0),
-                    now(),
-                ),
-            )
-            conn.commit()
-            st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
-        else:
-            conn.execute(
-                """
-                UPDATE clock_state
-                SET week_id=?,
-                    in_time=?,
-                    out_time=?,
-                    break_minutes=?,
-                    updated_at=?
-                WHERE user_id=? AND work_date=?
-                """,
-                (int(w["id"]), e["time_in"], e["time_out"], int(e["break_minutes"] or 0), now(), uid, work_date),
-            )
-            conn.commit()
-            st = conn.execute("SELECT * FROM clock_state WHERE user_id=?", (uid,)).fetchone()
-
-        return {
-            "ok": True,
-            "has_week": True,
-            "week_id": int(w["id"]),
-            "work_date": work_date,
-            "in_time": st["in_time"],
-            "out_time": st["out_time"],
-            "break_minutes": int(st["break_minutes"] or 0),
-            "break_running": bool(int(st["break_running"] or 0)),
-        }
+        return build_clock_today_payload(conn, uid)
 
 
 @app.post("/api/clock/extra-confirm")
@@ -3147,7 +3294,9 @@ def clock_extra_confirm(p: ExtraConfirmIn, req: Request):
         if not w:
             raise HTTPException(400, "Create a week first")
 
-        e = get_or_create_today_entry(conn, uid, int(w["id"]), p.work_date)
+        e = get_today_entry(conn, uid, int(w["id"]), p.work_date)
+        if not e:
+            raise HTTPException(400, "Clock in first")
 
         conn.execute(
             "UPDATE entries SET extra_checked=1, extra_authorized=? WHERE id=? AND user_id=?",
@@ -3169,7 +3318,7 @@ def clock_in(req: Request):
 
         work_date = today_ymd()
         real_now = hhmm_now()
-        e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
+        e = create_today_entry(conn, uid, int(w["id"]), work_date)
         ro = roster_for_date(conn, uid, work_date)
 
         if ro and int(ro["day_off"] or 0) == 1:
@@ -3239,7 +3388,9 @@ def clock_out(req: Request):
 
         work_date = today_ymd()
         real_now = hhmm_now()
-        e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
+        e = get_today_entry(conn, uid, int(w["id"]), work_date)
+        if not e:
+            raise HTTPException(400, "Clock in first")
         ro = roster_for_date(conn, uid, work_date)
 
         if ro and int(ro["day_off"] or 0) == 1:
@@ -3325,7 +3476,9 @@ def clock_break(req: Request):
             raise HTTPException(400, "Create a week first")
 
         work_date = today_ymd()
-        e = get_or_create_today_entry(conn, uid, int(w["id"]), work_date)
+        e = get_today_entry(conn, uid, int(w["id"]), work_date)
+        if not e:
+            raise HTTPException(400, "Clock in first")
 
         st = conn.execute(
             "SELECT * FROM clock_state WHERE user_id=? AND work_date=?",
