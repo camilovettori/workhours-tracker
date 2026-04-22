@@ -3550,9 +3550,9 @@ body{
   transform: none;
   box-sizing: border-box;
   min-height: 60px;
-  padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 0px));
+  padding: 0;
   display: flex;
-  justify-content: space-around;
+  justify-content: space-evenly;
   align-items: center;
   background: var(--color-background-primary, #fff);
   border-top: 0.5px solid var(--color-border-tertiary, rgba(15,23,42,.10));
@@ -3563,10 +3563,10 @@ body{
 }
 
 .navItem{
-  flex: 1 1 0;
+  flex: 1;
   min-width: 0;
-  min-height: 44px;
-  height: 44px;
+  min-height: 60px;
+  height: 60px;
   border: 0;
   border-radius: 12px;
   background: transparent;
@@ -3575,28 +3575,29 @@ body{
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 2px 2px 1px;
+  gap: 1px;
+  padding: 0;
   cursor: pointer;
   font-size: 10px;
   font-weight: 900;
   line-height: 1;
   white-space: nowrap;
-  overflow: visible;
+  overflow: hidden;
   text-align: center;
 }
 
 .navIcon{
   display:block;
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
   fill: none !important;
   stroke: currentColor !important;
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
   overflow: visible;
+  margin: 0 auto;
   pointer-events: none;
 }
 
@@ -3604,7 +3605,9 @@ body{
   font-size: 10px;
   line-height: 1;
   white-space: nowrap;
-  overflow: visible;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
   text-align: center;
   color: inherit;
 }
@@ -3638,4 +3641,154 @@ body{
   line-height: 1.35;
   font-weight: 800;
   color: var(--muted);
+}
+
+/* ============================================================
+   BOTTOM NAV — AUTHORITATIVE REAL-DEVICE FIX
+   Appended last; uses nav.bottomNav (0,1,1) and compound child
+   selectors (0,2,1) to beat all prior conflicting blocks.
+   !important used only where prior rules also use !important.
+   ============================================================ */
+
+nav.bottomNav {
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  transform: none !important;
+  width: 100% !important;
+  max-width: none !important;
+  box-sizing: border-box !important;
+
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-evenly !important;
+  align-items: stretch !important;
+  gap: 0 !important;
+
+  height: calc(60px + env(safe-area-inset-bottom)) !important;
+  min-height: calc(60px + env(safe-area-inset-bottom)) !important;
+  padding: 0 !important;
+  padding-bottom: env(safe-area-inset-bottom) !important;
+
+  background: rgba(255,255,255,0.95) !important;
+  backdrop-filter: blur(18px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+  border-top: 0.5px solid rgba(15,23,42,0.10) !important;
+  border-radius: 0 !important;
+  border-bottom: none !important;
+  box-shadow: 0 -4px 20px rgba(15,23,42,0.08) !important;
+  z-index: 9000 !important;
+  -webkit-transform: translateZ(0);
+}
+
+nav.bottomNav .navItem {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 2px !important;
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+
+  height: 60px !important;
+  min-height: 60px !important;
+  max-height: 60px !important;
+  padding: 0 4px !important;
+  box-sizing: border-box !important;
+
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  letter-spacing: 0 !important;
+  -webkit-text-size-adjust: 100% !important;
+  text-size-adjust: 100% !important;
+
+  background: transparent !important;
+  background-image: none !important;
+  background-color: transparent !important;
+
+  border-radius: 12px !important;
+  border: none !important;
+  box-shadow: none !important;
+
+  color: var(--muted, #64748b) !important;
+  cursor: pointer !important;
+  -webkit-tap-highlight-color: transparent !important;
+  touch-action: manipulation !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+
+  appearance: none !important;
+  -webkit-appearance: none !important;
+
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-align: center !important;
+  transition: color 0.15s ease, background-color 0.15s ease !important;
+}
+
+nav.bottomNav .navItem.navItem--active {
+  color: var(--color-accent-green, #1D9E75) !important;
+  background-color: rgba(29,158,117,0.10) !important;
+  background-image: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+nav.bottomNav .navItem .navIcon {
+  display: block !important;
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 24px !important;
+  min-height: 24px !important;
+  flex: 0 0 24px !important;
+  flex-shrink: 0 !important;
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-width: 1.5 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  overflow: visible !important;
+  margin: 0 auto !important;
+  pointer-events: none !important;
+  font-size: 0 !important;
+}
+
+nav.bottomNav .navItem .navLabel {
+  display: block !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  -webkit-text-size-adjust: 100% !important;
+  text-size-adjust: 100% !important;
+  color: inherit !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  text-align: center !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  letter-spacing: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+nav.bottomNav .navItem.navItem--active .navIcon {
+  stroke: currentColor !important;
+}
+
+nav.bottomNav .navItem:active {
+  transform: scale(0.92) !important;
+  opacity: 0.85 !important;
+}
+
+.homeView .safeSpace {
+  height: calc(72px + env(safe-area-inset-bottom)) !important;
+}
+
+@media print {
+  nav.bottomNav {
+    display: none !important;
+  }
 }
