@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -784,7 +784,7 @@
       <div class="row" style="margin-bottom:10px;">
         <div>
           <div style="font-size:18px; font-weight:1000;">Weeks</div>
-          <div id="rateHint" class="muted" style="margin-top:4px;">Hourly rate: —</div>
+          <div id="rateHint" class="muted" style="margin-top:4px;">Hourly rate: -</div>
         </div>
         <button id="btnAddWeek" class="btn btn--soft" type="button">+ Add week</button>
       </div>
@@ -799,7 +799,7 @@
       <div class="row detailHero">
         <div>
           <div id="detailTitle" class="detailTitle">Week</div>
-          <div id="detailSub" class="detailSub">Start: —</div>
+          <div id="detailSub" class="detailSub">Start: -</div>
         </div>
 
         <div class="detailActions">
@@ -814,7 +814,7 @@
       <div id="detailTotals" class="detailTotals">
         <span class="statLabel">Expected:</span>
         <span id="pillExpectedHours" class="statValue"></span>
-        <span class="statSep">•</span>
+        <span class="statSep">&bull;</span>
         <span class="statLabel">Pay:</span>
         <span id="pillExpectedPay" class="statValue"></span>
       </div>
@@ -886,7 +886,7 @@
       <div id="rosterPreview" class="rosterPreview hidden">
         <div class="rpHead">
           <div class="rpTitle">Selected days</div>
-          <div id="rpTotals" class="rpTotals">—</div>
+          <div id="rpTotals" class="rpTotals">-</div>
         </div>
         <div id="rpList" class="rpList"></div>
       </div>
@@ -963,22 +963,22 @@
         <div class="currentRow">
           <div>
             <div class="k">Current</div>
-            <div id="editCurrent" class="v">—</div>
+            <div id="editCurrent" class="v">-</div>
           </div>
           <div style="text-align:right;">
             <div class="k">Date</div>
-            <div id="editDate" class="v">—</div>
+            <div id="editDate" class="v">-</div>
           </div>
         </div>
 
         <div class="optGrid">
           <button id="editA" class="optBtn" type="button">
-            A • 09:45 → 19:00
+            A &bull; 09:45 &rarr; 19:00
             <span class="small">Paid: 08:15</span>
           </button>
 
           <button id="editB" class="optBtn" type="button">
-            B • 10:45 → 20:00
+            B &bull; 10:45 &rarr; 20:00
             <span class="small">Paid: 08:15</span>
           </button>
 
@@ -1060,7 +1060,7 @@
     function fmtEUR(n){
       const v = Number(n || 0);
       try { return v.toLocaleString(undefined,{style:"currency",currency:"EUR"}); }
-      catch { return "€" + v.toFixed(2); }
+      catch { return "EUR " + v.toFixed(2); }
     }
 
     // ===== BH LOOKUP (cached)
@@ -1269,14 +1269,15 @@
       bhPickerYear = year;
 
       const datePretty = workDate && workDate.length > 4 ? fmtDatePretty(workDate) : workDate;
-      $("bhPickerSub").textContent = `Available for ${year} — taking on ${datePretty}`;
+      $("bhPickerSub").textContent = `Available up to ${datePretty}`;
       $("bhPickerList").innerHTML = "";
       $("bhPickerEmpty").innerHTML = "";
       $("bhPickerEmpty").classList.add("hidden");
 
       let items = [];
       try {
-        items = await api(`/api/bank-holidays/available?year=${year}`);
+        const takingDateParam = workDate ? `&taking_date=${encodeURIComponent(workDate)}` : "";
+        items = await api(`/api/bank-holidays/available?year=${year}${takingDateParam}`);
       } catch(e) {
         $("bhPickerEmpty").textContent = "Failed to load bank holidays.";
         $("bhPickerEmpty").classList.remove("hidden");
@@ -1285,7 +1286,7 @@
       if (!items.length) {
         $("bhPickerEmpty").innerHTML = `
           <div class="bhPickerEmptyInner">
-            <div>All bank holidays for ${year} have been used 🎉</div>
+            <div>No available Bank Holidays to use for this date</div>
             <button class="btnGhostNice" type="button" onclick="closeBhPicker()">Close</button>
           </div>
         `;
@@ -1346,7 +1347,7 @@
     const dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
     let wizardIndex = 0;
     let wizardDays = ["", "", "", "", "", "", ""];
-    let wizardBhIds = [null, null, null, null, null, null, null]; // bh_id por índice
+      let wizardBhIds = [null, null, null, null, null, null, null]; // bh_id per index
     let wizardBhNames = ["", "", "", "", "", "", ""];
     let hourlyRate = 0;
 
@@ -1377,19 +1378,16 @@
       }
     }
 
-    function codeToLabel(code){
-      if(code==="A") return "09:45 → 19:00";
-      if(code==="B") return "10:45 → 20:00";
-      if(code==="HOLIDAY") return "Holiday";
-      if(code==="BANK_HOLIDAY") return "Bank Holiday";
-      return "Day off";
-    }
+    const BULLET = "\u2022";
+    const ARROW = "\u2192";
+    const EURO = "\u20AC";
+    const DASH = "-";
 
     function codeToLabel(code){
       const custom = parseCustomRosterCode(code);
-      if(custom) return `${custom.start} â†’ ${custom.end}`;
-      if(code==="A") return "09:45 â†’ 19:00";
-      if(code==="B") return "10:45 â†’ 20:00";
+      if(custom) return `${custom.start} ${ARROW} ${custom.end}`;
+      if(code==="A") return `09:45 ${ARROW} 19:00`;
+      if(code==="B") return `10:45 ${ARROW} 20:00`;
       if(code==="HOLIDAY") return "Holiday";
       if(code==="BANK_HOLIDAY") return "Bank Holiday";
       return "Day off";
@@ -1512,7 +1510,7 @@
       if(!start || picked.length===0){
         hide(preview);
         list.innerHTML = "";
-        totals.textContent = "—";
+        totals.textContent = DASH;
         return;
       }
 
@@ -1541,14 +1539,14 @@ row.className = "rpRow";
 // todas selecionadas ficam levemente azuis
 row.classList.add("rp-selected");
 
-// última adicionada fica mais forte
+// latest added row is stronger
 if (item.i === wizardIndex - 1) {
   row.classList.add("rp-latest");
 }
 
         row.innerHTML = `
           <div class="left">
-            <div class="d1">${weekdayShort(dt)} • ${workYmd}</div>
+            <div class="d1">${weekdayShort(dt)} ${BULLET} ${workYmd}</div>
             <div class="d2">${isOff ? codeToLabel(item.c) : (mult>1 ? `Shift (x${mult.toFixed(1)})` : "Shift")}</div>
           </div>
           <div class="right">${codeToLabel(item.c)}</div>
@@ -1556,7 +1554,7 @@ if (item.i === wizardIndex - 1) {
         list.appendChild(row);
       }
 
-      totals.textContent = `So far: ${fmtHHMMFromMinutes(totalMinutes)} • ${fmtEUR(totalPay)}`;
+      totals.textContent = `So far: ${fmtHHMMFromMinutes(totalMinutes)} ${BULLET} ${fmtEUR(totalPay)}`;
     }
     function pickConfirm(code, bhId, bhName) {
       $("wizardErr").textContent = "";
@@ -1634,7 +1632,7 @@ if (item.i === wizardIndex - 1) {
           return;
         }
 
-        // Montar mapa de bh_ids (só índices com valor definido)
+        // Build bh_ids map (only indexes with a value)
         const bh_ids = {};
         wizardBhIds.forEach((id, i) => { if (id) bh_ids[String(i)] = id; });
 
@@ -1660,7 +1658,7 @@ if (item.i === wizardIndex - 1) {
         const me = await api("/api/me");
         hourlyRate = Number(me.hourly_rate || 0);
       }catch{}
-      $("rateHint").textContent = `Hourly rate: ${hourlyRate ? fmtEUR(hourlyRate) + " / hour" : "—"}`;
+      $("rateHint").textContent = `Hourly rate: ${hourlyRate ? fmtEUR(hourlyRate) + " / hour" : DASH}`;
     }
 
     async function fetchRosterDetail(id){
@@ -1694,8 +1692,8 @@ if (item.i === wizardIndex - 1) {
               <div class="t2">Start: ${r.start_date}</div>
             </div>
             <div class="weekRight">
-              <div class="hhmm">—</div>
-              <div class="eur">—</div>
+              <div class="hhmm">${DASH}</div>
+              <div class="eur">${DASH}</div>
             </div>
           `;
 
@@ -1766,7 +1764,7 @@ if (item.i === wizardIndex - 1) {
           const dt = ymdToDateObj(x.work_date);
           const status = dayToCode(x);
           const isOff = ["OFF","HOLIDAY","BANK_HOLIDAY"].includes(status);
-          const shift = isOff ? codeToLabel(status) : (x.shift_in + " → " + x.shift_out);
+          const shift = isOff ? codeToLabel(status) : (x.shift_in + " " + ARROW + " " + x.shift_out);
 
           let bh = null;
           try { bh = await bhLookup(x.work_date); } catch { bh = null; }
@@ -1788,7 +1786,7 @@ if (item.i === wizardIndex - 1) {
             <div class="dayTop">
               <div class="dayLeft">
                 <div class="w">${weekdayShort(dt)}</div>
-                <div class="d">${fmtShortDate(x.work_date)}${isBH && bhName ? ` • ${bhName}` : ""}</div>
+                <div class="d">${fmtShortDate(x.work_date)}${isBH && bhName ? ` ${BULLET} ${bhName}` : ""}</div>
               </div>
               <div class="dayMeta">
                 ${status === "OFF" ? `<span class="badgeOff">OFF</span>` : ""}
@@ -1948,13 +1946,13 @@ if (item.i === wizardIndex - 1) {
       editState.code = "HOLIDAY"; editState.bankHolidayId = null; setEditActive("HOLIDAY");
     });
     $("editBankHoliday").addEventListener("click", () => {
-      // Abrir BH picker — só seleciona depois de escolher BH
+      // Open BH picker - select only after choosing a BH
       const year = editState.workDate ? Number(editState.workDate.split("-")[0]) : new Date().getFullYear();
       openBhPicker(year, editState.workDate || String(year), (bhId, bhName) => {
         editState.code = "BANK_HOLIDAY";
         editState.bankHolidayId = bhId;
         setEditActive("BANK_HOLIDAY");
-        // Atualizar label do botão
+        // Update button label
         $("editBankHoliday").querySelector(".small").textContent = bhName || "Bank holiday";
       });
     });
@@ -1999,3 +1997,4 @@ if (item.i === wizardIndex - 1) {
   </script>
 </body>
 </html>
+

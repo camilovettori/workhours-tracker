@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -29,24 +29,25 @@
     }
 
     /* ===== Header cards ===== */
-    .summaryRow{
-      display:flex;
+    .summaryGrid{
+      display:grid;
+      grid-template-columns:repeat(4,minmax(0,1fr));
       gap:10px;
       margin-bottom:12px;
     }
     .summaryCard{
-      flex:1;
-      padding:14px 12px;
-      border-radius:20px;
-      border:1px solid rgba(15,23,42,.08);
-      background: rgba(255,255,255,.70);
-      box-shadow: 0 8px 24px rgba(2,6,23,.06);
+      min-width:0;
+      padding:13px 11px;
+      border-radius:18px;
+      border:1px solid rgba(15,23,42,.07);
+      background: rgba(255,255,255,.74);
+      box-shadow: 0 10px 24px rgba(2,6,23,.05);
       text-align:center;
     }
     .summaryCard .sc-num{
-      font-size:28px;
+      font-size:24px;
       font-weight:1000;
-      letter-spacing:-.03em;
+      letter-spacing:-.04em;
       line-height:1;
     }
     .summaryCard .sc-label{
@@ -58,37 +59,7 @@
     .cardAvail .sc-num{ color: #16a34a; }
     .cardUsed  .sc-num{ color: #2563eb; }
     .cardTotal .sc-num{ color: #475569; }
-
-    /* Barra de progresso + total ganho */
-    .progressWrap{
-      margin:0 0 14px;
-      padding:14px 16px;
-      border-radius:20px;
-      border:1px solid rgba(15,23,42,.08);
-      background: rgba(255,255,255,.60);
-    }
-    .progressRow{
-      display:flex;
-      justify-content:space-between;
-      align-items:baseline;
-      gap:8px;
-      margin-bottom:8px;
-    }
-    .progressLabel{ font-weight:900; font-size:13px; color:var(--muted); }
-    .progressEarned{ font-weight:1000; font-size:14px; color: #16a34a; }
-    .progressBar{
-      width:100%;
-      height:6px;
-      border-radius:999px;
-      background: rgba(15,23,42,.08);
-      overflow:hidden;
-    }
-    .progressFill{
-      height:100%;
-      border-radius:999px;
-      background: linear-gradient(90deg, #2563eb, #16a34a);
-      transition: width .4s ease;
-    }
+    .cardEarned .sc-num{ color: #059669; }
 
     /* ===== Tabs ===== */
     .segTabs{
@@ -119,11 +90,11 @@
     /* ===== Cards de feriado ===== */
     .holidayList{ display:flex; flex-direction:column; gap:12px; }
     .holidayCard{
-      padding:16px;
-      border-radius:20px;
-      border:1px solid rgba(15,23,42,.08);
-      background: rgba(255,255,255,.72);
-      box-shadow: 0 8px 24px rgba(2,6,23,.06);
+      padding:15px;
+      border-radius:18px;
+      border:1px solid rgba(15,23,42,.07);
+      background: rgba(255,255,255,.74);
+      box-shadow: 0 10px 22px rgba(2,6,23,.05);
     }
     .holidayCard .hc-top{
       display:flex;
@@ -156,7 +127,7 @@
     .badge-na{        background:rgba(100,116,139,.10); border:1px solid rgba(100,116,139,.18); color:#64748b; }
     .badge-upcoming{  background:rgba(245,158,11,.10);  border:1px solid rgba(245,158,11,.20);  color:#b45309; }
 
-    /* Botões de ação nos cards */
+    /* Action buttons on cards */
     .btnAction{
       padding:8px 12px;
       border-radius:12px;
@@ -248,9 +219,12 @@
     .confirmText{ font-size:14px; font-weight:900; line-height:1.5; }
 
     @media (max-width:420px){
-      .summaryRow{ gap:7px; }
-      .summaryCard{ padding:12px 8px; }
-      .summaryCard .sc-num{ font-size:22px; }
+      .summaryGrid{ grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+      .summaryCard{ padding:12px 9px; }
+      .summaryCard .sc-num{ font-size:21px; }
+    }
+    @media (min-width:421px) and (max-width:720px){
+      .summaryGrid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
     }
   </style>
 </head>
@@ -261,7 +235,7 @@
         <img src="/static/logo.png" alt="logo" />
         <div>
           <div style="font-size:34px; font-weight:1000; letter-spacing:-.03em; line-height:1;">Bank Holidays</div>
-          <div class="muted" id="subTitle">Ireland • —</div>
+          <div class="muted" id="subTitle">Ireland -</div>
         </div>
       </div>
       <div>
@@ -270,29 +244,22 @@
     </div>
 
     <!-- Contadores -->
-    <div class="summaryRow">
+    <div class="summaryGrid">
       <div class="summaryCard cardAvail">
-        <div class="sc-num" id="sumAvail">—</div>
+        <div class="sc-num" id="sumAvail">-</div>
         <div class="sc-label">Available</div>
       </div>
       <div class="summaryCard cardUsed">
-        <div class="sc-num" id="sumUsed">—</div>
+        <div class="sc-num" id="sumUsed">-</div>
         <div class="sc-label">Used</div>
       </div>
       <div class="summaryCard cardTotal">
-        <div class="sc-num" id="sumTotal">—</div>
+        <div class="sc-num" id="sumTotal">-</div>
         <div class="sc-label">Total</div>
       </div>
-    </div>
-
-    <!-- Progresso + total ganho -->
-    <div class="progressWrap">
-      <div class="progressRow">
-        <span class="progressLabel" id="progressText">0 of 0 used</span>
-        <span class="progressEarned" id="progressEarned">€0.00 earned</span>
-      </div>
-      <div class="progressBar">
-        <div class="progressFill" id="progressFill" style="width:0%"></div>
+      <div class="summaryCard cardEarned">
+        <div class="sc-num" id="sumEarned">-</div>
+        <div class="sc-label">Amount earned</div>
       </div>
     </div>
 
@@ -353,7 +320,7 @@
           <div class="modalTitleBig" id="manualTitle">Mark as taken</div>
           <div class="modalSubtitle" id="manualSub"></div>
         </div>
-        <button class="modalCloseIcon" id="manualClose" type="button">✕</button>
+        <button class="modalCloseIcon" id="manualClose" type="button">x</button>
       </div>
       <div class="modalFields">
         <div class="modalField">
@@ -361,7 +328,7 @@
           <input id="manualDate" class="inp" type="date" />
         </div>
         <div class="modalField">
-          <div class="label">Amount paid (€) — optional, auto-calculated if blank</div>
+          <div class="label">Amount paid (EUR) - optional, auto-calculated if blank</div>
           <input id="manualAmount" class="inp" type="number" min="0" step="0.01" placeholder="Leave blank to calculate" />
         </div>
       </div>
@@ -373,7 +340,7 @@
     </div>
   </div>
 
-  <!-- Modal: Confirmar reversão -->
+  <!-- Modal: Confirm revert -->
   <div id="revertModal" class="modalBackdrop hidden" aria-hidden="true">
     <div class="modalCard" role="dialog" aria-modal="true">
       <div class="modalTop">
@@ -381,7 +348,7 @@
           <div class="modalTitleBig">Revert bank holiday?</div>
           <div class="modalSubtitle" id="revertSub"></div>
         </div>
-        <button class="modalCloseIcon" id="revertClose" type="button">✕</button>
+        <button class="modalCloseIcon" id="revertClose" type="button">x</button>
       </div>
       <p class="confirmText">
         This will mark the bank holiday as <strong>available</strong> again.
@@ -416,43 +383,58 @@
     }
 
     function fmtDatePretty(ymd) {
-      if (!ymd) return "—";
+      if (!ymd) return "-";
       const [y, m, d] = ymd.split("-").map(Number);
       return new Date(y, m - 1, d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
     }
     function fmtEUR(n) {
       const v = Number(n || 0);
       try { return v.toLocaleString(undefined, { style: "currency", currency: "EUR" }); }
-      catch { return "€" + v.toFixed(2); }
+      catch { return "EUR " + v.toFixed(2); }
     }
-    function todayYmd() {
+    function todayYmdLocal() {
       const d = new Date();
       return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
     }
     function isFuture(ymd) {
-      return ymd > todayYmd();
+      return ymd > todayYmdLocal();
+    }
+    function isPastOrToday(ymd) {
+      return ymd <= todayYmdLocal();
+    }
+
+    function computeBuckets(items) {
+      const normalized = Array.isArray(items) ? items.filter(it => it && it.date) : [];
+      const used = normalized.filter(it => !!it.paid);
+      const upcoming = normalized.filter(it => !it.paid && isFuture(it.date));
+      const available = normalized.filter(it => !it.paid && isPastOrToday(it.date));
+      const amount_earned = round2(used.reduce((sum, it) => sum + Number(it.amount_paid || 0), 0));
+      return {
+        total: normalized.length,
+        used: used.length,
+        available: available.length,
+        upcoming: upcoming.length,
+        amount_earned,
+      };
     }
 
     // ===== Estado
     let CURRENT_YEAR = null;
     let TAB = "available"; // available | used | upcoming
-    let SUMMARY = { total: 0, paid: 0, available: 0, na: 0, total_amount_paid: 0 };
+    let SUMMARY = { total: 0, used: 0, available: 0, upcoming: 0, amount_earned: 0 };
     let ITEMS_ALL = []; // todos os BHs do ano (de /year/{year})
 
     // Modal state
     let MANUAL_BH_ID = null;
     let REVERT_BH_ID = null;
 
-    // ===== Sumário
+    // ===== Summary
     function updateHeader() {
-      $("subTitle").textContent = `Ireland • ${CURRENT_YEAR ?? "—"}`;
+      $("subTitle").textContent = `Ireland - ${CURRENT_YEAR ?? "-"}`;
       $("sumAvail").textContent = String(SUMMARY.available);
-      $("sumUsed").textContent = String(SUMMARY.paid);
+      $("sumUsed").textContent = String(SUMMARY.used);
       $("sumTotal").textContent = String(SUMMARY.total);
-      const pct = SUMMARY.total > 0 ? Math.round((SUMMARY.paid / SUMMARY.total) * 100) : 0;
-      $("progressFill").style.width = pct + "%";
-      $("progressText").textContent = `${SUMMARY.paid} of ${SUMMARY.total} used`;
-      $("progressEarned").textContent = `${fmtEUR(SUMMARY.total_amount_paid)} earned`;
+      if ($("sumEarned")) $("sumEarned").textContent = fmtEUR(SUMMARY.amount_earned);
     }
 
     // ===== Render tabs
@@ -468,15 +450,14 @@
       let emptyMsg = "";
 
       if (TAB === "available") {
-        items = ITEMS_ALL.filter(it => !it.paid && it.applicable !== false);
-        emptyMsg = `All bank holidays for ${CURRENT_YEAR} have been used. 🎉`;
+        items = ITEMS_ALL.filter(it => !it.paid && isPastOrToday(it.date));
+        emptyMsg = "No available bank holidays to claim";
       } else if (TAB === "used") {
         items = ITEMS_ALL.filter(it => it.paid);
-        emptyMsg = "No bank holidays taken yet this year.";
+        emptyMsg = "No bank holidays used yet";
       } else {
-        // upcoming: não pagos E data oficial futura
-        items = ITEMS_ALL.filter(it => !it.paid && it.applicable !== false && isFuture(it.date));
-        emptyMsg = "No more upcoming bank holidays this year.";
+        items = ITEMS_ALL.filter(it => !it.paid && isFuture(it.date));
+        emptyMsg = "No upcoming bank holidays";
       }
 
       if (!items.length) {
@@ -504,14 +485,14 @@
             <span class="badge badge-available">Available</span>
           </div>
           <div class="hc-actions">
-            <button class="btnAction btnActionBlue js-manual" type="button">Mark as taken manually</button>
+            <button class="btnAction btnActionBlue js-manual" type="button">Mark as taken</button>
           </div>
         `;
         card.querySelector(".js-manual").addEventListener("click", () => openManualModal(it));
       } else if (TAB === "used") {
         const payText = (it.amount_paid != null && it.pay_hours != null)
           ? `${fmtEUR(it.amount_paid)} (${Number(it.pay_hours).toFixed(2)}h)`
-          : (it.amount_paid != null ? fmtEUR(it.amount_paid) : "—");
+          : (it.amount_paid != null ? fmtEUR(it.amount_paid) : "-");
 
         card.innerHTML = `
           <div class="hc-top">
@@ -522,7 +503,7 @@
             <span class="badge badge-used">Used</span>
           </div>
           <div class="hc-meta">
-            Taken on ${fmtDatePretty(it.paid_date)} &nbsp;·&nbsp; ${payText}
+            Taken on ${fmtDatePretty(it.paid_date)} &nbsp;Â·&nbsp; Paid ${payText}
           </div>
           <div class="hc-actions">
             ${it.roster_day_id ? `<button class="btnAction btnActionBlue js-view-shift" type="button">View shift</button>` : ""}
@@ -532,12 +513,12 @@
         card.querySelector(".js-revert").addEventListener("click", () => openRevertModal(it));
         if (it.roster_day_id) {
           card.querySelector(".js-view-shift").addEventListener("click", () => {
-            // Navega para o roster — passa o id do dia via query string (melhor esforço)
+            // Navigate to roster - best-effort pass via query string
             location.href = `/roster`;
           });
         }
       } else {
-        // upcoming — apenas informação
+        // upcoming - informational only
         card.innerHTML = `
           <div class="hc-top">
             <div>
@@ -568,13 +549,10 @@
       $("holidayList").innerHTML = "";
 
       try {
-        const [items, summary] = await Promise.all([
-          api(`/api/bank-holidays/year/${year}`),
-          api(`/api/bank-holidays/summary?year=${year}`),
-        ]);
+        const items = await api(`/api/bank-holidays/year/${year}`);
 
         ITEMS_ALL = Array.isArray(items) ? items : [];
-        SUMMARY = summary || { total: 0, paid: 0, available: 0, na: 0, total_amount_paid: 0 };
+        SUMMARY = computeBuckets(ITEMS_ALL);
 
         $("msg").textContent = "";
         render();
@@ -619,7 +597,7 @@
       MANUAL_BH_ID = it.id;
       $("manualTitle").textContent = `Mark as taken: ${it.name}`;
       $("manualSub").textContent = `Official date: ${fmtDatePretty(it.date)}`;
-      $("manualDate").value = todayYmd();
+      $("manualDate").value = todayYmdLocal();
       $("manualAmount").value = "";
       $("manualModal").classList.remove("hidden");
       $("manualModal").setAttribute("aria-hidden", "false");
@@ -653,7 +631,7 @@
     // ===== Modal: reverter
     function openRevertModal(it) {
       REVERT_BH_ID = it.id;
-      $("revertSub").textContent = `${it.name} — taken on ${fmtDatePretty(it.paid_date)}`;
+      $("revertSub").textContent = `${it.name} - taken on ${fmtDatePretty(it.paid_date)}`;
       $("revertModal").classList.remove("hidden");
       $("revertModal").setAttribute("aria-hidden", "false");
     }
@@ -708,3 +686,6 @@
   </script>
 </body>
 </html>
+
+
+

@@ -2337,19 +2337,30 @@ def patch_bh(bh_id: int, p: BhPaidPatch, req: Request):
 # BANK HOLIDAYS — Novos endpoints (fluxo consumo)
 # ======================================================
 @app.get("/api/bank-holidays/available")
-def bh_available(req: Request, year: int = Query(...)):
-    """Lista BHs disponíveis (não pagos, aplicáveis) para um ano."""
+def bh_available(
+    req: Request,
+    year: int = Query(...),
+    taking_date: Optional[str] = Query(None, description="YYYY-MM-DD upper bound for available BHs"),
+):
+    """Lista BHs disponíveis até a data informada (não pagos)."""
     uid = require_user(req)
     with db() as conn:
         ensure_bh_for_year(conn, uid, year)
+        taking_date = taking_date.strip() if isinstance(taking_date, str) and taking_date.strip() else None
+        if taking_date:
+            try:
+                parse_ymd(taking_date)
+            except Exception:
+                raise HTTPException(400, "Invalid taking_date")
         rows = conn.execute(
             """
             SELECT id, name, bh_date
             FROM bank_holidays
-            WHERE user_id=? AND year=? AND paid=0 AND applicable=1
+            WHERE user_id=? AND year=? AND paid=0
+              AND (? IS NULL OR bh_date <= ?)
             ORDER BY date(bh_date) ASC
             """,
-            (uid, year),
+            (uid, year, taking_date, taking_date),
         ).fetchall()
         return [{"id": int(r["id"]), "name": r["name"], "date": r["bh_date"]} for r in rows]
 
