@@ -11,17 +11,43 @@
 
 
   <style>
-    .wrap{ width:min(980px,100%); margin:0 auto; padding:22px 16px 72px; }
+    body{
+      animation: pageFadeIn .18s ease;
+    }
+    @keyframes pageFadeIn{
+      from{ opacity:.84; transform: translateY(3px); }
+      to{ opacity:1; transform: translateY(0); }
+    }
+    .wrap{ width:min(940px,100%); margin:0 auto; padding:18px 14px 64px; }
     .top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
     .brand{ display:flex; align-items:center; gap:12px; }
     .brand img{ width:44px; height:44px; border-radius:12px; object-fit:cover; }
     .muted{ color: var(--muted); font-weight:900; }
 
-    .cardPad{ padding:16px; }
+    .cardPad{ padding:14px; }
     .row{ display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; }
     .hidden{ display:none !important; }
     .err{ color:#b91c1c; font-weight:1000; margin-top:8px; }
-    .detailActions{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .detailHero{
+      align-items:flex-start;
+      gap:14px;
+      margin-bottom:8px;
+    }
+    .detailActions{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      justify-content:flex-end;
+      flex-wrap:wrap;
+      margin-left:auto;
+    }
+    .detailActionsPrimary{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      justify-content:flex-end;
+      flex-wrap:wrap;
+    }
     .wizardTop{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
     .wizardTitle{ font-size:18px; font-weight:1000; letter-spacing:-.02em; }
     .wizardMode{
@@ -70,117 +96,166 @@
     .detailTitle{ font-weight:1000; font-size:18px; }
     .detailSub{ font-weight:1000; font-size:13px; color:var(--muted); margin-top:4px; }
     .detailTotals{
-      margin-top:10px;
-      display:flex; gap:10px; flex-wrap:wrap;
+      margin-top:4px;
+      display:flex;
+      align-items:center;
+      gap:6px;
+      flex-wrap:wrap;
+      padding:0 2px;
+      color:var(--muted);
+      font-weight:800;
+      font-size:12px;
+      line-height:1.2;
     }
-    .pill{
-      padding:8px 10px; border-radius:999px;
-      border:1px solid rgba(15,23,42,.10);
-      background: rgba(255,255,255,.75);
-      font-weight:1000; font-size:13px;
+    .detailTotals .statLabel{
+      color:var(--muted);
+      font-weight:700;
+    }
+    .detailTotals .statValue{
+      color:#0f172a;
+      font-weight:1000;
+      letter-spacing:-.01em;
+      font-size:13px;
+    }
+    .detailTotals .statSep{
+      color: rgba(148,163,184,1);
+      font-weight:900;
+      font-size:12px;
     }
     .gridDays{
-      margin-top:12px;
+      margin-top:7px;
       display:grid;
       grid-template-columns: repeat(2, 1fr);
-      gap:10px;
+      gap:8px;
     }
     @media (min-width: 520px){
       .gridDays{ grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (min-width: 768px){
+      .wrap{ width:min(1080px,100%); }
+      .gridDays{
+        grid-template-columns: repeat(3, 1fr);
+        gap:10px;
+      }
     }
     @media (min-width: 920px){
       .gridDays{ grid-template-columns: repeat(4, 1fr); }
     }
     .dayCard{
-      border:1px solid rgba(15,23,42,.08);
-      background: rgba(255,255,255,.60);
-      border-radius:18px;
-      padding:12px;
-      min-height:92px;
+      border:1px solid rgba(15,23,42,.06);
+      background: rgba(255,255,255,.84);
+      border-radius:15px;
+      padding:7px 9px;
+      min-height:68px;
       cursor:pointer;
-      transition: transform .08s ease, border-color .08s ease;
+      transition: transform .08s ease, border-color .08s ease, background .08s ease, box-shadow .08s ease;
+      display:flex;
+      flex-direction:column;
+      gap:4px;
     }
-    .dayCard:hover{ transform: translateY(-1px); border-color: rgba(37,99,235,.25); }
-    .dayCard .w{ font-weight:1000; font-size:14px; }
-    .dayCard .d{ font-weight:900; font-size:12px; color:var(--muted); margin-top:2px; }
-    .dayCard .s{ font-weight:1000; font-size:13px; margin-top:10px; }
+    .dayCard:hover{
+      transform: translateY(-2px);
+      border-color: rgba(37,99,235,.14);
+      background: rgba(255,255,255,.94);
+      box-shadow: 0 10px 24px rgba(15,23,42,.06);
+    }
+    .dayCard:active{
+      transform: translateY(0) scale(.98);
+      background: rgba(239,246,255,.92);
+    }
+    .dayCard .dayTop{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:8px;
+    }
+    .dayCard .dayLeft{
+      min-width:0;
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+    }
+    .dayCard .dayMeta{
+      display:flex;
+      flex-direction:column;
+      align-items:flex-end;
+      gap:2px;
+      flex-shrink:0;
+    }
+    .dayCard .w{ font-weight:950; font-size:13px; line-height:1; color:#0f172a; letter-spacing:-.01em; }
+    .dayCard .d{ font-weight:900; font-size:10px; color:var(--muted); line-height:1.1; }
+    .dayCard .s{
+      font-weight:1000;
+      font-size:13px;
+      line-height:1.08;
+      margin-top:auto;
+      letter-spacing:-.01em;
+    }
 
     .badgeOff{
       display:inline-block;
-      margin-left:8px;
-      padding:3px 8px;
+      padding:2px 5px;
       border-radius:999px;
-      border:1px solid rgba(15,23,42,.10);
-      background: rgba(15,23,42,.06);
-      font-size:11px;
-      font-weight:1000;
-      color:var(--muted);
-      vertical-align:middle;
+      border:1px solid rgba(100,116,139,.12);
+      background: rgba(100,116,139,.06);
+      font-size:8px;
+      font-weight:900;
+      color:#64748b;
     }
     .badgeBH{
       display:inline-block;
-      margin-left:8px;
-      padding:3px 8px;
+      padding:2px 5px;
       border-radius:999px;
-      border:1px solid rgba(245,158,11,.25);
-      background: rgba(245,158,11,.12);
-      font-size:11px;
-      font-weight:1000;
-      color: rgba(180,83,9,1);
-      vertical-align:middle;
+      border:1px solid rgba(245,158,11,.12);
+      background: rgba(245,158,11,.06);
+      font-size:8px;
+      font-weight:900;
+      color:#b45309;
     }
     .badgeHoliday{
       display:inline-block;
-      margin-left:6px;
-      padding:3px 8px;
+      padding:2px 5px;
       border-radius:999px;
-      border:1px solid rgba(59,130,246,.22);
-      background: rgba(59,130,246,.10);
-      font-size:11px;
-      font-weight:1000;
-      color: rgba(29,78,216,1);
-      vertical-align:middle;
+      border:1px solid rgba(59,130,246,.12);
+      background: rgba(59,130,246,.06);
+      font-size:8px;
+      font-weight:900;
+      color:#2563eb;
     }
     .badgePremium{
       display:inline-block;
-      margin-left:6px;
-      padding:3px 8px;
+      padding:2px 5px;
       border-radius:999px;
-      border:1px solid rgba(245,158,11,.25);
-      background: rgba(245,158,11,.10);
-      font-size:11px;
-      font-weight:1000;
-      color: rgba(180,83,9,1);
-      vertical-align:middle;
+      border:1px solid rgba(245,158,11,.12);
+      background: rgba(245,158,11,.06);
+      font-size:8px;
+      font-weight:900;
+      color:#a16207;
     }
     .badgePaid{
       display:inline-block;
-      margin-left:6px;
-      padding:3px 8px;
+      padding:2px 5px;
       border-radius:999px;
-      border:1px solid rgba(34,197,94,.22);
-      background: rgba(34,197,94,.10);
-      font-size:11px;
-      font-weight:1000;
-      color: rgba(21,128,61,1);
-      vertical-align:middle;
+      border:1px solid rgba(34,197,94,.12);
+      background: rgba(34,197,94,.06);
+      font-size:8px;
+      font-weight:900;
+      color:#15803d;
     }
     .badgeNotPaid{
       display:inline-block;
-      margin-left:6px;
-      padding:3px 8px;
+      padding:2px 5px;
       border-radius:999px;
-      border:1px solid rgba(239,68,68,.18);
-      background: rgba(239,68,68,.08);
-      font-size:11px;
-      font-weight:1000;
-      color: rgba(185,28,28,1);
-      vertical-align:middle;
+      border:1px solid rgba(239,68,68,.12);
+      background: rgba(239,68,68,.06);
+      font-size:8px;
+      font-weight:900;
+      color:#b91c1c;
     }
 
     /* ===== WIZARD ===== */
     .wizardDay{
-      margin-top:12px;
+      margin-top:10px;
       border:1px solid rgba(15,23,42,.08);
       background: rgba(255,255,255,.60);
       border-radius:18px;
@@ -195,6 +270,17 @@
       background: rgba(255,255,255,.80);
       cursor:pointer;
     }
+    .btnChoice--primary{
+      background: linear-gradient(180deg, #2563eb, #1d4ed8);
+      color:#fff;
+      border-color: rgba(37,99,235,.42);
+      box-shadow: 0 10px 24px rgba(37,99,235,.14);
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:42px;
+      white-space:nowrap;
+    }
     .btnChoice.active{
   background:#2563eb !important;
   color:#fff !important;
@@ -203,6 +289,85 @@
 }
 
     .btnChoice:active{ transform: translateY(1px); }
+    .customEditor{
+      margin-top:10px;
+      padding:12px;
+      border-radius:16px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.72);
+    }
+    .customEditorHead{
+      display:flex;
+      align-items:baseline;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom:10px;
+    }
+    .customEditorTitle{
+      font-weight:1000;
+      font-size:14px;
+      letter-spacing:-.01em;
+    }
+    .customInputs{
+      display:grid;
+      grid-template-columns: 1fr 16px 1fr;
+      gap:8px;
+      align-items:center;
+    }
+    .customField{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+    .customField span{
+      font-size:12px;
+      font-weight:900;
+      color:var(--muted);
+    }
+    .customArrow{
+      text-align:center;
+      font-weight:1000;
+      color:var(--muted);
+      user-select:none;
+    }
+    .customTime{
+      width:100%;
+      min-height:42px;
+      padding:10px 12px;
+      border-radius:14px;
+      border:1px solid rgba(15,23,42,.12);
+      background: rgba(255,255,255,.90);
+      font-weight:1000;
+      font-size:14px;
+      color:#0f172a;
+    }
+    .customActions{
+      display:grid;
+      grid-template-columns: 1fr auto;
+      gap:8px;
+      margin-top:12px;
+      align-items:center;
+    }
+    .customActions .btnX{
+      min-height:42px;
+      justify-content:center;
+    }
+    .customActions .btnBlue{
+      min-width: 170px;
+    }
+    .customActions .btnGhost{
+      min-width: 102px;
+    }
+    @media (max-width: 460px){
+      .customActions{
+        grid-template-columns: 1fr;
+      }
+      .customActions .btnBlue,
+      .customActions .btnGhost{
+        width:100%;
+        min-width:0;
+      }
+    }
     .field{ display:flex; flex-direction:column; gap:6px; }
     .field span{ font-weight:900; color: var(--muted); font-size:13px; }
     .field input{ padding:12px 12px; border-radius:14px; border:1px solid rgba(15,23,42,.12); background: rgba(255,255,255,.75); font-weight:900; }
@@ -242,7 +407,20 @@
       padding: 18px;
       z-index: 50;
     }
+    .bhPickerBackdrop{
+      background: rgba(15,23,42,.50);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      animation: bhBackdropFadeIn .18s ease;
+    }
+    @keyframes bhBackdropFadeIn{
+      from{ opacity:0; }
+      to{ opacity:1; }
+    }
     .modal{
+      position: relative;
+      inset: auto;
+      display: block;
       width: min(520px, 100%);
       border-radius: 22px;
       border: 1px solid rgba(15,23,42,.10);
@@ -365,8 +543,13 @@
 
     /* highlight day card */
     .is-today{
-      background: rgba(59,130,246,.14);
-      border: 1px solid rgba(59,130,246,.45) !important;
+      background: linear-gradient(180deg, rgba(59,130,246,.06), rgba(255,255,255,.88));
+      border: 1px solid rgba(59,130,246,.12) !important;
+      box-shadow: 0 10px 22px rgba(59,130,246,.06), inset 0 0 0 1px rgba(255,255,255,.55);
+    }
+    .is-holiday{
+      background: rgba(59,130,246,.04);
+      border-color: rgba(59,130,246,.10) !important;
     }
 
     .today-pill{
@@ -379,18 +562,19 @@
       border:1px solid rgba(59,130,246,.35);
     }
 
-    #btnRosterDeleteWeek{
-  background: rgba(239,68,68,1) !important;
-  color:#fff !important;
-  border: 1px solid rgba(239,68,68,.45) !important;
-}
-
 #btnRosterDeleteWeek{
-  font-weight: 600 !important; /* ou 700/600 se quiser mais leve */
+  background: transparent !important;
+  color:#b91c1c !important;
+  border: 0 !important;
+  font-weight: 800 !important;
+  font-size: 12px !important;
+  padding: 4px 0 !important;
+  border-radius: 0 !important;
+  width: auto !important;
 }
 
-#btnRosterDeleteWeek:hover{ filter: brightness(1.05); }
-#btnRosterDeleteWeek:active{ transform: translateY(1px); }
+#btnRosterDeleteWeek:hover{ text-decoration: underline; }
+#btnRosterDeleteWeek:active{ opacity:.7; }
 
 #btnSave{
   background: #2563eb !important;
@@ -423,13 +607,160 @@
   box-shadow: 0 0 0 3px rgba(47,102,255,0.15);
 }
     .btnSoftEdit{
-      padding: 12px 14px;
-      border-radius: 14px;
-      border: 1px solid rgba(37,99,235,.14);
-      background: rgba(37,99,235,.08);
+      padding: 9px 11px;
+      border-radius: 11px;
+      border: 1px solid rgba(37,99,235,.10);
+      background: rgba(37,99,235,.05);
       color: rgba(29,78,216,1);
       font-weight: 1000;
       cursor: pointer;
+      transition: transform .12s ease, background .12s ease, border-color .12s ease, box-shadow .12s ease;
+    }
+    .btnSoftEdit:hover{
+      background: rgba(37,99,235,.08);
+      border-color: rgba(37,99,235,.16);
+      box-shadow: 0 8px 16px rgba(37,99,235,.07);
+    }
+    .btnSoftEdit:active{ transform: translateY(1px) scale(.99); }
+    .btn.btn--ghost{
+      padding: 9px 11px;
+      border-radius: 11px;
+      border: 1px solid rgba(15,23,42,.07);
+      background: rgba(255,255,255,.66);
+      color: var(--muted);
+      font-weight: 1000;
+      transition: transform .12s ease, background .12s ease, border-color .12s ease;
+    }
+    .btn.btn--ghost:hover{
+      border-color: rgba(15,23,42,.12);
+      background: rgba(255,255,255,.82);
+    }
+    .btn.btn--ghost:active{ transform: translateY(1px); }
+    .btn.btn--danger{
+      padding: 9px 11px;
+      border-radius: 11px;
+      transition: transform .12s ease, background .12s ease, border-color .12s ease, color .12s ease, opacity .12s ease;
+    }
+    .btn.btn--pill{
+      padding: 9px 11px;
+      border-radius: 11px;
+      font-size: 13px;
+    }
+    .btn.btn--danger:hover{
+      filter:none;
+      opacity:.9;
+    }
+    .btn.btn--danger:active{ transform: translateY(1px); }
+    .detailActions .btnSoftEdit,
+    .detailActions .btn.btn--ghost,
+    .detailActions #btnRosterDeleteWeek{
+      align-self:center;
+    }
+    @media (max-width: 520px){
+      .detailHero{ gap:10px; }
+      .detailActions,
+      .detailActionsPrimary{
+        width: 100%;
+        justify-content:flex-start;
+      }
+      #btnRosterDeleteWeek{ margin-top:4px; }
+    }
+    /* ===== BH Picker modal ===== */
+    .bhPickerCard{
+      width: min(520px, calc(100vw - 32px));
+      max-width: 520px;
+      border-radius: 22px;
+      border: 1px solid rgba(15,23,42,.10);
+      background: rgba(255,255,255,.97);
+      box-shadow: 0 24px 64px rgba(2,6,23,.32);
+      padding: 18px;
+      max-height: 80vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      animation: bhSlideUp .22s cubic-bezier(.34,1.4,.64,1);
+    }
+    @keyframes bhSlideUp{
+      from{ opacity:0; transform:translateY(18px); }
+      to  { opacity:1; transform:translateY(0); }
+    }
+    .bhPickerList{
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 14px;
+      padding-bottom: 2px;
+      padding-right: 2px;
+    }
+    .bhPickerItem{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid rgba(15,23,42,.09);
+      background: rgba(255,255,255,.85);
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+      box-shadow: 0 1px 0 rgba(15,23,42,.02);
+      transition: background .12s, border-color .12s, transform .1s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .bhPickerItem:hover{
+      background: rgba(37,99,235,.06);
+      border-color: rgba(37,99,235,.22);
+      transform: translateY(-1px);
+    }
+    .bhPickerItem:active{ transform: scale(.98); }
+    .bhPickerItem:focus-visible{
+      outline: 3px solid rgba(37,99,235,.18);
+      outline-offset: 2px;
+    }
+    .bhPickerItem .bhName{
+      font-weight: 1000;
+      font-size: 15px;
+      display: block;
+    }
+    .bhPickerItem .bhDate{
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 900;
+      display: block;
+      margin-top: 3px;
+    }
+    .bhBadge{
+      flex-shrink: 0;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 1000;
+      background: rgba(34,197,94,.15);
+      color: rgb(21,128,61);
+      border: 1px solid rgba(34,197,94,.25);
+      white-space: nowrap;
+    }
+    .bhPickerEmpty{
+      padding: 28px 12px 12px;
+      min-height: 168px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      color: var(--muted);
+      font-weight: 900;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .bhPickerEmptyInner{
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
     }
 
   </style>
@@ -465,22 +796,27 @@
 
     <!-- ===== DETAIL VIEW ===== -->
     <section id="viewDetail" class="card cardPad hidden" style="margin-top:12px;">
-      <div class="row">
+      <div class="row detailHero">
         <div>
           <div id="detailTitle" class="detailTitle">Week</div>
           <div id="detailSub" class="detailSub">Start: —</div>
         </div>
 
         <div class="detailActions">
-          <button id="btnEditWeek" class="btnSoftEdit" type="button">Edit week</button>
-          <button id="btnEditBack" class="btn btn--pill btn--ghost" type="button">Back to weeks</button>
-          <button id="btnRosterDeleteWeek" class="btn btn--pill btn--danger" type="button">🗑 Delete week</button>
+          <div class="detailActionsPrimary">
+            <button id="btnEditWeek" class="btnSoftEdit" type="button">Edit week</button>
+            <button id="btnEditBack" class="btn btn--pill btn--ghost" type="button">Back to weeks</button>
+          </div>
+          <button id="btnRosterDeleteWeek" class="btn btn--pill btn--danger" type="button">Delete week</button>
         </div>
       </div>
 
       <div id="detailTotals" class="detailTotals">
-        <div id="pillExpectedHours" class="pill">Expected: —</div>
-        <div id="pillExpectedPay" class="pill">Pay: —</div>
+        <span class="statLabel">Expected:</span>
+        <span id="pillExpectedHours" class="statValue"></span>
+        <span class="statSep">•</span>
+        <span class="statLabel">Pay:</span>
+        <span id="pillExpectedPay" class="statValue"></span>
       </div>
 
       <div id="detailGrid" class="gridDays"></div>
@@ -510,24 +846,41 @@
       </div>
 
       <div id="wizardErr" class="err"></div>
-      <div id="wizardHint" class="wizardHint">Build the week one day at a time. Edit Week lets you refine an existing roster without changing the Tesco Sunday-to-Saturday rule.</div>
 
       <div id="dayBox" class="wizardDay">
         <div id="dayTitle" class="dayTitle">Sunday</div>
         <div id="dayDate" class="dayDate"></div>
 
         <div class="btnRow">
-          <button id="btnA" class="btnChoice" type="button">09:45 → 19:00</button>
-          <button id="btnB" class="btnChoice" type="button">10:45 → 20:00</button>
+          <button id="btnA" class="btnChoice" type="button">09:45 &rarr; 19:00</button>
+          <button id="btnB" class="btnChoice" type="button">10:45 &rarr; 20:00</button>
           <button id="btnOFF" class="btnChoice" type="button">Day Off</button>
           <button id="btnHoliday" class="btnChoice" type="button">Holiday</button>
           <button id="btnBankHoliday" class="btnChoice" type="button">Bank Holiday</button>
+          <button id="btnCustom" class="btnChoice" type="button">+ Custom</button>
         </div>
- 
 
-        
-
-        <div class="muted" style="margin-top:10px;">Pick one option. It will move to next day.</div>
+        <div id="customEditor" class="customEditor hidden">
+          <div class="customEditorHead">
+            <div class="customEditorTitle">Custom shift</div>
+          </div>
+          <div class="customInputs">
+            <label class="customField">
+              <span>Start</span>
+              <input id="customStart" class="customTime" type="time" aria-label="Custom start time" />
+            </label>
+            <div class="customArrow">&rarr;</div>
+            <label class="customField">
+              <span>End</span>
+              <input id="customEnd" class="customTime" type="time" aria-label="Custom end time" />
+            </label>
+          </div>
+          <div class="customActions">
+            <button id="btnSaveCustom" class="btnX btnBlue" type="button">Add custom time</button>
+            <button id="btnCancelCustom" class="btnX btnGhost" type="button">Cancel</button>
+          </div>
+          <div id="customErr" class="err"></div>
+        </div>
       </div>
 
       <div id="rosterPreview" class="rosterPreview hidden">
@@ -579,6 +932,21 @@
       <span class="navLabel">Profile</span>
     </button>
   </nav>
+
+  <!-- ===== MODAL: SELECIONAR BANK HOLIDAY ===== -->
+  <div id="bhPickerBackdrop" class="modalBackdrop bhPickerBackdrop hidden" aria-hidden="true" style="z-index:60;">
+    <div class="bhPickerCard" role="dialog" aria-modal="true">
+      <div class="modalHead">
+        <div>
+          <div class="modalTitle">Select Bank Holiday</div>
+          <div id="bhPickerSub" class="modalSub">Choose which bank holiday to use for this day</div>
+        </div>
+        <button id="btnCloseBhPicker" class="btnGhostNice" type="button">Cancel</button>
+      </div>
+      <div id="bhPickerList" class="bhPickerList"></div>
+      <div id="bhPickerEmpty" class="bhPickerEmpty hidden"></div>
+    </div>
+  </div>
 
   <!-- ===== EDIT DAY MODAL ===== -->
   <div id="editModalBackdrop" class="modalBackdrop hidden" aria-hidden="true">
@@ -711,6 +1079,10 @@
     }
     function weekdayShort(dt){
       return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dt.getDay()];
+    }
+    function fmtShortDate(ymd){
+      const dt = ymdToDateObj(ymd);
+      return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
     }
     function ymdAddDays(ymd, add){
       const [y,m,d] = ymd.split("-").map(Number);
@@ -888,10 +1260,94 @@
       return id ? Number(id) : null;
     }
 
-    // ===== State
+    // ===== Estado BH picker
+    let bhPickerCallback = null; // fn(bh_id, bh_name)
+    let bhPickerYear = null;
+
+    async function openBhPicker(year, workDate, callback) {
+      bhPickerCallback = callback;
+      bhPickerYear = year;
+
+      const datePretty = workDate && workDate.length > 4 ? fmtDatePretty(workDate) : workDate;
+      $("bhPickerSub").textContent = `Available for ${year} — taking on ${datePretty}`;
+      $("bhPickerList").innerHTML = "";
+      $("bhPickerEmpty").innerHTML = "";
+      $("bhPickerEmpty").classList.add("hidden");
+
+      let items = [];
+      try {
+        items = await api(`/api/bank-holidays/available?year=${year}`);
+      } catch(e) {
+        $("bhPickerEmpty").textContent = "Failed to load bank holidays.";
+        $("bhPickerEmpty").classList.remove("hidden");
+      }
+
+      if (!items.length) {
+        $("bhPickerEmpty").innerHTML = `
+          <div class="bhPickerEmptyInner">
+            <div>All bank holidays for ${year} have been used 🎉</div>
+            <button class="btnGhostNice" type="button" onclick="closeBhPicker()">Close</button>
+          </div>
+        `;
+        $("bhPickerEmpty").classList.remove("hidden");
+      }
+
+      for (const bh of items) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "bhPickerItem";
+        btn.innerHTML = `
+          <div>
+            <span class="bhName">${bh.name}</span>
+            <span class="bhDate">${fmtDatePretty(bh.date)}</span>
+          </div>
+          <span class="bhBadge">Available</span>
+        `;
+        btn.addEventListener("click", () => {
+          const callback = bhPickerCallback;
+          closeBhPicker();
+          if (callback) callback(bh.id, bh.name);
+        });
+        $("bhPickerList").appendChild(btn);
+      }
+
+      $("bhPickerBackdrop").classList.remove("hidden");
+      $("bhPickerBackdrop").setAttribute("aria-hidden", "false");
+    }
+
+    function closeBhPicker() {
+      $("bhPickerBackdrop").classList.add("hidden");
+      $("bhPickerBackdrop").setAttribute("aria-hidden", "true");
+      bhPickerCallback = null;
+    }
+
+    function fmtDatePretty(ymd) {
+      if (!ymd) return ymd;
+      const [y, m, d] = ymd.split("-").map(Number);
+      const dt = new Date(y, m - 1, d);
+      return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    }
+
+    function isCustomRosterCode(code){
+      return typeof code === "string" && code.toUpperCase().startsWith("CUSTOM:");
+    }
+
+    function parseCustomRosterCode(code){
+      const m = /^CUSTOM:(\d{2}:\d{2})-(\d{2}:\d{2})$/i.exec(String(code || "").trim());
+      if(!m) return null;
+      return { start: m[1], end: m[2] };
+    }
+
+    function makeCustomRosterCode(start, end){
+      return `CUSTOM:${start}-${end}`;
+    }
+
+    // ===== Estado wizard
     const dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
     let wizardIndex = 0;
     let wizardDays = ["", "", "", "", "", "", ""];
+    let wizardBhIds = [null, null, null, null, null, null, null]; // bh_id por índice
+    let wizardBhNames = ["", "", "", "", "", "", ""];
     let hourlyRate = 0;
 
     const rosterCache = new Map();
@@ -929,10 +1385,22 @@
       return "Day off";
     }
 
+    function codeToLabel(code){
+      const custom = parseCustomRosterCode(code);
+      if(custom) return `${custom.start} â†’ ${custom.end}`;
+      if(code==="A") return "09:45 â†’ 19:00";
+      if(code==="B") return "10:45 â†’ 20:00";
+      if(code==="HOLIDAY") return "Holiday";
+      if(code==="BANK_HOLIDAY") return "Bank Holiday";
+      return "Day off";
+    }
+
     // ===== Wizard
     function resetWizard(){
       wizardIndex = 0;
       wizardDays = ["", "", "", "", "", "", ""];
+      wizardBhIds = [null, null, null, null, null, null, null];
+      wizardBhNames = ["", "", "", "", "", "", ""];
       editingRosterId = null;
 
       $("wkNumber").value = String(tescoWeekNumber(new Date()));
@@ -961,6 +1429,8 @@
       editingRosterId = currentRosterId;
       wizardIndex = 0;
       wizardDays = (data.days || []).map(dayToCode);
+      wizardBhIds = (data.days || []).map(d => d.bank_holiday_id || null);
+      wizardBhNames = new Array(7).fill("");
 
       $("wkNumber").value = String(data.week_number || tescoWeekNumber(new Date()));
       $("startDate").value = data.start_date || sundayOfTescoWeek(new Date());
@@ -969,23 +1439,67 @@
       renderWizardDay();
       renderPreview();
     }
+
+    function closeCustomEditor(){
+      hide($("customEditor"));
+      $("customErr").textContent = "";
+    }
+
+    function openCustomEditor(){
+      const current = parseCustomRosterCode(wizardDays[wizardIndex]);
+      $("customErr").textContent = "";
+      $("customStart").value = current?.start || "09:45";
+      $("customEnd").value = current?.end || "19:00";
+      show($("customEditor"));
+      $("customStart").focus();
+    }
+
+    function saveCustomTime(){
+      const start = ($("customStart").value || "").trim();
+      const end = ($("customEnd").value || "").trim();
+
+      $("customErr").textContent = "";
+
+      if(!start || !end){
+        $("customErr").textContent = "Pick both times.";
+        return;
+      }
+      if(end <= start){
+        $("customErr").textContent = "End time must be after start time.";
+        return;
+      }
+
+      closeCustomEditor();
+      pickConfirm(makeCustomRosterCode(start, end), null, "");
+    }
+
     function renderWizardDay(){
+      closeCustomEditor();
       $("dayTitle").textContent = dayNames[wizardIndex];
       const start = ($("startDate").value || "").trim();
-      $("dayDate").textContent = start ? ymdAddDays(start, wizardIndex) : "";
+      const workYmd = start ? ymdAddDays(start, wizardIndex) : "";
+      $("dayDate").textContent = workYmd;
 
       $("btnA").classList.remove("active");
       $("btnB").classList.remove("active");
       $("btnOFF").classList.remove("active");
       $("btnHoliday").classList.remove("active");
       $("btnBankHoliday").classList.remove("active");
+      $("btnCustom").classList.remove("active");
 
       const c = wizardDays[wizardIndex];
       if(c==="A") $("btnA").classList.add("active");
       if(c==="B") $("btnB").classList.add("active");
       if(c==="OFF") $("btnOFF").classList.add("active");
       if(c==="HOLIDAY") $("btnHoliday").classList.add("active");
-      if(c==="BANK_HOLIDAY") $("btnBankHoliday").classList.add("active");
+      if(c==="BANK_HOLIDAY") {
+        $("btnBankHoliday").classList.add("active");
+        const bhName = wizardBhNames[wizardIndex];
+        $("btnBankHoliday").textContent = bhName ? `Bank Holiday: ${bhName}` : "Bank Holiday";
+      } else {
+        $("btnBankHoliday").textContent = "Bank Holiday";
+      }
+      if(isCustomRosterCode(c)) $("btnCustom").classList.add("active");
     }
     async function renderPreview(){
       const start = ($("startDate").value || "").trim();
@@ -1044,9 +1558,12 @@ if (item.i === wizardIndex - 1) {
 
       totals.textContent = `So far: ${fmtHHMMFromMinutes(totalMinutes)} • ${fmtEUR(totalPay)}`;
     }
-    function pick(code){
+    function pickConfirm(code, bhId, bhName) {
       $("wizardErr").textContent = "";
+      closeCustomEditor();
       wizardDays[wizardIndex] = code;
+      wizardBhIds[wizardIndex] = bhId || null;
+      wizardBhNames[wizardIndex] = bhName || "";
 
       renderWizardDay();
       renderPreview();
@@ -1056,7 +1573,21 @@ if (item.i === wizardIndex - 1) {
         renderWizardDay();
         return;
       }
-      $("wizardErr").textContent = "All days selected. Click “Save week”.";
+      $("wizardErr").textContent = "All days selected. Click \"Save week\".";
+    }
+
+    function pick(code){
+      if (code === "BANK_HOLIDAY") {
+        const start = ($("startDate").value || "").trim();
+        const workYmd = start ? ymdAddDays(start, wizardIndex) : "";
+        const year = workYmd ? Number(workYmd.split("-")[0]) : new Date().getFullYear();
+        openBhPicker(year, workYmd || String(year), (bhId, bhName) => {
+          pickConfirm("BANK_HOLIDAY", bhId, bhName);
+        });
+        return;
+      }
+      closeCustomEditor();
+      pickConfirm(code, null, "");
     }
     async function saveWizard(){
       $("wizardErr").textContent = "";
@@ -1087,6 +1618,7 @@ if (item.i === wizardIndex - 1) {
               body: JSON.stringify({
                 work_date: day.work_date,
                 code: wizardDays[i],
+                bank_holiday_id: wizardBhIds[i] || null,
               })
             });
           }
@@ -1102,9 +1634,13 @@ if (item.i === wizardIndex - 1) {
           return;
         }
 
+        // Montar mapa de bh_ids (só índices com valor definido)
+        const bh_ids = {};
+        wizardBhIds.forEach((id, i) => { if (id) bh_ids[String(i)] = id; });
+
         await api("/api/roster", {
           method: "POST",
-          body: JSON.stringify({ week_number, start_date, days: wizardDays })
+          body: JSON.stringify({ week_number, start_date, days: wizardDays, bh_ids })
         });
 
         editingRosterId = null;
@@ -1142,7 +1678,7 @@ if (item.i === wizardIndex - 1) {
       try{
         const rows = await api("/api/roster");
         if(!rows || !rows.length){
-          $("listMsg").textContent = "No roster weeks yet. Click “Add week”.";
+          $("listMsg").textContent = "No roster weeks yet. Click \"Add week\".";
           return;
         }
         $("listMsg").textContent = "";
@@ -1198,14 +1734,16 @@ if (item.i === wizardIndex - 1) {
       const mins = expectedMinutesFromDays(d.days);
       const pay = await expectedPayFromDays(d.days, hourlyRate);
 
-      $("pillExpectedHours").textContent = `Expected: ${fmtHHMMFromMinutes(mins)}`;
-      $("pillExpectedPay").textContent = `Pay: ${fmtEUR(pay)}`;
+      $("pillExpectedHours").textContent = fmtHHMMFromMinutes(mins);
+      $("pillExpectedPay").textContent = fmtEUR(pay);
     }
 
     function dayToCode(x){
       const status = String(x.status || "").toUpperCase();
       if(["A","B","OFF","HOLIDAY","BANK_HOLIDAY"].includes(status)) return status;
+      if(isCustomRosterCode(status)) return status;
       if(x.day_off) return "OFF";
+      if(x.shift_in && x.shift_out) return makeCustomRosterCode(x.shift_in, x.shift_out);
       return (x.shift_in === "09:45") ? "A" : "B";
     }
 
@@ -1244,21 +1782,26 @@ if (item.i === wizardIndex - 1) {
           const card = document.createElement("div");
           card.className = "dayCard";
           card.setAttribute("data-day-date", x.work_date);
+          if (status === "HOLIDAY" || isBH) card.classList.add("is-holiday");
 
           card.innerHTML = `
-            <div class="w">
-              ${weekdayShort(dt)}
-              ${status === "OFF" ? `<span class="badgeOff">OFF</span>` : ""}
-              ${status === "HOLIDAY" ? `<span class="badgeHoliday">Holiday</span>` : ""}
-              ${isBH ? `<span class="badgeBH" title="${bhName}">BH</span>` : ""}
-              ${(!isOff && premiumMult > 1) ? `<span class="badgePremium">x${premiumMult.toFixed(1)}</span>` : ""}
-              ${isBH ? (isPaid ? `<span class="badgePaid">Paid</span>` : `<span class="badgeNotPaid">Not Paid</span>`) : ""}
+            <div class="dayTop">
+              <div class="dayLeft">
+                <div class="w">${weekdayShort(dt)}</div>
+                <div class="d">${fmtShortDate(x.work_date)}${isBH && bhName ? ` • ${bhName}` : ""}</div>
+              </div>
+              <div class="dayMeta">
+                ${status === "OFF" ? `<span class="badgeOff">OFF</span>` : ""}
+                ${status === "HOLIDAY" ? `<span class="badgeHoliday">Holiday</span>` : ""}
+                ${isBH ? `<span class="badgeBH" title="${bhName}">Bank Holiday</span>` : ""}
+                ${(!isOff && premiumMult > 1) ? `<span class="badgePremium">x${premiumMult.toFixed(1)}</span>` : ""}
+                ${isBH ? (isPaid ? `<span class="badgePaid">Paid</span>` : `<span class="badgeNotPaid">Not Paid</span>`) : ""}
+              </div>
             </div>
-            <div class="d">${x.work_date}${isBH && bhName ? ` • ${bhName}` : ""}</div>
             <div class="s">${shift}</div>
           `;
 
-          card.addEventListener("click", () => openEditDayModal(rosterId, x.work_date, dayToCode(x)));
+          card.addEventListener("click", () => openEditDayModal(rosterId, x.work_date, dayToCode(x), x.bank_holiday_id || null));
           grid.appendChild(card);
         }
 
@@ -1270,7 +1813,7 @@ if (item.i === wizardIndex - 1) {
     }
 
     // ===== Edit modal
-    let editState = { rosterId:null, workDate:null, code:null };
+    let editState = { rosterId:null, workDate:null, code:null, bankHolidayId:null };
 
     function setEditActive(code){
       $("editA").classList.toggle("active", code==="A");
@@ -1280,8 +1823,8 @@ if (item.i === wizardIndex - 1) {
       $("editBankHoliday").classList.toggle("active", code==="BANK_HOLIDAY");
     }
 
-    function openEditDayModal(rosterId, workDate, currentCode){
-      editState = { rosterId, workDate, code: currentCode };
+    function openEditDayModal(rosterId, workDate, currentCode, currentBhId){
+      editState = { rosterId, workDate, code: currentCode, bankHolidayId: currentBhId || null };
       $("modalErr").textContent = "";
 
       const dt = ymdToDateObj(workDate);
@@ -1311,12 +1854,15 @@ if (item.i === wizardIndex - 1) {
       }
 
       try{
+        const body = {
+          work_date: editState.workDate,
+          code: editState.code,
+        };
+        if (editState.bankHolidayId) body.bank_holiday_id = editState.bankHolidayId;
+
         await api(`/api/roster/${editState.rosterId}/day`, {
           method: "PATCH",
-          body: JSON.stringify({
-            work_date: editState.workDate,
-            code: editState.code
-          })
+          body: JSON.stringify(body)
         });
 
         closeEditModal();
@@ -1330,6 +1876,16 @@ if (item.i === wizardIndex - 1) {
         $("modalErr").textContent = e.message || "Failed to save";
         if(e.status === 401) location.href = "/";
       }
+    }
+
+    function codeToLabel(code){
+      const custom = parseCustomRosterCode(code);
+      if(custom) return `${custom.start} \u2192 ${custom.end}`;
+      if(code === "A") return "09:45 \u2192 19:00";
+      if(code === "B") return "10:45 \u2192 20:00";
+      if(code === "HOLIDAY") return "Holiday";
+      if(code === "BANK_HOLIDAY") return "Bank Holiday";
+      return "Day off";
     }
 
     // ===== Binds
@@ -1353,6 +1909,9 @@ if (item.i === wizardIndex - 1) {
     $("btnOFF").addEventListener("click", () => pick("OFF"));
     $("btnHoliday").addEventListener("click", () => pick("HOLIDAY"));
     $("btnBankHoliday").addEventListener("click", () => pick("BANK_HOLIDAY"));
+    $("btnCustom").addEventListener("click", openCustomEditor);
+    $("btnSaveCustom").addEventListener("click", saveCustomTime);
+    $("btnCancelCustom").addEventListener("click", closeCustomEditor);
     $("btnSave").addEventListener("click", saveWizard);
 
     $("startDate").addEventListener("change", () => {
@@ -1376,12 +1935,36 @@ if (item.i === wizardIndex - 1) {
     $("editModalBackdrop").addEventListener("click", (e) => {
       if(e.target === $("editModalBackdrop")) closeEditModal();
     });
-    $("editA").addEventListener("click", () => { editState.code = "A"; setEditActive("A"); });
-    $("editB").addEventListener("click", () => { editState.code = "B"; setEditActive("B"); });
-    $("editOFF").addEventListener("click", () => { editState.code = "OFF"; setEditActive("OFF"); });
-    $("editHoliday").addEventListener("click", () => { editState.code = "HOLIDAY"; setEditActive("HOLIDAY"); });
-    $("editBankHoliday").addEventListener("click", () => { editState.code = "BANK_HOLIDAY"; setEditActive("BANK_HOLIDAY"); });
+    $("editA").addEventListener("click", () => {
+      editState.code = "A"; editState.bankHolidayId = null; setEditActive("A");
+    });
+    $("editB").addEventListener("click", () => {
+      editState.code = "B"; editState.bankHolidayId = null; setEditActive("B");
+    });
+    $("editOFF").addEventListener("click", () => {
+      editState.code = "OFF"; editState.bankHolidayId = null; setEditActive("OFF");
+    });
+    $("editHoliday").addEventListener("click", () => {
+      editState.code = "HOLIDAY"; editState.bankHolidayId = null; setEditActive("HOLIDAY");
+    });
+    $("editBankHoliday").addEventListener("click", () => {
+      // Abrir BH picker — só seleciona depois de escolher BH
+      const year = editState.workDate ? Number(editState.workDate.split("-")[0]) : new Date().getFullYear();
+      openBhPicker(year, editState.workDate || String(year), (bhId, bhName) => {
+        editState.code = "BANK_HOLIDAY";
+        editState.bankHolidayId = bhId;
+        setEditActive("BANK_HOLIDAY");
+        // Atualizar label do botão
+        $("editBankHoliday").querySelector(".small").textContent = bhName || "Bank holiday";
+      });
+    });
     $("btnSaveDay").addEventListener("click", saveEditDay);
+
+    // BH picker binds
+    $("btnCloseBhPicker").addEventListener("click", closeBhPicker);
+    $("bhPickerBackdrop").addEventListener("click", (e) => {
+      if (e.target === $("bhPickerBackdrop")) closeBhPicker();
+    });
 
     // ===== init
     (async function init(){

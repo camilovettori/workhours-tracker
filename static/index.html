@@ -162,14 +162,24 @@
         </button>
       </header>
 
-      <section class="homeHero card">
-        <div class="homeHeroTop">
-          <div>
-            <div class="homeHeroKicker">Weekly progress coach</div>
-            <div id="homeCoachTitle" class="homeHeroTitle">Ready to start your shift?</div>
-            <div id="homeCoachLine" class="homeHeroCoachLine">Loading weekly progress…</div>
+      <section class="homeHero card" id="homeCoachHero" aria-live="polite" aria-atomic="true" tabindex="0">
+        <div id="homeCoachPane" class="homeCoachPane">
+          <div class="homeHeroTop homeCoachTop">
+            <div class="homeCoachLead">
+              <div id="homeCoachIcon" class="homeCoachIcon">⚡</div>
+              <div>
+                <div class="homeHeroKicker">Weekly progress coach</div>
+                <div id="homeCoachTitle" class="homeHeroTitle">Ready to start your shift?</div>
+              </div>
+            </div>
+            <div id="homeCoachChip" class="homeHeroChip">READY</div>
           </div>
-          <div id="homeCoachChip" class="homeHeroChip">READY</div>
+          <div id="homeCoachLine" class="homeHeroCoachLine">Loading weekly progress…</div>
+          <div id="homeCoachSub" class="homeCoachSub hidden"></div>
+          <div class="homeCoachFooter">
+            <div id="homeCoachDots" class="homeCoachDots" aria-label="Coach insights"></div>
+            <div class="homeCoachHint">Swipe for more</div>
+          </div>
         </div>
       </section>
 
@@ -178,7 +188,7 @@
         <div class="cwTop cwTop--full">
           <div class="teCard teCard--full" id="todayEarnCard">
             <div class="teHead">
-              <div class="teTitle">Today earnings</div>
+              <div id="todayEarnTitle" class="teTitle">Today earnings</div>
               <div class="teLive" id="todayEarnState">OFF</div>
             </div>
 
@@ -193,6 +203,30 @@
               <div class="teItem">
                 <div class="teLabel">Gross</div>
                 <div id="todayEarnPay" class="teValue">€ . </div>
+              </div>
+            </div>
+
+            <div id="todayEarnBreak" class="todayEarnBreak hidden">
+              <div class="todayEarnBreakTop">
+                <div class="todayEarnBreakCountdown" id="todayBreakCountdown">60:00 left</div>
+                <div class="todayEarnBreakBadge">BREAK</div>
+              </div>
+
+              <div class="todayEarnBreakMeta">
+                <div class="todayEarnBreakMetaItem">
+                  <div class="todayEarnBreakMetaLabel">Started</div>
+                  <div id="todayBreakStart" class="todayEarnBreakMetaValue">--:--</div>
+                </div>
+                <div class="todayEarnBreakMetaItem">
+                  <div class="todayEarnBreakMetaLabel">Ends</div>
+                  <div id="todayBreakEnd" class="todayEarnBreakMetaValue">--:--</div>
+                </div>
+              </div>
+
+              <div class="todayEarnBreakNote">Take your break - tracking resumes after End Break</div>
+
+              <div class="todayEarnBreakBar">
+                <div id="todayBreakProgress" class="todayEarnBreakBarFill"></div>
               </div>
             </div>
 
@@ -288,31 +322,34 @@
         <div id="noRosterBannerHost"></div>
       </section>
 
-      <section class="card card--reports" id="cardDeliveries">
+      <section class="card card--reports deliveriesMiniCard" id="cardDeliveries">
         <div class="listRowTop">
-          <div>
-            <div class="listTitle">🚚 Deliveries Tracker</div>
-            <div class="reportsSub">Fast logging for mobile runs</div>
-          </div>
-          <div class="chev">›</div>
+          <div class="listTitle">🚚 Deliveries</div>
+          <div id="deliveriesRecordBadge" class="deliveriesRecordBadge hidden">Record week</div>
         </div>
-        <div class="reportsSub deliveriesGatewayMeta">
-          This week: <strong id="deliveriesWeekInline">0</strong> deliveries
-        </div>
-        <div class="deliveriesInsightRail" aria-live="polite">
-          <span class="deliveriesInsightBadge">LIVE</span>
-          <span class="deliveriesInsightDot"></span>
-          <span id="deliveriesInsightText" class="deliveriesInsightText">Loading delivery insights…</span>
+        <div class="deliveriesMiniStat">
+          <strong id="deliveriesWeekInline">0</strong>
+          <span>this week</span>
         </div>
       </section>
 
-      <section class="card card--reports" id="cardSettings">
-        <div class="listRowTop">
-          <div class="listTitle">⚙️ Reminders & Schedule</div>
-          <div class="reportsSub">Alerts • Roster • Times</div>
-          <div class="chev">›</div>
+      <section class="card card--reports quickAccessCard" id="cardQuickAccess">
+        <div class="listRowTop quickAccessHead">
+          <div>
+            <div class="listTitle">Quick Access</div>
+            <div class="quickAccessSub">Phones & entry codes</div>
+          </div>
         </div>
-        <div class="reportsSub">Configure work reminders for mobile</div>
+        <div class="quickAccessGrid">
+          <button class="quickToolCard quickToolCard--phones" type="button" data-route="/profile#phones">
+            <div class="quickToolIcon">📞</div>
+            <div class="quickToolLabel">Useful Phones</div>
+          </button>
+          <button class="quickToolCard quickToolCard--gates" type="button" data-route="/profile#gates">
+            <div class="quickToolIcon">🔑</div>
+            <div class="quickToolLabel">Gate Codes</div>
+          </button>
+        </div>
       </section>
 
       <!-- BOTTOM NAV -->

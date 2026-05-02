@@ -9,15 +9,14 @@
   <link rel="icon" href="/static/logo.png" />
   <link rel="stylesheet" href="/static/app.css?v=1003">
 
-
   <style>
     .wrap{ width:min(820px,100%); margin:0 auto; padding:22px 16px 72px; }
-
     .top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
     .brand{ display:flex; align-items:center; gap:12px; }
     .brand img{ width:44px; height:44px; border-radius:12px; object-fit:cover; }
     .muted{ color: var(--muted); font-weight:900; }
-    .actions{ display:flex; gap:10px; align-items:center; }
+    .hidden{ display:none !important; }
+    .err{ color:#b91c1c; font-weight:1000; margin-top:10px; }
 
     .yearSel{
       padding: 10px 12px;
@@ -29,66 +28,87 @@
       cursor: pointer;
     }
 
-    .err{ color:#b91c1c; font-weight:1000; margin-top:10px; }
-    .hidden{ display:none !important; }
-
-    /* ===== NEW UX (Summary + Tabs + Single Status Button) ===== */
-    .summaryPills{
+    /* ===== Header cards ===== */
+    .summaryRow{
       display:flex;
-      gap:12px;
-      padding:14px;
-      margin:10px 0 12px;
-      background: rgba(255,255,255,.6);
-      border:1px solid rgba(15,23,42,.08);
-      border-radius: 22px;
-      box-shadow: 0 10px 30px rgba(2,6,23,.08);
-    }
-    .pill{
-      flex:1;
-      display:flex;
-      align-items:center;
-      justify-content:center;
       gap:10px;
-      padding:12px 10px;
-      border-radius:999px;
+      margin-bottom:12px;
+    }
+    .summaryCard{
+      flex:1;
+      padding:14px 12px;
+      border-radius:20px;
       border:1px solid rgba(15,23,42,.08);
-      background: rgba(255,255,255,.7);
-      font-weight: 900;
+      background: rgba(255,255,255,.70);
+      box-shadow: 0 8px 24px rgba(2,6,23,.06);
+      text-align:center;
     }
-    .pill .dot{
-      width:26px;
-      height:26px;
+    .summaryCard .sc-num{
+      font-size:28px;
+      font-weight:1000;
+      letter-spacing:-.03em;
+      line-height:1;
+    }
+    .summaryCard .sc-label{
+      margin-top:4px;
+      font-size:12px;
+      font-weight:900;
+      color: var(--muted);
+    }
+    .cardAvail .sc-num{ color: #16a34a; }
+    .cardUsed  .sc-num{ color: #2563eb; }
+    .cardTotal .sc-num{ color: #475569; }
+
+    /* Barra de progresso + total ganho */
+    .progressWrap{
+      margin:0 0 14px;
+      padding:14px 16px;
+      border-radius:20px;
+      border:1px solid rgba(15,23,42,.08);
+      background: rgba(255,255,255,.60);
+    }
+    .progressRow{
+      display:flex;
+      justify-content:space-between;
+      align-items:baseline;
+      gap:8px;
+      margin-bottom:8px;
+    }
+    .progressLabel{ font-weight:900; font-size:13px; color:var(--muted); }
+    .progressEarned{ font-weight:1000; font-size:14px; color: #16a34a; }
+    .progressBar{
+      width:100%;
+      height:6px;
       border-radius:999px;
-      display:grid;
-      place-items:center;
-      font-weight: 1000;
+      background: rgba(15,23,42,.08);
+      overflow:hidden;
     }
-    .pillPaid{ background: rgba(16,185,129,.12); }
-    .pillPaid .dot{ background: rgba(16,185,129,.18); }
+    .progressFill{
+      height:100%;
+      border-radius:999px;
+      background: linear-gradient(90deg, #2563eb, #16a34a);
+      transition: width .4s ease;
+    }
 
-    .pillNotPaid{ background: rgba(239,68,68,.12); }
-    .pillNotPaid .dot{ background: rgba(239,68,68,.18); }
-
-    .pillNA{ background: rgba(100,116,139,.10); }
-    .pillNA .dot{ background: rgba(100,116,139,.18); }
-
+    /* ===== Tabs ===== */
     .segTabs{
       display:flex;
-      gap:10px;
-      padding:10px;
-      border-radius: 999px;
+      gap:8px;
+      padding:8px;
+      border-radius:999px;
       background: rgba(255,255,255,.55);
       border:1px solid rgba(15,23,42,.08);
-      margin-bottom: 14px;
+      margin-bottom:14px;
     }
     .segBtn{
       flex:1;
-      padding:12px 12px;
-      border-radius: 999px;
+      padding:10px 8px;
+      border-radius:999px;
       border:1px solid rgba(15,23,42,.08);
       background: rgba(255,255,255,.65);
-      font-weight: 1000;
-      cursor: pointer;
+      font-weight:1000;
+      cursor:pointer;
+      font-size:13px;
     }
     .segBtn--active{
       background: rgba(37,99,235,.14);
@@ -96,150 +116,142 @@
       color: rgba(37,99,235,1);
     }
 
-    .holidayList{ display:flex; flex-direction:column; gap:14px; }
-
+    /* ===== Cards de feriado ===== */
+    .holidayList{ display:flex; flex-direction:column; gap:12px; }
     .holidayCard{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      padding:18px 16px;
-      border-radius: 22px;
+      padding:16px;
+      border-radius:20px;
       border:1px solid rgba(15,23,42,.08);
       background: rgba(255,255,255,.72);
-      box-shadow: 0 10px 30px rgba(2,6,23,.08);
+      box-shadow: 0 8px 24px rgba(2,6,23,.06);
     }
-    .holidayCard h3{ margin:0; font-size: 20px; font-weight: 1000; letter-spacing: -.02em; }
-    .holidayCard .date{ margin-top:6px; color: rgba(15,23,42,.6); font-weight:900; font-size:13px; }
-
-    .statusBtn{
-      min-width: 165px;
-      padding:12px 14px;
-      border-radius: 999px;
-      border:1px solid rgba(15,23,42,.08);
-      background: rgba(255,255,255,.7);
-      font-weight: 1000;
-      letter-spacing:.02em;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      gap:10px;
-      cursor:pointer;
-      user-select:none;
-      transition:.12s ease;
-    }
-    .statusBtn:active{ transform: translateY(1px); }
-    .statusBtn::after{ content:"›"; font-size:22px; opacity:.7; }
-
-    .status--paid{ background: rgba(16,185,129,.22); border-color: rgba(16,185,129,.26); }
-    .status--notpaid{ background: rgba(239,68,68,.22); border-color: rgba(239,68,68,.26); }
-    .status--na{ background: rgba(100,116,139,.14); border-color: rgba(100,116,139,.18); }
-
-    .mini{
-      font-size:12px; font-weight:900; color: var(--muted);
-      margin-top:6px;
-      line-height: 1.25;
-    }
-
-    /* ===== Modal (keep yours) ===== */
-    .modalBackdrop{
-      position: fixed;
-      inset: 0;
-      background: rgba(2,6,23,.55);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      padding: 18px;
-      z-index: 9999;
-    }
-    .modalCard{
-      width: min(520px, 100%);
-      border-radius: 26px;
-      background: rgba(255,255,255,.92);
-      border: 1px solid rgba(15,23,42,.10);
-      box-shadow: 0 22px 80px rgba(2,6,23,.32);
-      backdrop-filter: blur(10px);
-      padding: 22px 18px 18px;
-      max-height: calc(100vh - 36px);
-      overflow: auto;
-    }
-    .modalTop{
+    .holidayCard .hc-top{
       display:flex;
       align-items:flex-start;
       justify-content:space-between;
-      gap: 12px;
-      margin-bottom: 14px;
+      gap:12px;
     }
-    .modalTitleBig{
-      font-size: 28px;
-      font-weight: 1000;
-      letter-spacing: -.03em;
-      line-height: 1.05;
+    .holidayCard h3{ margin:0; font-size:18px; font-weight:1000; letter-spacing:-.02em; }
+    .holidayCard .hc-date{ margin-top:4px; color:var(--muted); font-weight:900; font-size:13px; }
+    .holidayCard .hc-meta{ margin-top:8px; font-size:13px; font-weight:900; color:var(--muted); }
+    .holidayCard .hc-actions{
+      display:flex;
+      gap:8px;
+      margin-top:12px;
+      flex-wrap:wrap;
     }
-    .modalSubtitle{
-      margin-top: 6px;
-      font-weight: 900;
-      color: var(--muted);
-      font-size: 13px;
-    }
-    .modalCloseIcon{
-      width: 40px;
-      height: 40px;
-      border-radius: 999px;
-      border: 1px solid rgba(15,23,42,.12);
-      background: rgba(255,255,255,.85);
-      cursor: pointer;
-      font-weight: 1000;
-      color: var(--muted);
-    }
-    .modalCloseIcon:active{ transform: translateY(1px); }
 
-    .modalFields{ display:flex; flex-direction:column; gap: 12px; margin-top: 10px; }
-    .modalField .label{ font-weight: 900; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
-    .modalField .inp{
-      width:100%;
-      padding: 12px 12px;
-      border-radius: 14px;
-      border: 1px solid rgba(15,23,42,.12);
-      background: rgba(255,255,255,.85);
-      font-weight: 900;
-      outline: none;
+    /* Badges */
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      padding:4px 10px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:1000;
+      white-space:nowrap;
     }
-    .modalTip{ margin-top: 12px; font-size: 12px; font-weight: 900; color: var(--muted); line-height: 1.25; }
-    .modalBottom{ margin-top: 14px; display:flex; flex-direction:column; gap: 10px; }
+    .badge-available{ background:rgba(22,163,74,.12); border:1px solid rgba(22,163,74,.22); color:#15803d; }
+    .badge-used{      background:rgba(37,99,235,.12);  border:1px solid rgba(37,99,235,.22);  color:#1d4ed8; }
+    .badge-na{        background:rgba(100,116,139,.10); border:1px solid rgba(100,116,139,.18); color:#64748b; }
+    .badge-upcoming{  background:rgba(245,158,11,.10);  border:1px solid rgba(245,158,11,.20);  color:#b45309; }
 
-    .modalCancelLink{
-      border: 0;
-      background: transparent;
-      cursor: pointer;
-      font-weight: 1000;
-      color: var(--muted);
-      padding: 8px 4px;
+    /* Botões de ação nos cards */
+    .btnAction{
+      padding:8px 12px;
+      border-radius:12px;
+      border:1px solid rgba(15,23,42,.12);
+      background:rgba(255,255,255,.80);
+      font-weight:1000;
+      font-size:12px;
+      cursor:pointer;
+    }
+    .btnActionDanger{
+      border-color:rgba(239,68,68,.18);
+      background:rgba(239,68,68,.08);
+      color:#b91c1c;
+    }
+    .btnActionBlue{
+      border-color:rgba(37,99,235,.18);
+      background:rgba(37,99,235,.08);
+      color:#1d4ed8;
+    }
+    .btnAction:active{ transform:translateY(1px); }
+
+    /* Estado vazio */
+    .emptyState{
       text-align:center;
+      padding:32px 16px;
+      color:var(--muted);
+      font-weight:900;
+      font-size:14px;
     }
+
+    /* ===== Modais ===== */
+    .modalBackdrop{
+      position:fixed; inset:0;
+      background:rgba(2,6,23,.55);
+      display:flex; align-items:center; justify-content:center;
+      padding:18px; z-index:9999;
+    }
+    .modalCard{
+      width:min(520px,100%);
+      border-radius:26px;
+      background:rgba(255,255,255,.95);
+      border:1px solid rgba(15,23,42,.10);
+      box-shadow:0 22px 80px rgba(2,6,23,.32);
+      backdrop-filter:blur(10px);
+      padding:22px 18px 18px;
+      max-height:calc(100vh - 36px);
+      overflow:auto;
+    }
+    .modalTop{
+      display:flex; align-items:flex-start;
+      justify-content:space-between; gap:12px; margin-bottom:14px;
+    }
+    .modalTitleBig{ font-size:22px; font-weight:1000; letter-spacing:-.02em; line-height:1.1; }
+    .modalSubtitle{ margin-top:6px; font-weight:900; color:var(--muted); font-size:13px; }
+    .modalCloseIcon{
+      width:40px; height:40px; border-radius:999px;
+      border:1px solid rgba(15,23,42,.12);
+      background:rgba(255,255,255,.85);
+      cursor:pointer; font-weight:1000; color:var(--muted);
+    }
+    .modalCloseIcon:active{ transform:translateY(1px); }
+    .modalFields{ display:flex; flex-direction:column; gap:12px; margin-top:10px; }
+    .modalField .label{ font-weight:900; color:var(--muted); font-size:12px; margin-bottom:6px; }
+    .modalField .inp{
+      width:100%; padding:12px;
+      border-radius:14px; border:1px solid rgba(15,23,42,.12);
+      background:rgba(255,255,255,.85); font-weight:900; outline:none;
+    }
+    .modalTip{ margin-top:12px; font-size:12px; font-weight:900; color:var(--muted); line-height:1.4; }
+    .modalBottom{ margin-top:14px; display:flex; flex-direction:column; gap:10px; }
     .modalPrimaryBtn{
-      width:100%;
-      border: 0;
-      border-radius: 14px;
-      padding: 12px 14px;
-      font-weight: 1000;
-      cursor: pointer;
-      background: #2563eb;
-      color: #fff;
-      box-shadow: 0 10px 30px rgba(37,99,235,.22);
+      width:100%; border:0; border-radius:14px; padding:12px 14px;
+      font-weight:1000; cursor:pointer;
+      background:#2563eb; color:#fff;
+      box-shadow:0 10px 30px rgba(37,99,235,.22);
     }
-    .modalPrimaryBtn:active{ transform: translateY(1px); }
-    /* Fix alignment on mobile */
-.summaryPills{ flex-wrap: nowrap; }
-.pill{ min-width: 0; white-space: nowrap; }
-.pill b{ display:inline-block; min-width: 18px; text-align:center; }
+    .modalPrimaryBtn:active{ transform:translateY(1px); }
+    .modalDangerBtn{
+      width:100%; border:0; border-radius:14px; padding:12px 14px;
+      font-weight:1000; cursor:pointer;
+      background:#dc2626; color:#fff;
+    }
+    .modalDangerBtn:active{ transform:translateY(1px); }
+    .modalCancelLink{
+      border:0; background:transparent; cursor:pointer;
+      font-weight:1000; color:var(--muted);
+      padding:8px 4px; text-align:center;
+    }
+    .confirmText{ font-size:14px; font-weight:900; line-height:1.5; }
 
-/* Mobile tuning */
-@media (max-width: 420px){
-  .summaryPills{ gap:8px; padding:12px; }
-  .pill{ padding:10px 8px; font-size:13px; }
-  .pill .dot{ width:22px; height:22px; }
-}
-
+    @media (max-width:420px){
+      .summaryRow{ gap:7px; }
+      .summaryCard{ padding:12px 8px; }
+      .summaryCard .sc-num{ font-size:22px; }
+    }
   </style>
 </head>
 <body>
@@ -252,31 +264,48 @@
           <div class="muted" id="subTitle">Ireland • —</div>
         </div>
       </div>
-
-      <div class="actions">
-        <div class="yearWrap">
-          <select id="yearSel" class="yearSel" aria-label="Select year"></select>
-        </div>
+      <div>
+        <select id="yearSel" class="yearSel" aria-label="Select year"></select>
       </div>
     </div>
 
-    <!-- Summary pills -->
-    <section class="summaryPills">
-      <div class="pill pillPaid"><span class="dot">✓</span> <b id="sumPaid">0</b> Paid</div>
-      <div class="pill pillNotPaid"><span class="dot">✕</span> <b id="sumNotPaid">0</b> Not Paid</div>
-      <div class="pill pillNA"><span class="dot">—</span> <b id="sumNA">0</b> N/A</div>
-    </section>
+    <!-- Contadores -->
+    <div class="summaryRow">
+      <div class="summaryCard cardAvail">
+        <div class="sc-num" id="sumAvail">—</div>
+        <div class="sc-label">Available</div>
+      </div>
+      <div class="summaryCard cardUsed">
+        <div class="sc-num" id="sumUsed">—</div>
+        <div class="sc-label">Used</div>
+      </div>
+      <div class="summaryCard cardTotal">
+        <div class="sc-num" id="sumTotal">—</div>
+        <div class="sc-label">Total</div>
+      </div>
+    </div>
+
+    <!-- Progresso + total ganho -->
+    <div class="progressWrap">
+      <div class="progressRow">
+        <span class="progressLabel" id="progressText">0 of 0 used</span>
+        <span class="progressEarned" id="progressEarned">€0.00 earned</span>
+      </div>
+      <div class="progressBar">
+        <div class="progressFill" id="progressFill" style="width:0%"></div>
+      </div>
+    </div>
 
     <!-- Tabs -->
-    <section class="segTabs">
-      <button id="tabUpcoming" class="segBtn segBtn--active" type="button">Upcoming</button>
-      <button id="tabPast" class="segBtn" type="button">Past</button>
-    </section>
+    <div class="segTabs">
+      <button id="tabAvailable" class="segBtn segBtn--active" type="button">Available</button>
+      <button id="tabUsed" class="segBtn" type="button">Used</button>
+      <button id="tabUpcoming" class="segBtn" type="button">Upcoming</button>
+    </div>
 
     <div class="muted" id="msg">Loading...</div>
     <div id="err" class="err"></div>
 
-    <!-- List -->
     <section id="holidayList" class="holidayList"></section>
   </main>
 
@@ -316,34 +345,52 @@
     </button>
   </nav>
 
-  <!-- Modal -->
-  <div id="paidModal" class="modalBackdrop hidden" aria-hidden="true">
-    <div class="modalCard" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+  <!-- Modal: Marcar manualmente como tomado -->
+  <div id="manualModal" class="modalBackdrop hidden" aria-hidden="true">
+    <div class="modalCard" role="dialog" aria-modal="true">
       <div class="modalTop">
         <div>
-          <div class="modalTitleBig" id="mTitle">Mark as Paid</div>
-          <div class="modalSubtitle" id="mSub"></div>
+          <div class="modalTitleBig" id="manualTitle">Mark as taken</div>
+          <div class="modalSubtitle" id="manualSub"></div>
         </div>
-        <button class="modalCloseIcon" id="mClose" type="button">✕</button>
+        <button class="modalCloseIcon" id="manualClose" type="button">✕</button>
       </div>
-
       <div class="modalFields">
         <div class="modalField">
-          <div class="label">Paid date (when Tesco paid)</div>
-          <input id="mPaidDate" class="inp" type="date" />
+          <div class="label">Date taken (day you had off)</div>
+          <input id="manualDate" class="inp" type="date" />
         </div>
-
         <div class="modalField">
-          <div class="label">Paid in week #</div>
-          <input id="mPaidWeek" class="inp" type="number" min="1" max="53" placeholder="ex: 5" />
+          <div class="label">Amount paid (€) — optional, auto-calculated if blank</div>
+          <input id="manualAmount" class="inp" type="number" min="0" step="0.01" placeholder="Leave blank to calculate" />
         </div>
       </div>
-
-      <div class="modalTip">Tip: Tesco pays later — use the week you received it on the payslip.</div>
-
+      <div class="modalTip">If left blank, the amount will be calculated from your last 13 weeks average.</div>
       <div class="modalBottom">
-        <button id="mSave" class="modalPrimaryBtn" type="button">Save</button>
-        <button id="mCancel" class="modalCancelLink" type="button">Cancel</button>
+        <button id="manualSave" class="modalPrimaryBtn" type="button">Save</button>
+        <button id="manualCancel" class="modalCancelLink" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Confirmar reversão -->
+  <div id="revertModal" class="modalBackdrop hidden" aria-hidden="true">
+    <div class="modalCard" role="dialog" aria-modal="true">
+      <div class="modalTop">
+        <div>
+          <div class="modalTitleBig">Revert bank holiday?</div>
+          <div class="modalSubtitle" id="revertSub"></div>
+        </div>
+        <button class="modalCloseIcon" id="revertClose" type="button">✕</button>
+      </div>
+      <p class="confirmText">
+        This will mark the bank holiday as <strong>available</strong> again.
+        The original shift in your roster will keep its status but lose the bank holiday link.
+        Continue?
+      </p>
+      <div class="modalBottom">
+        <button id="revertConfirm" class="modalDangerBtn" type="button">Yes, revert</button>
+        <button id="revertCancel" class="modalCancelLink" type="button">Cancel</button>
       </div>
     </div>
   </div>
@@ -357,10 +404,8 @@
         headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
         ...opts,
       });
-
       const ct = res.headers.get("content-type") || "";
       const data = ct.includes("application/json") ? await res.json() : await res.text();
-
       if (!res.ok) {
         const msg = (data && data.detail) ? data.detail : (typeof data === "string" ? data : "Request failed");
         const e = new Error(msg);
@@ -370,294 +415,184 @@
       return data;
     }
 
-    function tescoFiscalYearStart(fiscalYear) {
-      const march1 = new Date(Number(fiscalYear) || 1970, 2, 1);
-      const day = march1.getDay();
-      if (day === 0) return march1;
-      if (day <= 4) {
-        march1.setDate(march1.getDate() - day);
-        return march1;
-      }
-      march1.setDate(march1.getDate() + (7 - day));
-      return march1;
+    function fmtDatePretty(ymd) {
+      if (!ymd) return "—";
+      const [y, m, d] = ymd.split("-").map(Number);
+      return new Date(y, m - 1, d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    }
+    function fmtEUR(n) {
+      const v = Number(n || 0);
+      try { return v.toLocaleString(undefined, { style: "currency", currency: "EUR" }); }
+      catch { return "€" + v.toFixed(2); }
+    }
+    function todayYmd() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    }
+    function isFuture(ymd) {
+      return ymd > todayYmd();
     }
 
-    function tescoWeekNumber(d = new Date()) {
-      const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      let fiscalYear = dt.getFullYear();
-      let start = tescoFiscalYearStart(fiscalYear);
-
-      if (dt < start) {
-        fiscalYear -= 1;
-        start = tescoFiscalYearStart(fiscalYear);
-      } else {
-        const nextStart = tescoFiscalYearStart(fiscalYear + 1);
-        if (dt >= nextStart) {
-          fiscalYear += 1;
-          start = nextStart;
-        }
-      }
-
-      return Math.floor((dt - start) / 86400000 / 7) + 1;
-    }
-
-    function parseYMD(s){
-      const m = String(s || "").trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-      if(!m) return null;
-      const y = +m[1], mo = +m[2], d = +m[3];
-      const t = new Date(y, mo-1, d).getTime();
-      return Number.isFinite(t) ? t : null;
-    }
-
-    function bhId(it){
-      const v = (it && (it.id ?? it.bh_id ?? it.bhId)) ?? null;
-      const n = Number(v);
-      return Number.isFinite(n) ? n : null;
-    }
-
-    async function bhUpdate(id, payload){
-      return await api(`/api/bank-holidays/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(payload)
-      });
-    }
-
-    // ===== State =====
-    let ITEMS = [];
-    let MODAL_ITEM = null;
+    // ===== Estado
     let CURRENT_YEAR = null;
-    let TAB = "upcoming"; // upcoming | past
+    let TAB = "available"; // available | used | upcoming
+    let SUMMARY = { total: 0, paid: 0, available: 0, na: 0, total_amount_paid: 0 };
+    let ITEMS_ALL = []; // todos os BHs do ano (de /year/{year})
 
-    function setSubTitle(){
+    // Modal state
+    let MANUAL_BH_ID = null;
+    let REVERT_BH_ID = null;
+
+    // ===== Sumário
+    function updateHeader() {
       $("subTitle").textContent = `Ireland • ${CURRENT_YEAR ?? "—"}`;
+      $("sumAvail").textContent = String(SUMMARY.available);
+      $("sumUsed").textContent = String(SUMMARY.paid);
+      $("sumTotal").textContent = String(SUMMARY.total);
+      const pct = SUMMARY.total > 0 ? Math.round((SUMMARY.paid / SUMMARY.total) * 100) : 0;
+      $("progressFill").style.width = pct + "%";
+      $("progressText").textContent = `${SUMMARY.paid} of ${SUMMARY.total} used`;
+      $("progressEarned").textContent = `${fmtEUR(SUMMARY.total_amount_paid)} earned`;
     }
 
-    function fmtDatePretty(ymd){
-      // "2026-02-02" -> "02 Feb 2026"
-      const t = parseYMD(ymd);
-      if(!t) return ymd;
-      const d = new Date(t);
-      return d.toLocaleDateString("en-GB", { day:"2-digit", month:"short", year:"numeric" });
-    }
-
-    function isPast(ymd){
-      const t = parseYMD(ymd);
-      if(!t) return false;
-      const d = new Date(t); d.setHours(0,0,0,0);
-      const today = new Date(); today.setHours(0,0,0,0);
-      return d < today;
-    }
-
-    function getStatus(it){
-      // backend: applicable=false => N/A
-      // backend: applicable!=false && paid=true => Paid
-      // else Not Paid
-      if(it.applicable === false) return "na";
-      if(it.paid) return "paid";
-      return "not_paid";
-    }
-
-    function statusLabel(s){
-      if(s === "paid") return "PAID";
-      if(s === "not_paid") return "NOT PAID";
-      return "N/A";
-    }
-    function statusClass(s){
-      if(s === "paid") return "status--paid";
-      if(s === "not_paid") return "status--notpaid";
-      return "status--na";
-    }
-    function nextStatus(s){
-  // cycle: not_paid -> na -> paid -> not_paid
-  if (s === "not_paid") return "na";
-  if (s === "na") return "paid";
-  return "not_paid";
-}
-
-    
-
-    function updateSummary(){
-      let paid=0, notPaid=0, na=0;
-      for(const it of ITEMS){
-        const s = getStatus(it);
-        if(s === "paid") paid++;
-        else if(s === "not_paid") notPaid++;
-        else na++;
-      }
-      $("sumPaid").textContent = String(paid);
-      $("sumNotPaid").textContent = String(notPaid);
-      $("sumNA").textContent = String(na);
-    }
-
-    function openPaidModal(item){
-      MODAL_ITEM = item;
-      $("mSub").textContent = `${item.name} • ${item.date}`;
-      $("mPaidDate").value = item.paid_date || "";
-      $("mPaidWeek").value = item.paid_week || tescoWeekNumber(new Date());
-      $("paidModal").classList.remove("hidden");
-      $("paidModal").setAttribute("aria-hidden","false");
-      setTimeout(()=> $("mPaidDate").focus(), 0);
-    }
-
-    function closePaidModal(){
-      $("paidModal").classList.add("hidden");
-      $("paidModal").setAttribute("aria-hidden","true");
-      MODAL_ITEM = null;
-    }
-
-    async function savePaidModal(){
-      if(!MODAL_ITEM) return;
-
-      const id = bhId(MODAL_ITEM);
-      if(!id) throw new Error("BH id missing (backend data issue).");
-
-      const paid_date = ($("mPaidDate").value || "").trim();
-      const paid_week_raw = ($("mPaidWeek").value || "").trim();
-      const paid_week = paid_week_raw ? Number(paid_week_raw) : null;
-
-      await bhUpdate(id, {
-        applicable: true,
-        paid: true,
-        paid_date: paid_date || null,
-        paid_week: (Number.isFinite(paid_week) ? paid_week : null)
-      });
-
-      MODAL_ITEM.applicable = true;
-      MODAL_ITEM.paid = true;
-      MODAL_ITEM.paid_date = paid_date || null;
-      MODAL_ITEM.paid_week = (Number.isFinite(paid_week) ? paid_week : null);
-
-      closePaidModal();
-      render();
-    }
-
-    async function applyStatus(it, newStatus){
-      const id = bhId(it);
-      if(!id) throw new Error("BH id missing (backend data issue).");
-
-      if(newStatus === "na"){
-        await bhUpdate(id, { applicable:false, paid:false, paid_date:null, paid_week:null });
-        it.applicable = false;
-        it.paid = false;
-        it.paid_date = null;
-        it.paid_week = null;
-        return;
-      }
-
-      if(newStatus === "not_paid"){
-        await bhUpdate(id, { applicable:true, paid:false, paid_date:null, paid_week:null });
-        it.applicable = true;
-        it.paid = false;
-        it.paid_date = null;
-        it.paid_week = null;
-        return;
-      }
-
-      // paid -> open modal to capture date/week
-      it.applicable = true;
-      openPaidModal(it);
-    }
-
-    function render(){
-      setSubTitle();
-      updateSummary();
+    // ===== Render tabs
+    function render() {
+      updateHeader();
+      $("err").textContent = "";
+      $("msg").textContent = "";
 
       const list = $("holidayList");
       list.innerHTML = "";
 
-      const filtered = ITEMS.filter(it => TAB === "past" ? isPast(it.date) : !isPast(it.date));
+      let items = [];
+      let emptyMsg = "";
 
-      for(const it of filtered){
-        const s = getStatus(it);
+      if (TAB === "available") {
+        items = ITEMS_ALL.filter(it => !it.paid && it.applicable !== false);
+        emptyMsg = `All bank holidays for ${CURRENT_YEAR} have been used. 🎉`;
+      } else if (TAB === "used") {
+        items = ITEMS_ALL.filter(it => it.paid);
+        emptyMsg = "No bank holidays taken yet this year.";
+      } else {
+        // upcoming: não pagos E data oficial futura
+        items = ITEMS_ALL.filter(it => !it.paid && it.applicable !== false && isFuture(it.date));
+        emptyMsg = "No more upcoming bank holidays this year.";
+      }
 
-        const card = document.createElement("article");
-        card.className = "holidayCard";
-        card.innerHTML = `
-          <div style="flex:1; padding-right:10px;">
-            <h3>${it.name}</h3>
-            <div class="date">${fmtDatePretty(it.date)}</div>
-            <div class="mini">${
-              (it.applicable === false)
-                ? "Not applicable"
-                : (it.paid
-                    ? `Paid: ${it.paid_date ? it.paid_date : "—"} • Week: ${it.paid_week ? it.paid_week : "—"}`
-                    : "Not paid yet")
-            }</div>
-          </div>
-          <button class="statusBtn ${statusClass(s)}" type="button">${statusLabel(s)}</button>
-        `;
+      if (!items.length) {
+        list.innerHTML = `<div class="emptyState">${emptyMsg}</div>`;
+        return;
+      }
 
-        const btn = card.querySelector("button.statusBtn");
-        btn.addEventListener("click", async ()=>{
-          try{
-            const cur = getStatus(it);
-            const nxt = nextStatus(cur);
-            await applyStatus(it, nxt);
-            // se abriu modal (paid), a render fica depois do save; se não, atualiza agora
-            render();
-          }catch(e){
-            alert(e.message || "Failed");
-          }
-        });
-
+      for (const it of items) {
+        const card = buildCard(it);
         list.appendChild(card);
       }
     }
 
-    function bindTabs(){
-      const up = $("tabUpcoming");
-      const past = $("tabPast");
+    function buildCard(it) {
+      const card = document.createElement("article");
+      card.className = "holidayCard";
 
-      const setTab = (t)=>{
-        TAB = t;
-        up.classList.toggle("segBtn--active", t === "upcoming");
-        past.classList.toggle("segBtn--active", t === "past");
-        render();
-      };
+      if (TAB === "available") {
+        card.innerHTML = `
+          <div class="hc-top">
+            <div>
+              <h3>${it.name}</h3>
+              <div class="hc-date">${fmtDatePretty(it.date)}</div>
+            </div>
+            <span class="badge badge-available">Available</span>
+          </div>
+          <div class="hc-actions">
+            <button class="btnAction btnActionBlue js-manual" type="button">Mark as taken manually</button>
+          </div>
+        `;
+        card.querySelector(".js-manual").addEventListener("click", () => openManualModal(it));
+      } else if (TAB === "used") {
+        const payText = (it.amount_paid != null && it.pay_hours != null)
+          ? `${fmtEUR(it.amount_paid)} (${Number(it.pay_hours).toFixed(2)}h)`
+          : (it.amount_paid != null ? fmtEUR(it.amount_paid) : "—");
 
-      up.addEventListener("click", ()=> setTab("upcoming"));
-      past.addEventListener("click", ()=> setTab("past"));
+        card.innerHTML = `
+          <div class="hc-top">
+            <div>
+              <h3>${it.name}</h3>
+              <div class="hc-date">Official: ${fmtDatePretty(it.date)}</div>
+            </div>
+            <span class="badge badge-used">Used</span>
+          </div>
+          <div class="hc-meta">
+            Taken on ${fmtDatePretty(it.paid_date)} &nbsp;·&nbsp; ${payText}
+          </div>
+          <div class="hc-actions">
+            ${it.roster_day_id ? `<button class="btnAction btnActionBlue js-view-shift" type="button">View shift</button>` : ""}
+            <button class="btnAction btnActionDanger js-revert" type="button">Revert</button>
+          </div>
+        `;
+        card.querySelector(".js-revert").addEventListener("click", () => openRevertModal(it));
+        if (it.roster_day_id) {
+          card.querySelector(".js-view-shift").addEventListener("click", () => {
+            // Navega para o roster — passa o id do dia via query string (melhor esforço)
+            location.href = `/roster`;
+          });
+        }
+      } else {
+        // upcoming — apenas informação
+        card.innerHTML = `
+          <div class="hc-top">
+            <div>
+              <h3>${it.name}</h3>
+              <div class="hc-date">${fmtDatePretty(it.date)}</div>
+            </div>
+            <span class="badge badge-upcoming">Upcoming</span>
+          </div>
+        `;
+      }
+
+      return card;
     }
 
-    async function loadYear(year){
+    // ===== Tabs
+    function setTab(t) {
+      TAB = t;
+      $("tabAvailable").classList.toggle("segBtn--active", t === "available");
+      $("tabUsed").classList.toggle("segBtn--active", t === "used");
+      $("tabUpcoming").classList.toggle("segBtn--active", t === "upcoming");
+      render();
+    }
+
+    // ===== Carregar dados do ano
+    async function loadYear(year) {
       $("err").textContent = "";
       $("msg").textContent = "Loading...";
       $("holidayList").innerHTML = "";
 
-      try{
-        const items = await api(`/api/bank-holidays/year/${year}`, { method:"GET" });
+      try {
+        const [items, summary] = await Promise.all([
+          api(`/api/bank-holidays/year/${year}`),
+          api(`/api/bank-holidays/summary?year=${year}`),
+        ]);
 
-        if(!items || !items.length){
-          $("msg").textContent = "No bank holidays found.";
-          ITEMS = [];
-          render();
-          return;
-        }
+        ITEMS_ALL = Array.isArray(items) ? items : [];
+        SUMMARY = summary || { total: 0, paid: 0, available: 0, na: 0, total_amount_paid: 0 };
 
         $("msg").textContent = "";
-
-        ITEMS = [...items].sort((a, b) => {
-          const ta = parseYMD(a.date) ?? Number.POSITIVE_INFINITY;
-          const tb = parseYMD(b.date) ?? Number.POSITIVE_INFINITY;
-          return ta - tb;
-        });
-
         render();
-      }catch(e){
+      } catch (e) {
         $("msg").textContent = "";
-        $("err").textContent = e.message || "Failed";
-        if(e.status === 401) location.href = "/";
+        $("err").textContent = e.message || "Failed to load";
+        if (e.status === 401) location.href = "/";
       }
     }
 
-    async function loadYearsAndInit(){
+    async function loadYearsAndInit() {
       const sel = $("yearSel");
       sel.innerHTML = "";
 
-      const data = await api("/api/bank-holidays/years", { method:"GET" });
+      const data = await api("/api/bank-holidays/years");
       const years = (data && Array.isArray(data.years) && data.years.length) ? data.years : [2026];
 
-      for(const y of years){
+      for (const y of years) {
         const opt = document.createElement("option");
         opt.value = String(y);
         opt.textContent = String(y);
@@ -666,31 +601,98 @@
 
       CURRENT_YEAR = Number(years[years.length - 1] || 2026);
       sel.value = String(CURRENT_YEAR);
-      setSubTitle();
 
-      sel.addEventListener("change", async ()=>{
+      sel.addEventListener("change", async () => {
         CURRENT_YEAR = Number(sel.value);
-        setSubTitle();
         await loadYear(CURRENT_YEAR);
       });
 
-      bindTabs();
+      $("tabAvailable").addEventListener("click", () => setTab("available"));
+      $("tabUsed").addEventListener("click", () => setTab("used"));
+      $("tabUpcoming").addEventListener("click", () => setTab("upcoming"));
+
       await loadYear(CURRENT_YEAR);
     }
 
-    // Modal
-    $("mClose").addEventListener("click", closePaidModal);
-    $("mCancel").addEventListener("click", closePaidModal);
-    $("mSave").addEventListener("click", async ()=>{
-      try{ await savePaidModal(); }
-      catch(e){ alert(e.message || "Failed to save"); }
+    // ===== Modal: marcar manualmente
+    function openManualModal(it) {
+      MANUAL_BH_ID = it.id;
+      $("manualTitle").textContent = `Mark as taken: ${it.name}`;
+      $("manualSub").textContent = `Official date: ${fmtDatePretty(it.date)}`;
+      $("manualDate").value = todayYmd();
+      $("manualAmount").value = "";
+      $("manualModal").classList.remove("hidden");
+      $("manualModal").setAttribute("aria-hidden", "false");
+      setTimeout(() => $("manualDate").focus(), 0);
+    }
+    function closeManualModal() {
+      $("manualModal").classList.add("hidden");
+      $("manualModal").setAttribute("aria-hidden", "true");
+      MANUAL_BH_ID = null;
+    }
+    async function saveManualModal() {
+      if (!MANUAL_BH_ID) return;
+      const taken_on_date = ($("manualDate").value || "").trim();
+      if (!taken_on_date) { alert("Please choose a date."); return; }
+      const amountRaw = ($("manualAmount").value || "").trim();
+      const body = { taken_on_date };
+      if (amountRaw) body.amount_paid = parseFloat(amountRaw);
+
+      try {
+        await api(`/api/bank-holidays/${MANUAL_BH_ID}/manual-mark-paid`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        closeManualModal();
+        await loadYear(CURRENT_YEAR);
+      } catch (e) {
+        alert(e.message || "Failed to save");
+      }
+    }
+
+    // ===== Modal: reverter
+    function openRevertModal(it) {
+      REVERT_BH_ID = it.id;
+      $("revertSub").textContent = `${it.name} — taken on ${fmtDatePretty(it.paid_date)}`;
+      $("revertModal").classList.remove("hidden");
+      $("revertModal").setAttribute("aria-hidden", "false");
+    }
+    function closeRevertModal() {
+      $("revertModal").classList.add("hidden");
+      $("revertModal").setAttribute("aria-hidden", "true");
+      REVERT_BH_ID = null;
+    }
+    async function confirmRevert() {
+      if (!REVERT_BH_ID) return;
+      try {
+        await api(`/api/bank-holidays/${REVERT_BH_ID}/revert`, { method: "POST" });
+        closeRevertModal();
+        await loadYear(CURRENT_YEAR);
+      } catch (e) {
+        alert(e.message || "Failed to revert");
+      }
+    }
+
+    // ===== Binds modais
+    $("manualClose").addEventListener("click", closeManualModal);
+    $("manualCancel").addEventListener("click", closeManualModal);
+    $("manualSave").addEventListener("click", async () => {
+      try { await saveManualModal(); } catch (e) { alert(e.message || "Failed"); }
     });
-    $("paidModal").addEventListener("click", (ev)=>{
-      if(ev.target === $("paidModal")) closePaidModal();
+    $("manualModal").addEventListener("click", (e) => {
+      if (e.target === $("manualModal")) closeManualModal();
     });
 
-    loadYearsAndInit();
+    $("revertClose").addEventListener("click", closeRevertModal);
+    $("revertCancel").addEventListener("click", closeRevertModal);
+    $("revertConfirm").addEventListener("click", async () => {
+      try { await confirmRevert(); } catch (e) { alert(e.message || "Failed"); }
+    });
+    $("revertModal").addEventListener("click", (e) => {
+      if (e.target === $("revertModal")) closeRevertModal();
+    });
 
+    // ===== Nav
     (() => {
       if (window.__WH_BOTTOM_NAV_BOUND__) return;
       window.__WH_BOTTOM_NAV_BOUND__ = true;
@@ -701,6 +703,8 @@
         });
       });
     })();
+
+    loadYearsAndInit();
   </script>
 </body>
 </html>

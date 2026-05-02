@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import re
 import hmac
 import hashlib
 import secrets
@@ -12,7 +13,7 @@ from datetime import datetime, date, timedelta, timezone
 from zoneinfo import ZoneInfo
 from typing import Optional, List, Dict, Any
 
-from fastapi import FastAPI, HTTPException, Request, Response, UploadFile, File
+from fastapi import FastAPI, HTTPException, Request, Response, UploadFile, File, Query
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
@@ -381,7 +382,12 @@ def init_db() -> None:
         add_col_if_missing(conn, "bank_holidays", "paid_date", "TEXT")
         add_col_if_missing(conn, "bank_holidays", "paid_week", "INTEGER")
         add_col_if_missing(conn, "bank_holidays", "applicable", "INTEGER NOT NULL DEFAULT 1")
+        # Novas colunas BH (fluxo consumo)
+        add_col_if_missing(conn, "bank_holidays", "amount_paid", "REAL DEFAULT NULL")
+        add_col_if_missing(conn, "bank_holidays", "pay_hours", "REAL DEFAULT NULL")
+        add_col_if_missing(conn, "bank_holidays", "roster_day_id", "INTEGER DEFAULT NULL")
         add_col_if_missing(conn, "roster_days", "status", "TEXT DEFAULT 'WORK'")
+        add_col_if_missing(conn, "roster_days", "bank_holiday_id", "INTEGER DEFAULT NULL")
 
         ensure_bh_indexes(conn)
         ensure_clock_tables(conn)
@@ -403,7 +409,12 @@ def init_db() -> None:
         add_col_if_missing(conn, "bank_holidays", "paid_date", "TEXT")
         add_col_if_missing(conn, "bank_holidays", "paid_week", "INTEGER")
         add_col_if_missing(conn, "bank_holidays", "applicable", "INTEGER NOT NULL DEFAULT 1")
+        # Novas colunas BH (fluxo consumo)
+        add_col_if_missing(conn, "bank_holidays", "amount_paid", "REAL DEFAULT NULL")
+        add_col_if_missing(conn, "bank_holidays", "pay_hours", "REAL DEFAULT NULL")
+        add_col_if_missing(conn, "bank_holidays", "roster_day_id", "INTEGER DEFAULT NULL")
         add_col_if_missing(conn, "roster_days", "status", "TEXT DEFAULT 'WORK'")
+        add_col_if_missing(conn, "roster_days", "bank_holiday_id", "INTEGER DEFAULT NULL")
 
         ensure_bh_indexes(conn)
         ensure_clock_tables(conn)
@@ -557,7 +568,8 @@ class WeekRatePatch(BaseModel):
 
 class RosterDayPatch(BaseModel):
     work_date: str  # yyyy-mm-dd
-    code: str  # "A" | "B" | "OFF"
+    code: str  # "A" | "B" | "OFF" | "HOLIDAY" | "BANK_HOLIDAY" | "CUSTOM:HH:MM-HH:MM"
+    bank_holiday_id: Optional[int] = None  # BH selecionado no modal (fluxo novo)
 
 
 class EntryUpsert(BaseModel):
@@ -576,6 +588,17 @@ class BhPaidPatch(BaseModel):
     applicable: Optional[bool] = None
 
 
+class BhConsumeIn(BaseModel):
+    roster_day_id: int
+    taken_on_date: str  # yyyy-mm-dd
+
+
+class BhManualMarkPaidIn(BaseModel):
+    taken_on_date: str  # yyyy-mm-dd
+    amount_paid: Optional[float] = None
+    pay_hours: Optional[float] = None
+
+
 class ForgotIn(BaseModel):
     email: EmailStr
 
@@ -588,7 +611,8 @@ class ResetIn(BaseModel):
 class RosterCreate(BaseModel):
     week_number: int
     start_date: str  # yyyy-mm-dd (Sunday)
-    days: List[str]  # 7 items: "A", "B", "OFF"
+    days: List[str]  # 7 items: "A", "B", "OFF", "HOLIDAY", "BANK_HOLIDAY", "CUSTOM:HH:MM-HH:MM"
+    bh_ids: Optional[Dict[str, int]] = None  # {"0": bh_id, ...} chave = índice do dia (0-6)
 
 
 class ExtraConfirmIn(BaseModel):
@@ -2104,6 +2128,67 @@ def multiplier_for_date(conn: sqlite3.Connection, uid: int, work_date: str) -> f
 
 
 # ======================================================
+# BH: cálculo de horas (regra Tesco 13 semanas ÷ 5)
+# ======================================================
+def calculate_bh_pay_hours(
+    conn: sqlite3.Connection, uid: int, taken_on_date: str
+) -> tuple[float, bool]:
+    """
+    Calcula horas pagas num dia de BH off.
+    Regra Tesco: soma horas brutas das últimas 13 semanas calendário ÷ 13 ÷ 5.
+    Se menos de 13 semanas disponíveis, divide pelo nº real de semanas.
+    Fallback: 8h se sem histórico.
+    Retorna (horas, fallback_usado).
+    """
+    try:
+        taken = parse_ymd(taken_on_date)
+    except Exception:
+        return 8.0, True
+
+    window_start = taken - timedelta(weeks=13)
+
+    rows = conn.execute(
+        """
+        SELECT time_in, time_out, break_minutes, work_date
+        FROM entries
+        WHERE user_id=?
+          AND date(work_date) >= ? AND date(work_date) < ?
+          AND time_in IS NOT NULL AND time_out IS NOT NULL
+        ORDER BY work_date ASC
+        """,
+        (uid, window_start.isoformat(), taken.isoformat()),
+    ).fetchall()
+
+    if not rows:
+        return 8.0, True
+
+    total_minutes = 0
+    weeks_with_data: set[str] = set()
+
+    for r in rows:
+        try:
+            t_in = hhmm_to_min(r["time_in"])
+            t_out = hhmm_to_min(r["time_out"])
+            if t_out < t_in:
+                t_out += 24 * 60
+            worked = max(0, t_out - t_in - int(r["break_minutes"] or 0))
+            total_minutes += worked
+            # Agrupar por semana calendário (domingo)
+            d = parse_ymd(r["work_date"])
+            wk_sun = (d - timedelta(days=(d.weekday() + 1) % 7)).isoformat()
+            weeks_with_data.add(wk_sun)
+        except Exception:
+            continue
+
+    if total_minutes == 0:
+        return 8.0, True
+
+    num_weeks = max(1, min(13, len(weeks_with_data)))
+    hours = round((total_minutes / 60.0) / num_weeks / 5, 4)
+    return hours, False
+
+
+# ======================================================
 # BANK HOLIDAYS API
 # ======================================================
 @app.get("/api/bank-holidays/years")
@@ -2132,7 +2217,8 @@ def list_bh_year(year: int, req: Request):
         ensure_bh_for_year(conn, uid, year)
         rows = conn.execute(
             """
-            SELECT id, name, bh_date, paid, paid_date, paid_week, applicable
+            SELECT id, name, bh_date, paid, paid_date, paid_week, applicable,
+                   amount_paid, pay_hours, roster_day_id
             FROM bank_holidays
             WHERE user_id=? AND year=?
             ORDER BY date(bh_date) ASC, id ASC
@@ -2149,6 +2235,9 @@ def list_bh_year(year: int, req: Request):
                 "paid_date": r["paid_date"],
                 "paid_week": r["paid_week"],
                 "applicable": bool(r["applicable"]),
+                "amount_paid": (float(r["amount_paid"]) if r["amount_paid"] is not None else None),
+                "pay_hours": (float(r["pay_hours"]) if r["pay_hours"] is not None else None),
+                "roster_day_id": (int(r["roster_day_id"]) if r["roster_day_id"] is not None else None),
             }
             for r in rows
         ]
@@ -2242,6 +2331,235 @@ def patch_bh(bh_id: int, p: BhPaidPatch, req: Request):
         conn.commit()
 
     return {"ok": True}
+
+
+# ======================================================
+# BANK HOLIDAYS — Novos endpoints (fluxo consumo)
+# ======================================================
+@app.get("/api/bank-holidays/available")
+def bh_available(req: Request, year: int = Query(...)):
+    """Lista BHs disponíveis (não pagos, aplicáveis) para um ano."""
+    uid = require_user(req)
+    with db() as conn:
+        ensure_bh_for_year(conn, uid, year)
+        rows = conn.execute(
+            """
+            SELECT id, name, bh_date
+            FROM bank_holidays
+            WHERE user_id=? AND year=? AND paid=0 AND applicable=1
+            ORDER BY date(bh_date) ASC
+            """,
+            (uid, year),
+        ).fetchall()
+        return [{"id": int(r["id"]), "name": r["name"], "date": r["bh_date"]} for r in rows]
+
+
+@app.get("/api/bank-holidays/used")
+def bh_used(req: Request, year: int = Query(...)):
+    """Lista BHs já pagos para um ano."""
+    uid = require_user(req)
+    with db() as conn:
+        ensure_bh_for_year(conn, uid, year)
+        rows = conn.execute(
+            """
+            SELECT id, name, bh_date, paid_date, amount_paid, pay_hours, roster_day_id
+            FROM bank_holidays
+            WHERE user_id=? AND year=? AND paid=1
+            ORDER BY date(paid_date) ASC, date(bh_date) ASC
+            """,
+            (uid, year),
+        ).fetchall()
+        return [
+            {
+                "id": int(r["id"]),
+                "name": r["name"],
+                "date": r["bh_date"],
+                "paid_date": r["paid_date"],
+                "amount_paid": (float(r["amount_paid"]) if r["amount_paid"] is not None else None),
+                "pay_hours": (float(r["pay_hours"]) if r["pay_hours"] is not None else None),
+                "roster_day_id": (int(r["roster_day_id"]) if r["roster_day_id"] is not None else None),
+            }
+            for r in rows
+        ]
+
+
+@app.get("/api/bank-holidays/summary")
+def bh_summary(req: Request, year: int = Query(...)):
+    """Resumo do ano: total, pagos, disponíveis, N/A e valor total ganho."""
+    uid = require_user(req)
+    with db() as conn:
+        ensure_bh_for_year(conn, uid, year)
+        rows = conn.execute(
+            "SELECT paid, applicable, amount_paid FROM bank_holidays WHERE user_id=? AND year=?",
+            (uid, year),
+        ).fetchall()
+        total = sum(1 for r in rows if int(r["applicable"] or 1) == 1)
+        paid = sum(1 for r in rows if int(r["paid"] or 0) == 1)
+        na = sum(1 for r in rows if int(r["applicable"] or 1) == 0)
+        available = total - paid
+        total_amount = sum(
+            float(r["amount_paid"] or 0) for r in rows if int(r["paid"] or 0) == 1
+        )
+        return {
+            "total": total,
+            "paid": paid,
+            "available": available,
+            "na": na,
+            "total_amount_paid": round(total_amount, 2),
+        }
+
+
+@app.get("/api/bank-holidays/preview-pay")
+def bh_preview_pay(req: Request, taken_on_date: str = Query(...)):
+    """Prévia do pagamento de um BH off para uma data específica."""
+    uid = require_user(req)
+    with db() as conn:
+        pay_hours, fallback = calculate_bh_pay_hours(conn, uid, taken_on_date)
+        rate = current_user_hourly_rate(conn, uid)
+        amount = round(pay_hours * rate * PUBLIC_HOLIDAY_MULT, 2)
+        return {
+            "pay_hours": pay_hours,
+            "hourly_rate": rate,
+            "amount": amount,
+            "fallback_used": fallback,
+        }
+
+
+@app.post("/api/bank-holidays/{bh_id}/consume")
+def bh_consume(bh_id: int, p: BhConsumeIn, req: Request):
+    """Vincula um BH disponível a um roster_day (dia off pago)."""
+    uid = require_user(req)
+    with db() as conn:
+        bh = conn.execute(
+            "SELECT id, paid, applicable FROM bank_holidays WHERE id=? AND user_id=?",
+            (bh_id, uid),
+        ).fetchone()
+        if not bh:
+            raise HTTPException(404, "Bank holiday not found")
+        if int(bh["paid"] or 0) == 1:
+            raise HTTPException(400, "Bank holiday already paid")
+        if int(bh["applicable"] or 1) == 0:
+            raise HTTPException(400, "Bank holiday is not applicable")
+
+        rd = conn.execute(
+            "SELECT id, status, bank_holiday_id FROM roster_days WHERE id=? AND user_id=?",
+            (p.roster_day_id, uid),
+        ).fetchone()
+        if not rd:
+            raise HTTPException(404, "Roster day not found")
+        if str(rd["status"] or "").upper() != "BANK_HOLIDAY":
+            raise HTTPException(400, "Roster day is not a Bank Holiday")
+        if rd["bank_holiday_id"] is not None:
+            raise HTTPException(400, "Roster day already has a bank holiday linked")
+
+        pay_hours, fallback = calculate_bh_pay_hours(conn, uid, p.taken_on_date)
+        rate = current_user_hourly_rate(conn, uid)
+        amount_paid = round(pay_hours * rate * PUBLIC_HOLIDAY_MULT, 2)
+
+        try:
+            _, paid_week = tesco_fiscal_week(parse_ymd(p.taken_on_date))
+        except Exception:
+            paid_week = None
+
+        conn.execute(
+            """
+            UPDATE bank_holidays
+            SET paid=1, paid_date=?, paid_week=?, pay_hours=?, amount_paid=?, roster_day_id=?
+            WHERE id=? AND user_id=?
+            """,
+            (p.taken_on_date, paid_week, pay_hours, amount_paid, p.roster_day_id, bh_id, uid),
+        )
+        conn.execute(
+            "UPDATE roster_days SET bank_holiday_id=? WHERE id=? AND user_id=?",
+            (bh_id, p.roster_day_id, uid),
+        )
+        conn.commit()
+
+        return {
+            "ok": True,
+            "pay_hours": pay_hours,
+            "amount_paid": amount_paid,
+            "hourly_rate": rate,
+            "fallback_used": fallback,
+        }
+
+
+@app.post("/api/bank-holidays/{bh_id}/revert")
+def bh_revert(bh_id: int, req: Request):
+    """Reverte um BH pago de volta para disponível."""
+    uid = require_user(req)
+    with db() as conn:
+        bh = conn.execute(
+            "SELECT id, paid, roster_day_id FROM bank_holidays WHERE id=? AND user_id=?",
+            (bh_id, uid),
+        ).fetchone()
+        if not bh:
+            raise HTTPException(404, "Bank holiday not found")
+
+        roster_day_id = bh["roster_day_id"]
+
+        conn.execute(
+            """
+            UPDATE bank_holidays
+            SET paid=0, paid_date=NULL, paid_week=NULL, pay_hours=NULL,
+                amount_paid=NULL, roster_day_id=NULL
+            WHERE id=? AND user_id=?
+            """,
+            (bh_id, uid),
+        )
+
+        # Remove vínculo no roster_day mas mantém status (usuário decide)
+        if roster_day_id:
+            conn.execute(
+                "UPDATE roster_days SET bank_holiday_id=NULL WHERE id=? AND user_id=?",
+                (roster_day_id, uid),
+            )
+
+        conn.commit()
+        return {"ok": True}
+
+
+@app.post("/api/bank-holidays/{bh_id}/manual-mark-paid")
+def bh_manual_mark_paid(bh_id: int, p: BhManualMarkPaidIn, req: Request):
+    """Marca BH como pago manualmente, sem vínculo a roster_day."""
+    uid = require_user(req)
+    with db() as conn:
+        bh = conn.execute(
+            "SELECT id, paid, applicable FROM bank_holidays WHERE id=? AND user_id=?",
+            (bh_id, uid),
+        ).fetchone()
+        if not bh:
+            raise HTTPException(404, "Bank holiday not found")
+        if int(bh["applicable"] or 1) == 0:
+            raise HTTPException(400, "Bank holiday is not applicable")
+
+        pay_hours = p.pay_hours
+        amount_paid = p.amount_paid
+        fallback = False
+
+        if pay_hours is None or amount_paid is None:
+            calc_hours, fallback = calculate_bh_pay_hours(conn, uid, p.taken_on_date)
+            rate = current_user_hourly_rate(conn, uid)
+            if pay_hours is None:
+                pay_hours = calc_hours
+            if amount_paid is None:
+                amount_paid = round(pay_hours * rate * PUBLIC_HOLIDAY_MULT, 2)
+
+        try:
+            _, paid_week = tesco_fiscal_week(parse_ymd(p.taken_on_date))
+        except Exception:
+            paid_week = None
+
+        conn.execute(
+            """
+            UPDATE bank_holidays
+            SET paid=1, paid_date=?, paid_week=?, pay_hours=?, amount_paid=?, roster_day_id=NULL
+            WHERE id=? AND user_id=?
+            """,
+            (p.taken_on_date, paid_week, pay_hours, amount_paid, bh_id, uid),
+        )
+        conn.commit()
+        return {"ok": True, "pay_hours": pay_hours, "amount_paid": amount_paid, "fallback_used": fallback}
 
 
 # ======================================================
@@ -2735,11 +3053,23 @@ def roster_list(req: Request):
             for r in rows
         ]
 
-from fastapi import Query
+
+def _normalize_roster_code(code: str) -> str:
+    return (code or "").strip().upper()
+
+
+def _custom_roster_code_to_state(code_up: str) -> tuple[Optional[str], Optional[str], int]:
+    m = re.fullmatch(r"CUSTOM:(\d{2}:\d{2})-(\d{2}:\d{2})", code_up)
+    if not m:
+        raise HTTPException(400, "Invalid custom day code")
+    start, end = m.group(1), m.group(2)
+    if hhmm_to_min(end) <= hhmm_to_min(start):
+        raise HTTPException(400, "Custom end time must be after start time")
+    return start, end, 0
 
 
 def roster_code_to_state(code: str) -> tuple[Optional[str], Optional[str], int]:
-    code_up = (code or "").strip().upper()
+    code_up = _normalize_roster_code(code)
     if code_up == "OFF":
         return None, None, 1
     if code_up == "A":
@@ -2750,7 +3080,19 @@ def roster_code_to_state(code: str) -> tuple[Optional[str], Optional[str], int]:
         return None, None, 1
     if code_up in ("BANK_HOLIDAY", "BANK HOLIDAY", "BH"):
         return None, None, 1
-    raise HTTPException(400, "Invalid day code (use A, B, OFF, HOLIDAY, BANK_HOLIDAY)")
+    if code_up.startswith("CUSTOM:"):
+        return _custom_roster_code_to_state(code_up)
+    raise HTTPException(400, "Invalid day code (use A, B, OFF, HOLIDAY, BANK_HOLIDAY, CUSTOM:HH:MM-HH:MM)")
+
+
+def roster_code_status(code: str) -> str:
+    code_up = _normalize_roster_code(code)
+    if code_up.startswith("CUSTOM:"):
+        _custom_roster_code_to_state(code_up)
+        return code_up
+    if code_up in ("BANK HOLIDAY", "BH"):
+        return "BANK_HOLIDAY"
+    return code_up
 
 
 def roster_day_status_from_row(row: sqlite3.Row) -> str:
@@ -2758,6 +3100,8 @@ def roster_day_status_from_row(row: sqlite3.Row) -> str:
         status = str(row["status"] or "").strip().upper()
     except Exception:
         status = ""
+    if status.startswith("CUSTOM:"):
+        return status
     if status in ("A", "B", "OFF", "HOLIDAY", "BANK_HOLIDAY"):
         return status
     if int(row["day_off"] or 0) == 1:
@@ -2766,6 +3110,8 @@ def roster_day_status_from_row(row: sqlite3.Row) -> str:
         return "A"
     if row["shift_in"] == SHIFT_B_IN:
         return "B"
+    if row["shift_in"] and row["shift_out"]:
+        return f"CUSTOM:{row['shift_in']}-{row['shift_out']}"
     return "OFF"
 
 
@@ -2860,11 +3206,13 @@ def roster_get(roster_id: int, req: Request):
             "start_date": r["start_date"],
             "days": [
                 {
+                    "id": int(d["id"]),
                     "work_date": d["work_date"],
                     "day_off": bool(int(d["day_off"] or 0)),
                     "shift_in": d["shift_in"],
                     "shift_out": d["shift_out"],
                     "status": roster_day_status_from_row(d),
+                    "bank_holiday_id": (int(d["bank_holiday_id"]) if d["bank_holiday_id"] is not None else None),
                 }
                 for d in days
             ],
@@ -2881,6 +3229,25 @@ def roster_delete(roster_id: int, req: Request):
         ).fetchone()
         if not r:
             raise HTTPException(404, "Roster not found")
+
+        # Reverter BHs vinculados antes de deletar os dias
+        linked = conn.execute(
+            """
+            SELECT bank_holiday_id FROM roster_days
+            WHERE roster_id=? AND user_id=? AND bank_holiday_id IS NOT NULL
+            """,
+            (roster_id, uid),
+        ).fetchall()
+        for lnk in linked:
+            conn.execute(
+                """
+                UPDATE bank_holidays
+                SET paid=0, paid_date=NULL, paid_week=NULL,
+                    pay_hours=NULL, amount_paid=NULL, roster_day_id=NULL
+                WHERE id=? AND user_id=?
+                """,
+                (lnk["bank_holiday_id"], uid),
+            )
 
         conn.execute("DELETE FROM roster_days WHERE roster_id=? AND user_id=?", (roster_id, uid))
         conn.execute("DELETE FROM rosters WHERE id=? AND user_id=?", (roster_id, uid))
@@ -2929,9 +3296,7 @@ def roster_create(p: RosterCreate, req: Request):
             d = start + timedelta(days=i)
             ymd = d.isoformat()
             shift_in, shift_out, day_off = roster_code_to_state(code)
-            status = (code or "").strip().upper()
-            if status in ("BANK HOLIDAY", "BH"):
-                status = "BANK_HOLIDAY"
+            status = roster_code_status(code)
 
             conn.execute(
                 """
@@ -2940,9 +3305,39 @@ def roster_create(p: RosterCreate, req: Request):
                 """,
                 (uid, roster_id, ymd, shift_in, shift_out, day_off, status, now()),
             )
+            rd_id = int(conn.execute("SELECT last_insert_rowid() id").fetchone()["id"])
 
             if status == "BANK_HOLIDAY":
-                sync_bank_holiday_paid_for_date(conn, uid, ymd)
+                bh_id_for_day = (p.bh_ids or {}).get(str(i))
+                if bh_id_for_day:
+                    # Novo fluxo: consumir BH específico selecionado no modal
+                    bh_row = conn.execute(
+                        "SELECT id, paid, applicable FROM bank_holidays WHERE id=? AND user_id=?",
+                        (bh_id_for_day, uid),
+                    ).fetchone()
+                    if bh_row and int(bh_row["paid"] or 0) == 0 and int(bh_row["applicable"] or 1) == 1:
+                        pay_hours, _ = calculate_bh_pay_hours(conn, uid, ymd)
+                        rate = current_user_hourly_rate(conn, uid)
+                        amount_paid = round(pay_hours * rate * PUBLIC_HOLIDAY_MULT, 2)
+                        try:
+                            _, paid_week = tesco_fiscal_week(parse_ymd(ymd))
+                        except Exception:
+                            paid_week = None
+                        conn.execute(
+                            """
+                            UPDATE bank_holidays
+                            SET paid=1, paid_date=?, paid_week=?, pay_hours=?, amount_paid=?, roster_day_id=?
+                            WHERE id=? AND user_id=?
+                            """,
+                            (ymd, paid_week, pay_hours, amount_paid, rd_id, bh_id_for_day, uid),
+                        )
+                        conn.execute(
+                            "UPDATE roster_days SET bank_holiday_id=? WHERE id=? AND user_id=?",
+                            (bh_id_for_day, rd_id, uid),
+                        )
+                else:
+                    # Fluxo legado: sync pelo date match (sem BH selecionado)
+                    sync_bank_holiday_paid_for_date(conn, uid, ymd)
 
         conn.commit()
 
@@ -2953,8 +3348,11 @@ def roster_create(p: RosterCreate, req: Request):
 def roster_day_patch(roster_id: int, p: RosterDayPatch, req: Request):
     uid = require_user(req)
     code = (p.code or "").strip().upper()
-    if code not in ("A", "B", "OFF", "HOLIDAY", "BANK_HOLIDAY", "BANK HOLIDAY", "BH"):
-        raise HTTPException(400, "Invalid code (use A, B, OFF, HOLIDAY, BANK_HOLIDAY)")
+    if not (
+        code in ("A", "B", "OFF", "HOLIDAY", "BANK_HOLIDAY", "BANK HOLIDAY", "BH")
+        or code.startswith("CUSTOM:")
+    ):
+        raise HTTPException(400, "Invalid code (use A, B, OFF, HOLIDAY, BANK_HOLIDAY, CUSTOM:HH:MM-HH:MM)")
 
     with db() as conn:
         r = conn.execute(
@@ -2966,7 +3364,7 @@ def roster_day_patch(roster_id: int, p: RosterDayPatch, req: Request):
 
         d = conn.execute(
             """
-            SELECT id
+            SELECT id, status, bank_holiday_id
             FROM roster_days
             WHERE roster_id=? AND user_id=? AND work_date=?
             """,
@@ -2975,18 +3373,62 @@ def roster_day_patch(roster_id: int, p: RosterDayPatch, req: Request):
         if not d:
             raise HTTPException(404, "Roster day not found")
 
+        current_bh_id = d["bank_holiday_id"]
         shift_in, shift_out, day_off = roster_code_to_state(code)
-        status = code
-        if status in ("BANK HOLIDAY", "BH"):
-            status = "BANK_HOLIDAY"
+        status = roster_code_status(code)
 
         conn.execute(
             "UPDATE roster_days SET shift_in=?, shift_out=?, day_off=?, status=? WHERE id=? AND user_id=?",
             (shift_in, shift_out, day_off, status, int(d["id"]), uid),
         )
 
+        # Se tinha BH vinculado e mudou de status: reverter automaticamente
+        if current_bh_id and status != "BANK_HOLIDAY":
+            conn.execute(
+                """
+                UPDATE bank_holidays
+                SET paid=0, paid_date=NULL, paid_week=NULL,
+                    pay_hours=NULL, amount_paid=NULL, roster_day_id=NULL
+                WHERE id=? AND user_id=?
+                """,
+                (current_bh_id, uid),
+            )
+            conn.execute(
+                "UPDATE roster_days SET bank_holiday_id=NULL WHERE id=? AND user_id=?",
+                (int(d["id"]), uid),
+            )
+
         if status == "BANK_HOLIDAY":
-            sync_bank_holiday_paid_for_date(conn, uid, p.work_date)
+            if p.bank_holiday_id:
+                # Novo fluxo: consumir BH específico
+                bh_row = conn.execute(
+                    "SELECT id, paid, applicable FROM bank_holidays WHERE id=? AND user_id=?",
+                    (p.bank_holiday_id, uid),
+                ).fetchone()
+                if bh_row and int(bh_row["paid"] or 0) == 0 and int(bh_row["applicable"] or 1) == 1:
+                    pay_hours, _ = calculate_bh_pay_hours(conn, uid, p.work_date)
+                    rate = current_user_hourly_rate(conn, uid)
+                    amount_paid = round(pay_hours * rate * PUBLIC_HOLIDAY_MULT, 2)
+                    try:
+                        _, paid_week = tesco_fiscal_week(parse_ymd(p.work_date))
+                    except Exception:
+                        paid_week = None
+                    conn.execute(
+                        """
+                        UPDATE bank_holidays
+                        SET paid=1, paid_date=?, paid_week=?, pay_hours=?, amount_paid=?, roster_day_id=?
+                        WHERE id=? AND user_id=?
+                        """,
+                        (p.work_date, paid_week, pay_hours, amount_paid, int(d["id"]), p.bank_holiday_id, uid),
+                    )
+                    conn.execute(
+                        "UPDATE roster_days SET bank_holiday_id=? WHERE id=? AND user_id=?",
+                        (p.bank_holiday_id, int(d["id"]), uid),
+                    )
+            else:
+                # Fluxo legado: só sincroniza se não tiver BH vinculado
+                if not current_bh_id:
+                    sync_bank_holiday_paid_for_date(conn, uid, p.work_date)
 
         conn.commit()
 

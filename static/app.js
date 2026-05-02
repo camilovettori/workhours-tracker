@@ -217,6 +217,54 @@ function safeText(v) {
   return String(v ?? "").replace(/\s+/g, " ").trim();
 }
 
+function escapeHTML(v) {
+  return String(v ?? "").replace(/[&<>"']/g, (ch) => {
+    switch (ch) {
+      case "&": return "&amp;";
+      case "<": return "&lt;";
+      case ">": return "&gt;";
+      case '"': return "&quot;";
+      case "'": return "&#39;";
+      default: return ch;
+    }
+  });
+}
+
+function dublinNowMinutes(dt = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: APP_TIMEZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(dt);
+  const out = {};
+  parts.forEach((part) => {
+    if (part.type !== "literal") out[part.type] = part.value;
+  });
+  const hh = Number(out.hour || 0);
+  const mm = Number(out.minute || 0);
+  return (hh * 60) + mm;
+}
+
+function formatCoachDateLabel(ymd) {
+  if (!ymd) return "";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: APP_TIMEZONE,
+    day: "numeric",
+    month: "short",
+  }).format(ymdToDateObj(ymd));
+}
+
+function formatCoachDateLong(ymd) {
+  if (!ymd) return "";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: APP_TIMEZONE,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(ymdToDateObj(ymd));
+}
+
 /* =========================
    API helper
 ========================= */
@@ -490,7 +538,15 @@ const cwWeekBtn = $("cwWeekBtn");
 const cwWeekNo = $("cwWeekNo");
 const cwHHMM = $("cwHHMM") || $("cwHours");
 const cwPay  = $("cwPay")  || $("cwGross");
+const todayEarnCard = $("todayEarnCard");
+const todayEarnTitle = $("todayEarnTitle");
+const todayEarnState = $("todayEarnState");
 const todayEarnSub = $("todayEarnSub");
+const todayEarnBreak = $("todayEarnBreak");
+const todayBreakCountdown = $("todayBreakCountdown");
+const todayBreakStart = $("todayBreakStart");
+const todayBreakEnd = $("todayBreakEnd");
+const todayBreakProgress = $("todayBreakProgress");
 
 const btnIn    = $("btnIn");
 const btnOut   = $("btnOut");
@@ -508,8 +564,17 @@ const cardHolidays = $("cardHolidays");
 const cardReports  = $("cardReports");
 const cardDeliveries = $("cardDeliveries");
 const cardSettings = $("cardSettings");
+const homeCoachHero = $("homeCoachHero");
+const homeCoachPane = $("homeCoachPane");
+const homeCoachIcon = $("homeCoachIcon");
+const homeCoachTitle = $("homeCoachTitle");
+const homeCoachLine = $("homeCoachLine");
+const homeCoachSub = $("homeCoachSub");
+const homeCoachChip = $("homeCoachChip");
+const homeCoachDots = $("homeCoachDots");
+const homeCoachHint = $("homeCoachHint");
 const deliveriesWeekInline = $("deliveriesWeekInline");
-const deliveriesInsightText = $("deliveriesInsightText");
+const deliveriesRecordBadge = $("deliveriesRecordBadge");
 
 /* =========================
    Add Week UI
@@ -532,8 +597,16 @@ let CLOCK = null;
 let LAST_DASH = null;
 let DELIVERY_STATE = { items: [], week: null, month: null, location_breakdown: [] };
 let REMINDER_STATE = { reminders: null, schedule: null, ready: false };
-let DELIVERY_HOME_INSIGHT_TIMER = null;
-let DELIVERY_HOME_INSIGHT_INDEX = 0;
+const BANK_HOLIDAY_YEAR_CACHE = new Map();
+const HOME_COACH_STATE = {
+  cards: [],
+  index: 0,
+  timer: null,
+  pauseUntil: 0,
+  pointer: null,
+  bound: false,
+  ready: false,
+};
 
 /* =========================
    Break countdown (robust)
@@ -714,6 +787,10 @@ function tickBreakCountdown() {
 
   setBreakButtonRunning(true, leftSec);
   renderBreakInfoLine(true, leftSec);
+  renderTodayBreakMode({
+    ...getBreakModeState(),
+    leftSec: Math.max(0, leftSec),
+  });
 
   // 5-min warning (once)
   if (leftSec <= 300 && leftSec > 0) {
@@ -729,7 +806,8 @@ function tickBreakCountdown() {
     const done = localStorage.getItem(LS_BREAK_DONE) === "1";
     if (!done) {
       localStorage.setItem(LS_BREAK_DONE, "1");
-      sendBreakNotification("✅ Break finished", "Time to go back to work!");
+      showToast("Break finished — time to return", "info");
+      sendBreakNotification("Break finished — time to return", "Time to go back to work!");
     }
 
     stopBreakCountdown(true);
@@ -1169,109 +1247,6 @@ function loadTodayRosterHint() {
     .catch(() => null);
 }
 
-function updateHomeCoachCard(dash, todayRoster, rosterWeek) {
-  const title = $("homeCoachTitle");
-  const line = $("homeCoachLine");
-  const chip = $("homeCoachChip");
-  const hero = document.querySelector(".homeHero");
-  if (!title || !line || !chip || !hero) return;
-
-  const earnedPay = Number(dash?.this_week?.pay_eur ?? 0);
-  const workedMinutes = parseHHMMToMinutes(dash?.this_week?.hhmm || "00:00");
-  const rate = Number(dash?.this_week?.hourly_rate ?? ME?.hourly_rate ?? getSavedRate() ?? 0);
-  const rosterTotalMinutes = Number(rosterWeek?.totalMinutes ?? 0);
-  const rosterPlannedSoFarMinutes = Number(rosterWeek?.scheduledSoFarMinutes ?? 0);
-  const expectedWeeklyPay = rosterTotalMinutes > 0 && Number.isFinite(rate) && rate > 0
-    ? (rosterTotalMinutes / 60) * rate
-    : 0;
-  const expectedSoFarPay = expectedWeeklyPay > 0 && rosterTotalMinutes > 0
-    ? expectedWeeklyPay * (rosterPlannedSoFarMinutes / rosterTotalMinutes)
-    : 0;
-  const hoursLeftMinutes = Math.max(0, rosterTotalMinutes - workedMinutes);
-  const payLeft = Math.max(0, expectedWeeklyPay - earnedPay);
-  const todayShift = todayRoster || rosterWeek?.todayDay || null;
-  const shiftIn = safeText(todayShift?.shift_in || "");
-  const shiftOut = safeText(todayShift?.shift_out || "");
-  const hasShift = !!shiftIn && !!shiftOut && !todayShift?.day_off;
-  const shiftLabel = hasShift ? `Shift ${fmtHHMM(shiftIn)}–${fmtHHMM(shiftOut)}` : "Shift details unavailable";
-  const hasWeek = !!CLOCK?.has_week;
-  const live = !!CLOCK?.in_time && !CLOCK?.out_time;
-  const finished = !!CLOCK?.out_time;
-  const dayOff = !!todayShift?.day_off;
-
-  const onTrack = rosterTotalMinutes > 0
-    ? (earnedPay >= expectedSoFarPay && workedMinutes >= rosterPlannedSoFarMinutes)
-    : false;
-
-  hero.classList.remove("is-coach-neutral", "is-coach-good", "is-coach-warning", "is-coach-bad");
-
-  if (!hasWeek || (!live && !finished)) {
-    title.textContent = dayOff ? "Day off today" : "Ready to start your shift?";
-    if (expectedWeeklyPay > 0) {
-      line.textContent = dayOff
-        ? `${fmtEUR(earnedPay)} earned so far • ${fmtEUR(payLeft)} left to expected weekly pay`
-        : `${shiftLabel} today • Weekly target ${fmtEUR(expectedWeeklyPay)}`;
-    } else {
-      line.textContent = dayOff
-        ? `${fmtEUR(earnedPay)} earned so far`
-        : shiftLabel;
-    }
-    chip.textContent = dayOff ? "OFF" : "READY";
-    hero.classList.add("is-coach-neutral");
-    return;
-  }
-
-  if (live) {
-    if (onTrack) {
-      title.textContent = "You’re on track for your weekly pay";
-      line.textContent = expectedWeeklyPay > 0
-        ? `${fmtEUR(earnedPay)} earned • ${formatCoachHours(workedMinutes)} / ${formatCoachHours(rosterTotalMinutes)} rostered`
-        : `${fmtEUR(earnedPay)} earned • ${formatCoachHours(workedMinutes)} worked`;
-      chip.textContent = CLOCK?.break_running ? "BREAK" : "LIVE";
-      hero.classList.add("is-coach-good");
-    } else {
-      if (expectedWeeklyPay > 0) {
-        title.textContent = "You’re behind pace";
-        line.textContent = hoursLeftMinutes > 0
-          ? `${fmtEUR(earnedPay)} earned • ${formatCoachHours(hoursLeftMinutes)} left to finish your roster`
-          : `${fmtEUR(earnedPay)} earned • ${fmtEUR(payLeft)} left to expected weekly pay`;
-        hero.classList.add("is-coach-warning");
-      } else {
-        title.textContent = "You’re building momentum";
-        line.textContent = `${fmtEUR(earnedPay)} earned so far`;
-        hero.classList.add("is-coach-neutral");
-      }
-      chip.textContent = CLOCK?.break_running ? "BREAK" : "LIVE";
-    }
-    return;
-  }
-
-  if (finished) {
-    if (expectedWeeklyPay > 0 && earnedPay >= expectedWeeklyPay) {
-      title.textContent = "You already passed your scheduled pay";
-      line.textContent = `${fmtEUR(earnedPay)} earned • ${formatCoachPayGap(expectedWeeklyPay, earnedPay)}`;
-      hero.classList.add("is-coach-good");
-    } else if (expectedWeeklyPay > 0) {
-      title.textContent = "Weekly roster complete";
-      line.textContent = `${fmtEUR(earnedPay)} earned • ${fmtEUR(payLeft)} left to expected weekly pay`;
-      hero.classList.add("is-coach-warning");
-    } else {
-      title.textContent = earnedPay > 0 ? "Solid week 👊" : "Week complete";
-      line.textContent = earnedPay > 0 ? `${fmtEUR(earnedPay)} earned this week` : "No earnings tracked this week";
-      hero.classList.add("is-coach-neutral");
-    }
-    chip.textContent = "DONE";
-    return;
-  }
-
-  title.textContent = "Weekly progress";
-  line.textContent = expectedWeeklyPay > 0
-    ? `${fmtEUR(earnedPay)} earned so far • ${fmtEUR(payLeft)} left to expected weekly pay`
-    : `${fmtEUR(earnedPay)} earned so far`;
-  chip.textContent = "LIVE";
-  hero.classList.add("is-coach-neutral");
-}
-
 function getDeliveryItemsInRange(items, startYmd, endYmd) {
   const start = parseFloat(String(startYmd || "").replace(/-/g, ""));
   const end = parseFloat(String(endYmd || "").replace(/-/g, ""));
@@ -1353,65 +1328,459 @@ function formatDeliveryWeekDelta(current, previous) {
   return `${diff > 0 ? "+" : ""}${diff} vs last week`;
 }
 
-function getHomeDeliveryInsights(stats) {
-  const items = Array.isArray(stats?.items) ? stats.items : [];
-  const weekTotal = Number(stats?.week?.total ?? 0);
-  const weekTrend = Array.isArray(stats?.week?.trend) ? stats.week.trend : [];
-  const weekStart = mondayOfThisWeek(new Date());
-  const weekEnd = ymdAddDays(weekStart, 6);
-  const prevWeekStart = ymdAddDays(weekStart, -7);
-  const prevWeekEnd = ymdAddDays(weekStart, -1);
-  const weekItems = getDeliveryItemsInRange(items, weekStart, weekEnd);
-  const lastWeekTotal = getDeliveryCountInRange(items, prevWeekStart, prevWeekEnd);
-  const record = getDeliveryRecordWeek(items);
-  const bestDay = getBestDeliveryDay(weekTrend);
-  const weekRun1 = Number(stats?.week?.run_1 ?? 0);
-  const weekRun2 = Number(stats?.week?.run_2 ?? 0);
-  const topLocationAllTime = getDeliveryTopLocation(items);
+async function loadBankHolidayYear(year) {
+  const y = Number(year || 0);
+  if (!Number.isFinite(y) || y <= 0) return [];
+  if (BANK_HOLIDAY_YEAR_CACHE.has(y)) return BANK_HOLIDAY_YEAR_CACHE.get(y);
 
-  return [
-    `This week: ${weekTotal} deliveries • ${formatDeliveryWeekDelta(weekTotal, lastWeekTotal)}`,
-    `Top location this week: ${getDeliveryTopLocation(weekItems)}`,
-    bestDay ? `Best day: ${bestDay.day} • ${bestDay.total} deliveries` : "Best day: —",
-    record.total > 0 ? `Record week: ${record.total} deliveries` : "Record week: —",
-    `Run split this week: R1 ${weekRun1} · R2 ${weekRun2}`,
-    `Most used location all time: ${topLocationAllTime}`,
-  ];
+  try {
+    const rows = await api(`/api/bank-holidays/year/${y}`);
+    const list = Array.isArray(rows) ? rows : [];
+    BANK_HOLIDAY_YEAR_CACHE.set(y, list);
+    return list;
+  } catch {
+    BANK_HOLIDAY_YEAR_CACHE.set(y, []);
+    return [];
+  }
 }
 
-function stopDeliveryHomeInsights() {
-  if (DELIVERY_HOME_INSIGHT_TIMER) clearInterval(DELIVERY_HOME_INSIGHT_TIMER);
-  DELIVERY_HOME_INSIGHT_TIMER = null;
-  DELIVERY_HOME_INSIGHT_INDEX = 0;
+async function findUpcomingBankHoliday(today = todayYMD()) {
+  const baseYear = Number(String(today || "").slice(0, 4)) || new Date().getFullYear();
+  const years = [baseYear, baseYear + 1];
+  const now = ymdToDateObj(today);
+  let best = null;
+
+  for (const year of years) {
+    const rows = await loadBankHolidayYear(year);
+    for (const row of rows) {
+      if (!row?.applicable) continue;
+      const rowDate = ymdToDateObj(row?.date || "");
+      if (!rowDate || rowDate < now) continue;
+      if (!best || rowDate < best.dateObj) {
+        best = { ...row, dateObj: rowDate };
+      }
+    }
+  }
+
+  return best;
 }
 
-function renderDeliveryHomeInsights(stats) {
-  if (!deliveriesInsightText) {
-    stopDeliveryHomeInsights();
-    return;
+function getRosterDayForDate(rosterWeek, ymd) {
+  const days = Array.isArray(rosterWeek?.days) ? rosterWeek.days : [];
+  return days.find((day) => day?.work_date === ymd) || null;
+}
+
+function getNextRosterShift(rosterWeek, today = todayYMD()) {
+  const days = Array.isArray(rosterWeek?.days) ? rosterWeek.days : [];
+  const todayRaw = Number(String(today).replace(/-/g, ""));
+  const tomorrow = ymdAddDays(today, 1);
+  const tomorrowDay = days.find((day) => day?.work_date === tomorrow) || null;
+  const futureDays = days.filter((day) => Number(String(day?.work_date || "").replace(/-/g, "")) > todayRaw);
+  const nextWorkingDay = futureDays.find((day) => !day?.day_off && day?.shift_in && day?.shift_out) || null;
+  return { tomorrowDay, nextWorkingDay };
+}
+
+function coachShiftRange(day) {
+  if (!day?.shift_in || !day?.shift_out) return "";
+  return `${fmtHHMM(day.shift_in)}–${fmtHHMM(day.shift_out)}`;
+}
+
+function coachToneClass(tone) {
+  return ["good", "warning", "bad"].includes(tone) ? tone : "neutral";
+}
+
+function buildHomeCoachCards(home, dash, todayRoster, rosterWeek, upcomingBh) {
+  const reportTotals = home?.week?.totals || {};
+  const actualMinutes = Number(reportTotals.total_minutes ?? parseHHMMToMinutes(dash?.this_week?.hhmm || "00:00") ?? 0);
+  const earnedPay = Number(reportTotals.total_pay ?? dash?.this_week?.pay_eur ?? 0);
+  const rate = Number(dash?.this_week?.hourly_rate ?? ME?.hourly_rate ?? getSavedRate() ?? 0);
+  const rosterTotalMinutes = Number(rosterWeek?.totalMinutes ?? 0);
+  const rosterPlannedSoFarMinutes = Number(rosterWeek?.scheduledSoFarMinutes ?? 0);
+  const expectedWeeklyPay = rosterTotalMinutes > 0 && Number.isFinite(rate) && rate > 0
+    ? (rosterTotalMinutes / 60) * rate
+    : 0;
+  const expectedSoFarPay = expectedWeeklyPay > 0 && rosterTotalMinutes > 0
+    ? expectedWeeklyPay * (rosterPlannedSoFarMinutes / rosterTotalMinutes)
+    : 0;
+  const weeklyRemainingPay = Math.max(0, expectedWeeklyPay - earnedPay);
+  const weeklyRemainingHours = Math.max(0, rosterTotalMinutes - actualMinutes);
+  const todayShift = todayRoster || rosterWeek?.todayDay || null;
+  const shiftIn = safeText(todayShift?.shift_in || "");
+  const shiftOut = safeText(todayShift?.shift_out || "");
+  const hasShift = !!shiftIn && !!shiftOut && !todayShift?.day_off;
+  const activeToday = !!CLOCK?.in_time && !CLOCK?.out_time;
+  const finishedToday = !!CLOCK?.out_time;
+  const breakRunning = !!CLOCK?.break_running;
+  const breakMinutes = Number(CLOCK?.break_minutes || 0);
+  const todayRemainingMinutes = activeToday && hasShift && shiftOut
+    ? Math.max(0, hhmmToMinutes(shiftOut) - dublinNowMinutes())
+    : 0;
+  const deliveriesToday = getTodayDeliveriesDone();
+  const deliveriesWeek = Number(DELIVERY_STATE?.week?.total ?? 0);
+  const deliveriesItems = Array.isArray(DELIVERY_STATE?.items) ? DELIVERY_STATE.items : [];
+  const deliveriesRecord = getDeliveryRecordWeek(deliveriesItems);
+  const paceDiff = earnedPay - expectedSoFarPay;
+  const rosterShiftInfo = getNextRosterShift(rosterWeek);
+  const tomorrowDay = rosterShiftInfo.tomorrowDay;
+  const nextWorkingDay = rosterShiftInfo.nextWorkingDay;
+  const bhRemaining = Number(dash?.bank_holidays?.remaining ?? 0);
+  const bhLabel = upcomingBh?.date ? formatCoachDateLabel(upcomingBh.date) : "";
+
+  const cards = [];
+
+  const todayTone = activeToday ? (breakRunning ? "warning" : "good") : (finishedToday ? "neutral" : "neutral");
+  const todayBadge = activeToday ? (breakRunning ? "BREAK" : "LIVE") : finishedToday ? "DONE" : todayShift?.day_off ? "OFF" : "TODAY";
+  const todayTitle = todayShift?.day_off
+    ? "Day off today"
+    : activeToday
+      ? (breakRunning ? `On break since ${fmtHHMM(CLOCK.in_time)}` : `Clocked in ${fmtHHMM(CLOCK.in_time)}`)
+      : finishedToday
+        ? `Clocked out ${fmtHHMM(CLOCK.out_time)}`
+        : hasShift
+          ? `Today: ${coachShiftRange(todayShift)}`
+          : "Today tracking";
+  const todayLine = todayShift?.day_off
+    ? "No clocking needed"
+    : activeToday
+      ? `${formatCoachHours(todayRemainingMinutes)} left today`
+      : finishedToday
+        ? "Shift complete"
+        : hasShift
+          ? `${coachShiftRange(todayShift)} on roster`
+          : "No shift loaded";
+  const todaySub = todayShift?.day_off
+    ? ""
+    : activeToday
+      ? (breakRunning
+        ? (breakMinutes > 0 ? `Break logged ${formatCoachHours(breakMinutes)}` : "Break in progress")
+        : hasShift
+          ? `Ends ${fmtHHMM(shiftOut)}`
+          : "")
+      : finishedToday
+        ? (breakMinutes > 0 ? `Break logged ${formatCoachHours(breakMinutes)}` : "")
+        : hasShift
+          ? `Shift starts ${fmtHHMM(shiftIn)}`
+          : "";
+  cards.push({
+    key: "today",
+    priority: activeToday || finishedToday || breakRunning ? 0 : 7,
+    tone: coachToneClass(todayTone),
+    badge: todayBadge,
+    icon: activeToday ? "⏱" : todayShift?.day_off ? "☀" : "⏰",
+    kicker: "Today tracking",
+    title: todayTitle,
+    line: todayLine,
+    subline: todaySub,
+  });
+
+  if (expectedSoFarPay > 0) {
+    cards.push({
+      key: "pace",
+      priority: 1,
+      tone: coachToneClass(paceDiff < 0 ? "warning" : "good"),
+      badge: paceDiff < 0 ? "BEHIND" : paceDiff > 0 ? "AHEAD" : "PACE",
+      icon: paceDiff < 0 ? "↘" : paceDiff > 0 ? "↗" : "≈",
+      kicker: "Pace check",
+      title: paceDiff < 0
+        ? "You're behind pace"
+        : paceDiff > 0
+          ? "You're ahead"
+          : "Right on pace",
+      line: paceDiff < 0
+        ? `-${fmtEUR(Math.abs(paceDiff))} vs expected`
+        : paceDiff > 0
+          ? `+${fmtEUR(paceDiff)} above target`
+          : "Exactly where the roster expects",
+      subline: rosterPlannedSoFarMinutes > 0 ? `${formatCoachHours(rosterPlannedSoFarMinutes)} planned so far` : "",
+    });
+  } else {
+    cards.push({
+      key: "pace",
+      priority: 20,
+      tone: "neutral",
+      badge: "PACE",
+      icon: "↗",
+      kicker: "Pace check",
+      title: "Roster pace is not set yet",
+      line: "Add a roster to compare progress",
+      subline: "",
+    });
   }
 
-  const insights = getHomeDeliveryInsights(stats);
-  if (!insights.length) {
-    stopDeliveryHomeInsights();
-    deliveriesInsightText.textContent = "Fast logging. Premium summaries.";
-    return;
+  cards.push({
+    key: "money",
+    priority: 2,
+    tone: coachToneClass(expectedWeeklyPay > 0 && weeklyRemainingPay <= 0 ? "good" : "neutral"),
+    badge: "WEEK",
+    icon: "€",
+    kicker: "Weekly money",
+    title: expectedWeeklyPay > 0
+      ? `You've earned ${fmtEUR(earnedPay)} of ${fmtEUR(expectedWeeklyPay)}`
+      : `You've earned ${fmtEUR(earnedPay)} this week`,
+    line: expectedWeeklyPay > 0
+      ? `${fmtEUR(weeklyRemainingPay)} left this week`
+      : "Weekly report total",
+    subline: rosterTotalMinutes > 0 ? `${formatCoachHours(actualMinutes)} worked • ${formatCoachHours(rosterTotalMinutes)} rostered` : "",
+  });
+
+  cards.push({
+    key: "hours",
+    priority: 3,
+    tone: coachToneClass(rosterTotalMinutes > 0 && weeklyRemainingHours <= 0 ? "good" : "neutral"),
+    badge: "HOURS",
+    icon: "⏳",
+    kicker: "Weekly hours",
+    title: rosterTotalMinutes > 0
+      ? `${formatCoachHours(actualMinutes)} done of ${formatCoachHours(rosterTotalMinutes)}`
+      : `${formatCoachHours(actualMinutes)} worked`,
+    line: rosterTotalMinutes > 0
+      ? `${formatCoachHours(weeklyRemainingHours)} left this week`
+      : "No roster target yet",
+    subline: earnedPay > 0 ? `${fmtEUR(earnedPay)} earned so far` : "",
+  });
+
+  cards.push({
+    key: "deliveries",
+    priority: 4,
+    tone: "neutral",
+    badge: deliveriesRecord.total > 0 && deliveriesWeek >= deliveriesRecord.total ? "RECORD" : "DELIVERIES",
+    icon: "🚚",
+    kicker: "Deliveries",
+    title: `Today: ${deliveriesToday} deliveries`,
+    line: `${deliveriesWeek} this week`,
+    subline: "",
+  });
+
+  const nextShift = tomorrowDay && !tomorrowDay.day_off ? tomorrowDay : nextWorkingDay;
+  cards.push({
+    key: "shift",
+    priority: 5,
+    tone: coachToneClass(nextShift ? "neutral" : "warning"),
+    badge: nextShift ? "NEXT" : "ROSTER",
+    icon: "📅",
+    kicker: "Next shift",
+    title: tomorrowDay && !tomorrowDay.day_off
+      ? `Next shift: Tomorrow ${coachShiftRange(tomorrowDay)}`
+      : tomorrowDay && tomorrowDay.day_off
+        ? "Day off tomorrow"
+        : nextShift
+          ? `Next shift: ${formatCoachDateLong(nextShift.work_date)} ${coachShiftRange(nextShift)}`
+          : "No next shift yet",
+    line: tomorrowDay && tomorrowDay.day_off && nextShift
+      ? `Then ${formatCoachDateLong(nextShift.work_date)} ${coachShiftRange(nextShift)}`
+      : nextShift
+        ? "Ready for the next working day"
+        : "Add a roster to plan ahead",
+    subline: "",
+  });
+
+  cards.push({
+    key: "bank-holiday",
+    priority: 6,
+    tone: coachToneClass(upcomingBh ? "neutral" : "warning"),
+    badge: "BH",
+    icon: "☘",
+    kicker: "Bank holiday",
+    title: upcomingBh?.date ? `Next BH: ${bhLabel}` : "Bank holiday reminder",
+    line: Number.isFinite(bhRemaining) && bhRemaining >= 0
+      ? `You have ${bhRemaining} remaining`
+      : "BH allowance unavailable",
+    subline: upcomingBh
+      ? (upcomingBh.paid ? "Already marked paid" : "Don't forget to mark it")
+      : "No upcoming bank holiday found",
+  });
+
+  return cards.sort((a, b) => (a.priority - b.priority) || a.key.localeCompare(b.key));
+}
+
+function clearHomeCoachTimer() {
+  if (HOME_COACH_STATE.timer) clearTimeout(HOME_COACH_STATE.timer);
+  HOME_COACH_STATE.timer = null;
+}
+
+function scheduleHomeCoachRotation(delay = 5000) {
+  clearHomeCoachTimer();
+  if (!HOME_COACH_STATE.cards || HOME_COACH_STATE.cards.length <= 1) return;
+
+  const waitMs = Math.max(500, Number(delay || 5000));
+  HOME_COACH_STATE.timer = window.setTimeout(() => {
+    const now = Date.now();
+    if (now < HOME_COACH_STATE.pauseUntil) {
+      scheduleHomeCoachRotation(Math.max(500, HOME_COACH_STATE.pauseUntil - now));
+      return;
+    }
+    advanceHomeCoach(1, true);
+  }, waitMs);
+}
+
+function pauseHomeCoachRotation(ms = 12000) {
+  HOME_COACH_STATE.pauseUntil = Math.max(HOME_COACH_STATE.pauseUntil, Date.now() + Math.max(1000, Number(ms || 0)));
+  scheduleHomeCoachRotation(5000);
+}
+
+function renderHomeCoachDots() {
+  if (!homeCoachDots) return;
+
+  const cards = HOME_COACH_STATE.cards || [];
+  homeCoachDots.innerHTML = "";
+  homeCoachDots.classList.toggle("hidden", cards.length <= 1);
+
+  if (homeCoachHint) {
+    homeCoachHint.textContent = cards.length > 1 ? "Swipe for more" : "Insight ready";
   }
 
-  const applyInsight = () => {
-    deliveriesInsightText.classList.remove("is-flash");
-    deliveriesInsightText.textContent = insights[DELIVERY_HOME_INSIGHT_INDEX % insights.length];
-    void deliveriesInsightText.offsetWidth;
-    deliveriesInsightText.classList.add("is-flash");
+  if (cards.length <= 1) return;
+
+  cards.forEach((card, index) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `homeCoachDot${index === HOME_COACH_STATE.index ? " is-active" : ""}`;
+    btn.setAttribute("aria-label", `Show insight ${index + 1} of ${cards.length}`);
+    btn.addEventListener("click", () => {
+      pauseHomeCoachRotation(12000);
+      goToHomeCoach(index, true);
+    });
+    homeCoachDots.appendChild(btn);
+  });
+}
+
+function renderHomeCoachCard(card, animate = true) {
+  const hero = homeCoachHero;
+  if (!hero || !homeCoachTitle || !homeCoachLine || !homeCoachChip || !homeCoachIcon || !homeCoachSub) return;
+
+  const fallback = card || {
+    key: "fallback",
+    tone: "neutral",
+    badge: "READY",
+    icon: "⚡",
+    kicker: "Weekly progress coach",
+    title: "Ready to start your shift?",
+    line: "Loading weekly progress…",
+    subline: "",
   };
 
-  applyInsight();
+  hero.classList.remove("is-coach-neutral", "is-coach-good", "is-coach-warning", "is-coach-bad");
+  hero.classList.add(`is-coach-${coachToneClass(fallback.tone)}`);
+  hero.dataset.cardKey = fallback.key || "";
 
-  if (DELIVERY_HOME_INSIGHT_TIMER) clearInterval(DELIVERY_HOME_INSIGHT_TIMER);
-  DELIVERY_HOME_INSIGHT_TIMER = setInterval(() => {
-    DELIVERY_HOME_INSIGHT_INDEX = (DELIVERY_HOME_INSIGHT_INDEX + 1) % insights.length;
-    applyInsight();
-  }, 3200);
+  homeCoachIcon.textContent = fallback.icon || "⚡";
+  const kickerEl = hero.querySelector(".homeHeroKicker");
+  if (kickerEl) kickerEl.textContent = fallback.kicker || "Weekly progress coach";
+  homeCoachTitle.textContent = fallback.title || "";
+  homeCoachLine.textContent = fallback.line || "";
+  homeCoachSub.textContent = fallback.subline || "";
+  homeCoachSub.classList.toggle("hidden", !fallback.subline);
+  homeCoachChip.textContent = fallback.badge || "READY";
+
+  if (animate && homeCoachPane) {
+    homeCoachPane.classList.remove("is-animating");
+    void homeCoachPane.offsetWidth;
+    homeCoachPane.classList.add("is-animating");
+    window.setTimeout(() => homeCoachPane?.classList.remove("is-animating"), 280);
+  }
+
+  renderHomeCoachDots();
+}
+
+function goToHomeCoach(index, animate = true) {
+  const cards = HOME_COACH_STATE.cards || [];
+  if (!cards.length) return;
+
+  const nextIndex = ((Number(index) || 0) % cards.length + cards.length) % cards.length;
+  HOME_COACH_STATE.index = nextIndex;
+  renderHomeCoachCard(cards[nextIndex], animate);
+  scheduleHomeCoachRotation(5000);
+}
+
+function advanceHomeCoach(step = 1, animate = true) {
+  goToHomeCoach(HOME_COACH_STATE.index + Number(step || 0), animate);
+}
+
+async function updateHomeCoachCard(home, dash, todayRoster, rosterWeek) {
+  if (!homeCoachHero || !homeCoachPane) return;
+
+  const currentKey = HOME_COACH_STATE.cards?.[HOME_COACH_STATE.index]?.key || null;
+  const upcomingBh = await findUpcomingBankHoliday(todayYMD());
+  const cards = buildHomeCoachCards(home, dash, todayRoster, rosterWeek, upcomingBh);
+  HOME_COACH_STATE.cards = cards;
+
+  if (!cards.length) {
+    renderHomeCoachCard(null, false);
+    clearHomeCoachTimer();
+    return;
+  }
+
+  const preservedIndex = currentKey
+    ? cards.findIndex((card) => card.key === currentKey)
+    : -1;
+  HOME_COACH_STATE.index = preservedIndex >= 0 ? preservedIndex : 0;
+  renderHomeCoachCard(cards[HOME_COACH_STATE.index], true);
+  HOME_COACH_STATE.ready = true;
+  scheduleHomeCoachRotation(5000);
+}
+
+function renderDeliveriesMiniCard(stats) {
+  if (deliveriesWeekInline) {
+    deliveriesWeekInline.textContent = String(stats?.week?.total ?? 0);
+  }
+
+  if (!deliveriesRecordBadge) return;
+
+  const items = Array.isArray(stats?.items) ? stats.items : [];
+  const weekTotal = Number(stats?.week?.total ?? 0);
+  const record = getDeliveryRecordWeek(items);
+  const isRecordWeek = weekTotal > 0 && record.total > 0 && weekTotal >= record.total;
+
+  deliveriesRecordBadge.textContent = isRecordWeek ? "Record week" : "";
+  deliveriesRecordBadge.classList.toggle("hidden", !isRecordWeek);
+}
+
+function bindHomeCoachInteractions() {
+  if (!homeCoachHero || HOME_COACH_STATE.bound) return;
+  HOME_COACH_STATE.bound = true;
+
+  const clearPointer = () => {
+    HOME_COACH_STATE.pointer = null;
+  };
+
+  homeCoachHero.addEventListener("pointerdown", (ev) => {
+    HOME_COACH_STATE.pointer = {
+      x: ev.clientX,
+      y: ev.clientY,
+      t: Date.now(),
+    };
+    pauseHomeCoachRotation(12000);
+  });
+
+  homeCoachHero.addEventListener("pointerup", (ev) => {
+    const start = HOME_COACH_STATE.pointer;
+    HOME_COACH_STATE.pointer = null;
+    if (!start) return;
+
+    const dx = ev.clientX - start.x;
+    const dy = ev.clientY - start.y;
+    const elapsed = Date.now() - start.t;
+    if (Math.abs(dx) < 44 || Math.abs(dx) < Math.abs(dy) * 1.2 || elapsed > 800) return;
+
+    ev.preventDefault();
+    pauseHomeCoachRotation(12000);
+    advanceHomeCoach(dx < 0 ? 1 : -1, true);
+  });
+
+  homeCoachHero.addEventListener("pointercancel", clearPointer);
+  homeCoachHero.addEventListener("pointerleave", clearPointer);
+  homeCoachHero.addEventListener("focusin", () => pauseHomeCoachRotation(12000));
+  homeCoachHero.addEventListener("keydown", (ev) => {
+    if (ev.key === "ArrowRight") {
+      ev.preventDefault();
+      pauseHomeCoachRotation(12000);
+      advanceHomeCoach(1, true);
+    } else if (ev.key === "ArrowLeft") {
+      ev.preventDefault();
+      pauseHomeCoachRotation(12000);
+      advanceHomeCoach(-1, true);
+    }
+  });
 }
 
 function getTodayEarnedAmount() {
@@ -1434,6 +1803,43 @@ function getExpectedEarningsText() {
   return "—";
 }
 
+function getBreakModeState() {
+  const lengthSec = Math.max(1, Number(getLocalBreakLengthSec() || BREAK_DEFAULT_SEC));
+  const startEpoch = getLocalBreakStart() || (() => {
+    const endEpoch = getLocalBreakEnd();
+    return endEpoch ? endEpoch - lengthSec * 1000 : 0;
+  })();
+  const endEpoch = getLocalBreakEnd() || (startEpoch ? startEpoch + lengthSec * 1000 : 0);
+  const leftSec = Math.max(0, Math.ceil((endEpoch - Date.now()) / 1000));
+  const elapsedSec = Math.max(0, Math.min(lengthSec, lengthSec - leftSec));
+  const progress = Math.max(0, Math.min(100, (elapsedSec / lengthSec) * 100));
+  return { lengthSec, startEpoch, endEpoch, leftSec, elapsedSec, progress };
+}
+
+function renderTodayBreakMode(state = null) {
+  const s = state || getBreakModeState();
+  if (todayEarnTitle) todayEarnTitle.textContent = "Break time";
+  if (todayEarnSub) todayEarnSub.textContent = "Take your break - tracking resumes after End Break";
+  if (todayEarnState) todayEarnState.textContent = "BREAK";
+  if (todayEarnBreak) todayEarnBreak.classList.remove("hidden");
+  if (todayBreakCountdown) todayBreakCountdown.textContent = `${fmtMMSS(s.leftSec)} left`;
+  if (todayBreakStart) todayBreakStart.textContent = s.startEpoch ? fmtHHMMFromEpoch(s.startEpoch) : "--:--";
+  if (todayBreakEnd) todayBreakEnd.textContent = s.endEpoch ? fmtHHMMFromEpoch(s.endEpoch) : "--:--";
+  if (todayBreakProgress) todayBreakProgress.style.width = `${s.progress}%`;
+  if (todayEarnCard) todayEarnCard.classList.add("is-break");
+}
+
+function clearTodayBreakMode() {
+  if (todayEarnTitle) todayEarnTitle.textContent = "Today earnings";
+  if (todayEarnSub) todayEarnSub.textContent = "";
+  if (todayEarnBreak) todayEarnBreak.classList.add("hidden");
+  if (todayBreakCountdown) todayBreakCountdown.textContent = "60:00 left";
+  if (todayBreakStart) todayBreakStart.textContent = "--:--";
+  if (todayBreakEnd) todayBreakEnd.textContent = "--:--";
+  if (todayBreakProgress) todayBreakProgress.style.width = "0%";
+  if (todayEarnCard) todayEarnCard.classList.remove("is-break");
+}
+
 function updateTodayEarningsUI() {
   const tHHMM  = $("todayEarnHHMM");
   const tPAY   = $("todayEarnPay");
@@ -1451,7 +1857,7 @@ function updateTodayEarningsUI() {
   const hasWeek = !!CLOCK?.has_week;
   const hasIn = !!CLOCK?.in_time;
   const hasOut = !!CLOCK?.out_time;
-  const onBreak = hasWeek && hasIn && !hasOut && !!CLOCK?.break_running;
+  const onBreak = hasWeek && hasIn && !hasOut && (!!CLOCK?.break_running || hasActiveLocalBreak());
   const isLive =
     hasWeek &&
     hasIn &&
@@ -1462,8 +1868,10 @@ function updateTodayEarningsUI() {
 
   if (tCard) tCard.classList.toggle("is-live", isLive);
   if (tCard) tCard.classList.toggle("is-summary", isSummary);
+  if (tCard) tCard.classList.toggle("is-break", onBreak);
   if (tLive) tLive.classList.toggle("hidden", isSummary);
   if (tSummary) tSummary.classList.toggle("hidden", !isSummary);
+  if (!onBreak) clearTodayBreakMode();
 
   setClockActionButtonVisual(btnIn, "pill--green", !isIdle);
   setClockActionButtonVisual(btnOut, isLive ? "pill--red" : "pill--gray", !isLive);
@@ -1499,6 +1907,12 @@ function updateTodayEarningsUI() {
     return;
   }
 
+  if (onBreak) {
+    renderTodayBreakMode();
+    stopLiveTicker();
+    return;
+  }
+
   const rate =
     Number(ME?.hourly_rate ?? 0) ||
     Number(LAST_DASH?.this_week?.hourly_rate ?? 0) ||
@@ -1510,17 +1924,6 @@ function updateTodayEarningsUI() {
     if (tSTATE) tSTATE.textContent = "RATE?";
     if (tSub) tSub.textContent = "Add your hourly rate in Profile.";
     stopLiveTicker();
-    return;
-  }
-
-  if (onBreak) {
-    if (tSTATE) tSTATE.textContent = "BREAK";
-    if (tSub) {
-      const breakStart = getLocalBreakStart();
-      tSub.textContent = breakStart
-        ? `On break since ${fmtHHMMFromEpoch(breakStart)}`
-        : "On break now";
-    }
     return;
   }
 
@@ -1868,14 +2271,11 @@ async function refreshAll() {
     }
   }
 
-  updateHomeCoachCard(dash, todayRoster, rosterWeek);
+  await updateHomeCoachCard(home, dash, todayRoster, rosterWeek);
 
   if (deliveriesWeekInline) {
     const stats = home?.deliveries || DELIVERY_STATE;
-    if (stats) {
-      deliveriesWeekInline.textContent = String(stats.week?.total ?? 0);
-      renderDeliveryHomeInsights(stats);
-    }
+    if (stats) renderDeliveriesMiniCard(stats);
   }
 
   updateTodayEarningsUI();
@@ -3134,6 +3534,8 @@ function bind() {
 
   const openProfile = () => go("/profile");
   btnOpenProfile?.addEventListener("click", openProfile);
+
+  bindHomeCoachInteractions();
 
   btnIn?.addEventListener("click", doClockIn);
   btnOut?.addEventListener("click", doClockOut);
