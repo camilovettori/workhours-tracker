@@ -570,6 +570,7 @@ const homeCoachIcon = $("homeCoachIcon");
 const homeCoachTitle = $("homeCoachTitle");
 const homeCoachLine = $("homeCoachLine");
 const homeCoachSub = $("homeCoachSub");
+const homeCoachChips = $("homeCoachChips");
 const homeCoachChip = $("homeCoachChip");
 const homeCoachDots = $("homeCoachDots");
 const homeCoachHint = $("homeCoachHint");
@@ -1256,6 +1257,32 @@ function getDeliveryItemsInRange(items, startYmd, endYmd) {
   });
 }
 
+function getDeliveryWeekWindow(dateYmd = todayYMD()) {
+  const startYmd = sundayOfThisWeek(ymdToDateObj(dateYmd || todayYMD()));
+  return {
+    startYmd,
+    endYmd: ymdAddDays(startYmd, 6),
+  };
+}
+
+function getDeliveryLocationSplit(items, startYmd, endYmd) {
+  const split = {
+    "Dublin 8": 0,
+    "Dublin 15": 0,
+    total: 0,
+  };
+
+  getDeliveryItemsInRange(items, startYmd, endYmd).forEach((item) => {
+    const qty = Number(item?.delivery_count || 0);
+    const loc = safeText(item?.location || "");
+    split.total += qty;
+    if (loc === "Dublin 8") split["Dublin 8"] += qty;
+    else if (loc === "Dublin 15") split["Dublin 15"] += qty;
+  });
+
+  return split;
+}
+
 function getDeliveryTopLocation(items) {
   const tally = new Map();
   (items || []).forEach((item) => {
@@ -1370,19 +1397,41 @@ function getRosterDayForDate(rosterWeek, ymd) {
   return days.find((day) => day?.work_date === ymd) || null;
 }
 
-function getNextRosterShift(rosterWeek, today = todayYMD()) {
-  const days = Array.isArray(rosterWeek?.days) ? rosterWeek.days : [];
-  const todayRaw = Number(String(today).replace(/-/g, ""));
+function getNextRosterShift(rosterWeek, today = todayYMD(), includeToday = true) {
+  const days = Array.isArray(rosterWeek?.upcomingDays)
+    ? rosterWeek.upcomingDays
+    : (Array.isArray(rosterWeek?.days) ? rosterWeek.days : []);
+  const searchFrom = includeToday ? today : ymdAddDays(today, 1);
+  const searchRaw = Number(String(searchFrom).replace(/-/g, ""));
   const tomorrow = ymdAddDays(today, 1);
-  const tomorrowDay = days.find((day) => day?.work_date === tomorrow) || null;
-  const futureDays = days.filter((day) => Number(String(day?.work_date || "").replace(/-/g, "")) > todayRaw);
-  const nextWorkingDay = futureDays.find((day) => !day?.day_off && day?.shift_in && day?.shift_out) || null;
+  const tomorrowDay = rosterWeek?.tomorrowDay || days.find((day) => day?.work_date === tomorrow) || null;
+  const futureDays = days.filter((day) => Number(String(day?.work_date || "").replace(/-/g, "")) >= searchRaw);
+  const rosterNext = rosterWeek?.nextShift || null;
+  const rosterNextRaw = rosterNext?.work_date ? Number(String(rosterNext.work_date).replace(/-/g, "")) : null;
+  const nextWorkingDay = rosterNext && Number.isFinite(rosterNextRaw) && rosterNextRaw >= searchRaw
+    ? rosterNext
+    : futureDays.find((day) => !day?.day_off && day?.shift_in && day?.shift_out) || null;
   return { tomorrowDay, nextWorkingDay };
 }
 
 function coachShiftRange(day) {
   if (!day?.shift_in || !day?.shift_out) return "";
-  return `${fmtHHMM(day.shift_in)}–${fmtHHMM(day.shift_out)}`;
+  return `${fmtHHMM(day.shift_in)} \u2192 ${fmtHHMM(day.shift_out)}`;
+}
+
+function coachRosterDayLabel(ymd, today = todayYMD()) {
+  if (!ymd) return "";
+  if (ymd === today) return "Today";
+  if (ymd === ymdAddDays(today, 1)) return "Tomorrow";
+  return weekdayLong(ymdToDateObj(ymd));
+}
+
+function coachRosterOffTitle(day, today = todayYMD()) {
+  const label = coachRosterDayLabel(day?.work_date, today) || "Tomorrow";
+  const status = String(day?.status || "").toUpperCase();
+  if (status === "BANK_HOLIDAY") return `${label} bank holiday`;
+  if (status === "HOLIDAY") return `${label} holiday`;
+  return `${label} off`;
 }
 
 function coachToneClass(tone) {
@@ -1416,11 +1465,14 @@ function buildHomeCoachCards(home, dash, todayRoster, rosterWeek, upcomingBh) {
     ? Math.max(0, hhmmToMinutes(shiftOut) - dublinNowMinutes())
     : 0;
   const deliveriesToday = getTodayDeliveriesDone();
-  const deliveriesWeek = Number(DELIVERY_STATE?.week?.total ?? 0);
-  const deliveriesItems = Array.isArray(DELIVERY_STATE?.items) ? DELIVERY_STATE.items : [];
+  const deliveriesStats = home?.deliveries || DELIVERY_STATE || null;
+  const deliveriesItems = Array.isArray(deliveriesStats?.items) ? deliveriesStats.items : [];
+  const deliveriesWeek = Number(deliveriesStats?.week?.total ?? 0);
   const deliveriesRecord = getDeliveryRecordWeek(deliveriesItems);
+  const deliveryWeekWindow = getDeliveryWeekWindow(todayYMD());
+  const deliveriesWeekSplit = getDeliveryLocationSplit(deliveriesItems, deliveryWeekWindow.startYmd, deliveryWeekWindow.endYmd);
   const paceDiff = earnedPay - expectedSoFarPay;
-  const rosterShiftInfo = getNextRosterShift(rosterWeek);
+  const rosterShiftInfo = getNextRosterShift(rosterWeek, todayYMD(), !finishedToday);
   const tomorrowDay = rosterShiftInfo.tomorrowDay;
   const nextWorkingDay = rosterShiftInfo.nextWorkingDay;
   const bhRemaining = Number(dash?.bank_holidays?.remaining ?? 0);
@@ -1549,30 +1601,60 @@ function buildHomeCoachCards(home, dash, todayRoster, rosterWeek, upcomingBh) {
     title: `Today: ${deliveriesToday} deliveries`,
     line: `${deliveriesWeek} this week`,
     subline: "",
+    chips: [
+      {
+        label: `Dublin 8: ${deliveriesWeekSplit["Dublin 8"]}`,
+        tone: "blue",
+        title: `Dublin 8 this week: ${deliveriesWeekSplit["Dublin 8"]}`,
+      },
+      {
+        label: `Dublin 15: ${deliveriesWeekSplit["Dublin 15"]}`,
+        tone: "violet",
+        title: `Dublin 15 this week: ${deliveriesWeekSplit["Dublin 15"]}`,
+      },
+    ],
   });
 
-  const nextShift = tomorrowDay && !tomorrowDay.day_off ? tomorrowDay : nextWorkingDay;
-  cards.push({
-    key: "shift",
-    priority: 5,
-    tone: coachToneClass(nextShift ? "neutral" : "warning"),
-    badge: nextShift ? "NEXT" : "ROSTER",
-    icon: "📅",
-    kicker: "Next shift",
-    title: tomorrowDay && !tomorrowDay.day_off
-      ? `Next shift: Tomorrow ${coachShiftRange(tomorrowDay)}`
-      : tomorrowDay && tomorrowDay.day_off
-        ? "Day off tomorrow"
-        : nextShift
-          ? `Next shift: ${formatCoachDateLong(nextShift.work_date)} ${coachShiftRange(nextShift)}`
-          : "No next shift yet",
-    line: tomorrowDay && tomorrowDay.day_off && nextShift
-      ? `Then ${formatCoachDateLong(nextShift.work_date)} ${coachShiftRange(nextShift)}`
-      : nextShift
-        ? "Ready for the next working day"
-        : "Add a roster to plan ahead",
-    subline: "",
-  });
+  if (!rosterWeek) {
+    cards.push({
+      key: "shift",
+      priority: 5,
+      tone: "warning",
+      badge: "ROSTER",
+      icon: "📅",
+      kicker: "Next shift",
+      title: "No roster for this week",
+      line: "Add your roster to plan ahead",
+      subline: "",
+    });
+  } else if (nextWorkingDay) {
+    const nextLabel = coachRosterDayLabel(nextWorkingDay.work_date, todayYMD());
+    const nextLine = `${nextLabel} ${coachShiftRange(nextWorkingDay)}`;
+    const tomorrowIsOff = !!tomorrowDay?.day_off && tomorrowDay?.work_date !== nextWorkingDay?.work_date;
+    cards.push({
+      key: "shift",
+      priority: 5,
+      tone: coachToneClass("neutral"),
+      badge: "NEXT",
+      icon: "📅",
+      kicker: "Next shift",
+      title: tomorrowIsOff ? coachRosterOffTitle(tomorrowDay, todayYMD()) : "Next shift",
+      line: tomorrowIsOff ? `Next shift: ${nextLine}` : nextLine,
+      subline: tomorrowIsOff ? "Enjoy the day off in between" : "Ready for the next working day",
+    });
+  } else {
+    cards.push({
+      key: "shift",
+      priority: 5,
+      tone: coachToneClass("warning"),
+      badge: "ROSTER",
+      icon: "📅",
+      kicker: "Next shift",
+      title: "No more shifts this week",
+      line: "Enjoy your time off",
+      subline: "",
+    });
+  }
 
   cards.push({
     key: "bank-holiday",
@@ -1671,6 +1753,20 @@ function renderHomeCoachCard(card, animate = true) {
   homeCoachSub.textContent = fallback.subline || "";
   homeCoachSub.classList.toggle("hidden", !fallback.subline);
   homeCoachChip.textContent = fallback.badge || "READY";
+
+  if (homeCoachChips) {
+    const chips = Array.isArray(fallback.chips) ? fallback.chips : [];
+    homeCoachChips.innerHTML = "";
+    homeCoachChips.classList.toggle("hidden", chips.length === 0);
+    chips.forEach((chip) => {
+      const el = document.createElement("span");
+      const toneClass = chip?.tone ? ` homeCoachSplitChip--${String(chip.tone)}` : "";
+      el.className = `homeCoachSplitChip${toneClass}`;
+      el.textContent = chip?.label || "";
+      if (chip?.title) el.title = chip.title;
+      homeCoachChips.appendChild(el);
+    });
+  }
 
   if (animate && homeCoachPane) {
     homeCoachPane.classList.remove("is-animating");

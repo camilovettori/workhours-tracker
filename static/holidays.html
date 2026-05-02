@@ -105,6 +105,29 @@
     .holidayCard h3{ margin:0; font-size:18px; font-weight:1000; letter-spacing:-.02em; }
     .holidayCard .hc-date{ margin-top:4px; color:var(--muted); font-weight:900; font-size:13px; }
     .holidayCard .hc-meta{ margin-top:8px; font-size:13px; font-weight:900; color:var(--muted); }
+    .holidayCard .hc-metaRow{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-top:8px;
+      font-size:13px;
+      font-weight:900;
+      color:var(--muted);
+    }
+    .holidayCard .hc-metaStack{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      min-width:0;
+      flex:1;
+    }
+    .holidayCard .hc-metaLine{
+      min-width:0;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
     .holidayCard .hc-actions{
       display:flex;
       gap:8px;
@@ -222,6 +245,8 @@
       .summaryGrid{ grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
       .summaryCard{ padding:12px 9px; }
       .summaryCard .sc-num{ font-size:21px; }
+      .holidayCard .hc-metaRow{ flex-direction:column; align-items:flex-start; }
+      .holidayCard .hc-actions{ width:100%; }
     }
     @media (min-width:421px) and (max-width:720px){
       .summaryGrid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -382,6 +407,11 @@
       return data;
     }
 
+    function round2(value) {
+      const n = Number(value || 0);
+      return Math.round(n * 100) / 100;
+    }
+
     function fmtDatePretty(ymd) {
       if (!ymd) return "-";
       const [y, m, d] = ymd.split("-").map(Number);
@@ -502,8 +532,12 @@
             </div>
             <span class="badge badge-used">Used</span>
           </div>
-          <div class="hc-meta">
-            Taken on ${fmtDatePretty(it.paid_date)} &nbsp;Â·&nbsp; Paid ${payText}
+          <div class="hc-metaRow">
+            <div class="hc-metaStack">
+              <div class="hc-metaLine">Taken on ${fmtDatePretty(it.paid_date)}</div>
+              <div class="hc-metaLine">Paid ${payText}</div>
+            </div>
+            ${it.roster_day_id ? '<span class="badge badge-na">Linked</span>' : ''}
           </div>
           <div class="hc-actions">
             ${it.roster_day_id ? `<button class="btnAction btnActionBlue js-view-shift" type="button">View shift</button>` : ""}

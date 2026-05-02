@@ -1893,11 +1893,21 @@ def build_report_current_week_payload(conn: sqlite3.Connection, uid: int) -> dic
 
 def build_roster_week_summary(conn: sqlite3.Connection, uid: int) -> Optional[dict]:
     today = today_ymd()
-    ro = roster_for_date(conn, uid, today)
+    week_start = sunday_start(parse_ymd(today)).isoformat()
+    ro = conn.execute(
+        """
+        SELECT id, week_number, start_date
+        FROM rosters
+        WHERE user_id=? AND start_date=?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (uid, week_start),
+    ).fetchone()
     if not ro:
         return None
 
-    roster_id = int(ro["roster_id"])
+    roster_id = int(ro["id"])
     rows = conn.execute(
         """
         SELECT work_date, day_off, shift_in, shift_out, status
@@ -1906,6 +1916,17 @@ def build_roster_week_summary(conn: sqlite3.Connection, uid: int) -> Optional[di
         ORDER BY date(work_date) ASC, id ASC
         """,
         (roster_id, uid),
+    ).fetchall()
+
+    future_rows = conn.execute(
+        """
+        SELECT rd.work_date, rd.day_off, rd.shift_in, rd.shift_out, rd.status
+        FROM roster_days rd
+        JOIN rosters r ON r.id = rd.roster_id
+        WHERE rd.user_id=? AND date(rd.work_date) >= date(?)
+        ORDER BY date(rd.work_date) ASC, date(r.start_date) ASC, rd.id ASC
+        """,
+        (uid, today),
     ).fetchall()
 
     days = []
@@ -1940,6 +1961,23 @@ def build_roster_week_summary(conn: sqlite3.Connection, uid: int) -> Optional[di
 
     today_day = next((day for day in days if day["work_date"] == today), None)
 
+    future_day_payloads = []
+    for row in future_rows:
+        day_off = bool(int(row["day_off"] or 0))
+        has_shift = bool(row["shift_in"] and row["shift_out"] and not day_off)
+        future_day_payloads.append({
+            "work_date": row["work_date"],
+            "day_off": day_off,
+            "shift_in": row["shift_in"],
+            "shift_out": row["shift_out"],
+            "status": roster_day_status_from_row(row),
+            "has_shift": has_shift,
+        })
+
+    tomorrow = (today_dt + timedelta(days=1)).isoformat()
+    tomorrow_day = next((day for day in future_day_payloads if day["work_date"] == tomorrow), None)
+    next_shift = next((day for day in future_day_payloads if day["has_shift"]), None)
+
     return {
         "id": roster_id,
         "weekNumber": int(ro["week_number"]),
@@ -1948,6 +1986,9 @@ def build_roster_week_summary(conn: sqlite3.Connection, uid: int) -> Optional[di
         "totalMinutes": total_minutes,
         "scheduledSoFarMinutes": scheduled_so_far_minutes,
         "todayDay": today_day,
+        "tomorrowDay": tomorrow_day,
+        "nextShift": next_shift,
+        "upcomingDays": future_day_payloads,
     }
 
 
